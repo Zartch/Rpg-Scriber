@@ -57,3 +57,29 @@ class CampaignContext:
     dm_speaker_id: str = ""
 
     custom_instructions: str = ""
+
+
+@dataclass
+class TranscriberConfig:
+    """Configuration for a transcriber."""
+
+    # OpenAI API settings
+    model: str = "gpt-4o-transcribe"  # or "whisper-1"
+    language: str = "es"  # ISO 639-1 language code
+    api_timeout_s: float = 30.0  # Per-request timeout
+
+    # Concurrency and queue
+    max_concurrent_requests: int = 4  # Parallel API requests
+    queue_max_size: int = 100  # Max pending chunks in queue
+
+    # Retry settings
+    max_retries: int = 3
+    retry_base_delay_s: float = 1.0  # Exponential backoff base
+
+    # Contextual prompt hints (character names, etc.)
+    prompt_hint: str = ""  # e.g. "Nombres esperados: Rodrigo, Aelar, DM"
+
+    # Local (FasterWhisper) settings
+    local_model_size: str = "medium"  # tiny, base, small, medium, large-v3
+    device: str = "auto"  # "auto", "cpu", "cuda"
+    compute_type: str = "float16"  # float16, int8, etc.
