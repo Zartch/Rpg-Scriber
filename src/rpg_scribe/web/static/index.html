@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RPG Scribe</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>RPG Scribe</h1>
+    <span id="connection-badge" class="badge badge-idle">Disconnected</span>
+  </header>
+
+  <main>
+    <!-- Status panel -->
+    <section id="status-panel" class="panel">
+      <h2>System Status</h2>
+      <div id="component-status" class="status-grid">
+        <div class="status-card" data-component="listener">
+          <span class="status-dot idle"></span>
+          <strong>Listener</strong>
+          <span class="status-msg">idle</span>
+        </div>
+        <div class="status-card" data-component="transcriber">
+          <span class="status-dot idle"></span>
+          <strong>Transcriber</strong>
+          <span class="status-msg">idle</span>
+        </div>
+        <div class="status-card" data-component="summarizer">
+          <span class="status-dot idle"></span>
+          <strong>Summarizer</strong>
+          <span class="status-msg">idle</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="columns">
+      <!-- Live transcription -->
+      <section id="transcription-panel" class="panel">
+        <h2>Live Transcription</h2>
+        <div id="transcription-feed" class="feed"></div>
+      </section>
+
+      <!-- Live summary -->
+      <section id="summary-panel" class="panel">
+        <h2>Session Summary</h2>
+        <div id="session-summary" class="summary-content">
+          <p class="placeholder">Waiting for summary updates&hellip;</p>
+        </div>
+        <h3>Campaign Summary</h3>
+        <div id="campaign-summary" class="summary-content">
+          <p class="placeholder">No campaign summary yet.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- Questions panel -->
+    <section id="questions-panel" class="panel">
+      <h2>Pending Questions</h2>
+      <div id="questions-list" class="questions">
+        <p class="placeholder">No pending questions.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
