@@ -83,3 +83,31 @@ class TranscriberConfig:
     local_model_size: str = "medium"  # tiny, base, small, medium, large-v3
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # float16, int8, etc.
+
+
+@dataclass
+class SessionInfo:
+    """Summary info for a past session."""
+
+    session_id: str
+    started_at: str = ""
+    ended_at: str = ""
+    summary: str = ""
+
+
+@dataclass
+class SummarizerConfig:
+    """Configuration for a summarizer."""
+
+    # Trigger thresholds
+    update_interval_s: float = 120.0  # ~2 minutes between updates
+    max_pending_transcriptions: int = 20  # Or trigger after N transcriptions
+
+    # Claude API settings
+    model: str = "claude-sonnet-4-20250514"
+    max_tokens: int = 4096
+    api_timeout_s: float = 60.0
+
+    # Retry settings
+    max_retries: int = 3
+    retry_base_delay_s: float = 1.0
