@@ -20,6 +20,14 @@ dependencies = [
     "openai>=1.0",
     "httpx>=0.25",
 
+    # Summarization
+    "anthropic>=0.30",
+
+    # Web UI
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.23",
+    "websockets>=12.0",
+
     # Utils
     "structlog>=23.0",
 ]
@@ -33,6 +41,7 @@ local = [
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "httpx>=0.25",
     "ruff>=0.1",
 ]
 
