@@ -1,0 +1,12 @@
+pydantic>=2.0
+discord.py[voice]>=2.3
+discord-ext-voice-recv>=0.5.0a167
+webrtcvad-wheels>=2.0.10
+numpy>=1.24
+soundfile>=0.12
+structlog>=23.0
+
+[dev]
+pytest>=7.0
+pytest-asyncio>=0.21
+ruff>=0.1

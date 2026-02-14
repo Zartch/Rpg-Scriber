@@ -1,0 +1,36 @@
+[project]
+name = "rpg-scribe"
+version = "0.1.0"
+description = "RPG session listener, transcriber, and summarizer"
+requires-python = ">=3.11"
+
+dependencies = [
+    "pydantic>=2.0",
+
+    # Discord
+    "discord.py[voice]>=2.3",
+    "discord-ext-voice-recv>=0.5.0a167",
+
+    # Audio processing
+    "webrtcvad-wheels>=2.0.10",
+    "numpy>=1.24",
+    "soundfile>=0.12",
+
+    # Utils
+    "structlog>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
