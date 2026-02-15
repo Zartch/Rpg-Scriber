@@ -79,7 +79,7 @@ pip install -e ".[local]"
 
 ### 4. Configurar variables de entorno
 
-Crear un archivo `.env` o exportar las variables:
+RPG Scribe necesita 3 API keys para funcionar. Crear un archivo `.env` o exportar las variables:
 
 ```bash
 export DISCORD_BOT_TOKEN="tu_token_de_discord"
@@ -92,6 +92,14 @@ export RPG_SCRIBE_PORT="8000"           # Puerto del dashboard web
 export RPG_SCRIBE_DB="rpg_scribe.db"    # Ruta de la base de datos
 export DISCORD_SUMMARY_CHANNEL_ID=""    # Canal para publicar resúmenes
 ```
+
+**Cómo obtener cada key:**
+
+- **`DISCORD_BOT_TOKEN`** — Ir a [Discord Developer Portal](https://discord.com/developers/applications), crear una aplicación, ir a la sección **Bot** y copiar el token. Ver la sección [Configuración del Bot de Discord](#configuración-del-bot-de-discord) para los permisos necesarios.
+
+- **`OPENAI_API_KEY`** — Crear una cuenta en [platform.openai.com](https://platform.openai.com), ir a **API Keys** en el menú lateral y generar una nueva key. Se necesita un método de pago configurado (la transcripción usa `gpt-4o-transcribe`).
+
+- **`ANTHROPIC_API_KEY`** — Crear una cuenta en [console.anthropic.com](https://console.anthropic.com), ir a **API Keys** y generar una nueva key. Se necesita un método de pago configurado (los resúmenes usan Claude Sonnet).
 
 ### 5. Configurar una campaña
 
