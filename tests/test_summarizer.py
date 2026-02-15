@@ -22,9 +22,11 @@ from rpg_scribe.core.models import (
     SummarizerConfig,
 )
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
+from rpg_scribe.core.database import Database
 from rpg_scribe.summarizers.claude_summarizer import (
     ClaudeSummarizer,
     FINALIZE_USER,
+    QUESTION_PATTERN,
     SESSION_SYSTEM_PROMPT,
     SESSION_UPDATE_USER,
 )
@@ -616,6 +618,160 @@ class TestClaudeSummarizer:
         error_statuses = [st for st in statuses if st.status == "error"]
         assert len(error_statuses) == 1
         assert "oops" in error_statuses[0].message
+
+    # --- Question extraction ---
+
+    def test_extract_questions_single(self):
+        text = "El grupo entró en la taberna. [PREGUNTA: ¿Quién es el líder del grupo?] Pidieron cerveza."
+        cleaned, questions = ClaudeSummarizer._extract_questions(text)
+        assert questions == ["¿Quién es el líder del grupo?"]
+        assert "[PREGUNTA:" not in cleaned
+        assert "taberna" in cleaned
+        assert "cerveza" in cleaned
+
+    def test_extract_questions_multiple(self):
+        text = (
+            "Resumen. [PREGUNTA: ¿Aelar habló como jugador o personaje?] "
+            "Más texto. [PREGUNTA: ¿El tabernero es amigo o enemigo?]"
+        )
+        cleaned, questions = ClaudeSummarizer._extract_questions(text)
+        assert len(questions) == 2
+        assert "¿Aelar habló como jugador o personaje?" in questions
+        assert "¿El tabernero es amigo o enemigo?" in questions
+        assert "[PREGUNTA:" not in cleaned
+
+    def test_extract_questions_none(self):
+        text = "El grupo descansó en la posada sin incidentes."
+        cleaned, questions = ClaudeSummarizer._extract_questions(text)
+        assert questions == []
+        assert cleaned == text
+
+    def test_extract_questions_cleans_extra_whitespace(self):
+        text = "Inicio.\n\n[PREGUNTA: ¿Algo?]\n\n\n\nFin."
+        cleaned, _ = ClaudeSummarizer._extract_questions(text)
+        assert "\n\n\n" not in cleaned
+
+    @pytest.mark.asyncio
+    async def test_questions_saved_to_database(self, bus, config, campaign, mock_client):
+        """Questions extracted from LLM response are saved to the database."""
+        db = AsyncMock(spec=Database)
+        db.save_question = AsyncMock(return_value=1)
+        db.get_answered_unprocessed_questions = AsyncMock(return_value=[])
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response(
+                "Resumen actualizado. [PREGUNTA: ¿Quién habló?] Fin."
+            )
+        )
+
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Test", time.time())
+        )
+        await summarizer._update_summary()
+
+        db.save_question.assert_called_once_with("session-1", "¿Quién habló?")
+
+    @pytest.mark.asyncio
+    async def test_summary_clean_after_question_extraction(
+        self, bus, config, campaign, mock_client
+    ):
+        """The published summary should not contain [PREGUNTA: ...] markers."""
+        db = AsyncMock(spec=Database)
+        db.save_question = AsyncMock(return_value=1)
+        db.get_answered_unprocessed_questions = AsyncMock(return_value=[])
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response(
+                "El grupo viajó al norte. [PREGUNTA: ¿Era de día o de noche?] Llegaron al bosque."
+            )
+        )
+
+        summaries: list[SummaryUpdateEvent] = []
+        bus.subscribe(SummaryUpdateEvent, _collect(summaries))
+
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Vamos al norte", time.time())
+        )
+        await summarizer._update_summary()
+
+        assert "[PREGUNTA:" not in summarizer._session_summary
+        assert "[PREGUNTA:" not in summaries[0].session_summary
+        assert "bosque" in summarizer._session_summary
+
+    @pytest.mark.asyncio
+    async def test_answered_questions_injected_in_context(
+        self, bus, config, campaign, mock_client
+    ):
+        """Answered questions should be included in the LLM prompt context."""
+        db = AsyncMock(spec=Database)
+        db.save_question = AsyncMock(return_value=1)
+        db.get_answered_unprocessed_questions = AsyncMock(
+            return_value=[
+                {"id": 1, "question": "¿Quién es el líder?", "answer": "Aelar es el líder"},
+            ]
+        )
+        db.mark_questions_processed = AsyncMock()
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response("Resumen con contexto.")
+        )
+
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Avanzamos", time.time())
+        )
+        await summarizer._update_summary()
+
+        # Verify the API was called with answers in the prompt
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        user_content = call_kwargs["messages"][0]["content"]
+        assert "RESPUESTAS DEL USUARIO" in user_content
+        assert "¿Quién es el líder?" in user_content
+        assert "Aelar es el líder" in user_content
+
+        # Verify questions were marked as processed
+        db.mark_questions_processed.assert_called_once_with([1])
+
+    @pytest.mark.asyncio
+    async def test_no_answers_block_when_no_answered_questions(
+        self, bus, config, campaign, mock_client
+    ):
+        """When there are no answered questions, the prompt should not contain RESPUESTAS."""
+        db = AsyncMock(spec=Database)
+        db.save_question = AsyncMock(return_value=1)
+        db.get_answered_unprocessed_questions = AsyncMock(return_value=[])
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response("Resumen limpio.")
+        )
+
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Hola", time.time())
+        )
+        await summarizer._update_summary()
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        user_content = call_kwargs["messages"][0]["content"]
+        assert "RESPUESTAS DEL USUARIO" not in user_content
 
     # --- Lazy client ---
 

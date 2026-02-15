@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
+from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import SystemStatusEvent, TranscriptionEvent
 from rpg_scribe.core.models import CampaignContext, SummarizerConfig
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
 
 logger = logging.getLogger(__name__)
+
+# Regex for extracting [PREGUNTA: ...] markers from LLM responses
+QUESTION_PATTERN = re.compile(r"\[PREGUNTA:\s*(.+?)\]")
 
 # ---------------------------------------------------------------------------
 # System prompt template
@@ -53,7 +58,7 @@ TRANSCRIPCIÓN RECIENTE:
 
 RESUMEN ACTUAL DE LA SESIÓN:
 {current_session_summary}
-
+{user_answers_block}\
 Actualiza el resumen incorporando la nueva transcripción. \
 Devuelve ÚNICAMENTE el resumen actualizado, sin explicaciones adicionales."""
 
@@ -96,10 +101,12 @@ class ClaudeSummarizer(BaseSummarizer):
         campaign: CampaignContext,
         *,
         client: object | None = None,
+        database: Database | None = None,
     ) -> None:
         super().__init__(event_bus, config, campaign)
         # Allow injecting a client for testing; lazy-load otherwise.
         self._client = client
+        self._database = database
         self._update_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -168,6 +175,55 @@ class ClaudeSummarizer(BaseSummarizer):
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
+    # Question extraction & answer injection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_questions(text: str) -> tuple[str, list[str]]:
+        """Extract [PREGUNTA: ...] markers from text.
+
+        Returns the cleaned text and a list of extracted question strings.
+        """
+        questions = QUESTION_PATTERN.findall(text)
+        cleaned = QUESTION_PATTERN.sub("", text).strip()
+        # Collapse multiple blank lines left by removal
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned, questions
+
+    async def _save_questions(self, questions: list[str]) -> None:
+        """Persist extracted questions to the database."""
+        if not self._database or not questions:
+            return
+        for q in questions:
+            await self._database.save_question(self._session_id, q)
+        logger.info("Saved %d question(s) to database", len(questions))
+
+    async def _build_user_answers_block(self) -> str:
+        """Fetch answered-but-unprocessed questions and format them for the prompt.
+
+        Returns an empty string if there are no answers or no database.
+        """
+        if not self._database:
+            return ""
+        answered = await self._database.get_answered_unprocessed_questions(
+            self._session_id
+        )
+        if not answered:
+            return ""
+        lines: list[str] = []
+        for row in answered:
+            lines.append(f"- Pregunta: {row['question']}\n  Respuesta: {row['answer']}")
+        # Mark them as processed so they aren't injected again
+        await self._database.mark_questions_processed(
+            [row["id"] for row in answered]
+        )
+        return (
+            "\nRESPUESTAS DEL USUARIO:\n"
+            + "\n".join(lines)
+            + "\n\n"
+        )
+
+    # ------------------------------------------------------------------
     # API call with retry
     # ------------------------------------------------------------------
 
@@ -215,15 +271,24 @@ class ClaudeSummarizer(BaseSummarizer):
             entries = list(self._pending)
             self._pending.clear()
 
+            # Fetch answered questions to inject into the prompt
+            user_answers_block = await self._build_user_answers_block()
+
             system = self._build_system_prompt()
             user_msg = SESSION_UPDATE_USER.format(
                 recent_transcriptions=self._format_transcriptions(entries),
                 current_session_summary=self._session_summary or "(inicio de sesión)",
+                user_answers_block=user_answers_block if user_answers_block else "\n",
             )
 
             try:
                 result = await self._call_api(system, user_msg)
-                self._session_summary = result.strip()
+
+                # Extract questions and clean the summary
+                cleaned, questions = self._extract_questions(result.strip())
+                await self._save_questions(questions)
+
+                self._session_summary = cleaned
                 self._last_update_time = time.time()
                 await self._publish_summary("incremental")
                 logger.info(
