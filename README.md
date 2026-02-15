@@ -263,6 +263,161 @@ Para una sesión de 4-6 horas con 4-5 jugadores:
 - La base de datos SQLite es local.
 - Las API keys no se almacenan en el código (usar variables de entorno).
 
+## Consideraciones de Seguridad
+
+### Basicas (hacer antes de poner en uso)
+
+#### Proteger las API keys
+
+Nunca commitear las keys al repositorio. Usar un archivo `.env` y asegurarse de que esté en `.gitignore`:
+
+```bash
+# Verificar que .env está ignorado
+grep -q ".env" .gitignore || echo ".env" >> .gitignore
+```
+
+Restringir permisos del archivo `.env`:
+
+**Linux/macOS:**
+```bash
+chmod 600 .env
+```
+
+**Windows (PowerShell):**
+```powershell
+icacls .env /inheritance:r /grant:r "$($env:USERNAME):(R)"
+```
+
+#### Proteger la base de datos
+
+La base de datos SQLite contiene transcripciones de las sesiones (conversaciones de los jugadores). Restringir acceso:
+
+**Linux/macOS:**
+```bash
+chmod 600 rpg_scribe.db
+```
+
+**Windows (PowerShell):**
+```powershell
+icacls rpg_scribe.db /inheritance:r /grant:r "$($env:USERNAME):(M)"
+```
+
+#### Limitar el acceso al dashboard web
+
+Por defecto el dashboard escucha en `127.0.0.1` (solo local). **No exponer a `0.0.0.0` sin protección**, ya que no tiene autenticación. Si necesitas acceso remoto durante desarrollo, limitar por IP con firewall:
+
+**Linux (ufw):**
+```bash
+# Permitir solo una IP específica al puerto 8000
+sudo ufw allow from 192.168.1.100 to any port 8000
+```
+
+**Windows (PowerShell como admin):**
+```powershell
+# Permitir solo una IP específica al puerto 8000
+New-NetFirewallRule -DisplayName "RPG Scribe" -Direction Inbound `
+  -LocalPort 8000 -Protocol TCP -RemoteAddress 192.168.1.100 -Action Allow
+```
+
+#### Permisos mínimos del bot de Discord
+
+Invitar el bot solo con los permisos listados en [Configuración del Bot de Discord](#configuración-del-bot-de-discord). No marcar "Administrator". El bot solo necesita: Connect, Speak, Send Messages y Embed Links.
+
+### Avanzadas (recomendadas para producción)
+
+#### Reverse proxy con HTTPS
+
+Si se expone el dashboard fuera de localhost, colocarlo detrás de un reverse proxy con TLS:
+
+**Linux (nginx):**
+```nginx
+server {
+    listen 443 ssl;
+    server_name rpg-scribe.tu-dominio.com;
+
+    ssl_certificate     /etc/letsencrypt/live/rpg-scribe.tu-dominio.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/rpg-scribe.tu-dominio.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+**Windows:** usar IIS como reverse proxy con un certificado, o Caddy (`caddy reverse-proxy --from rpg-scribe.tu-dominio.com --to localhost:8000`) que gestiona TLS automáticamente.
+
+#### Rotación de API keys
+
+Rotar las keys periódicamente desde los respectivos paneles de cada proveedor. Al rotar, actualizar `.env` y reiniciar RPG Scribe. Si una key se compromete, revocarla inmediatamente desde:
+- Discord: Developer Portal > Bot > Reset Token
+- OpenAI: platform.openai.com > API Keys > revocar
+- Anthropic: console.anthropic.com > API Keys > revocar
+
+#### Limitar gasto en APIs externas
+
+Configurar límites de uso mensual para evitar costes inesperados:
+- **OpenAI**: Settings > Limits > establecer un hard limit mensual
+- **Anthropic**: Settings > Plans and billing > configurar spending limit
+
+#### Backups de la base de datos
+
+Programar backups periódicos de la base de datos SQLite:
+
+**Linux (cron, backup diario):**
+```bash
+# Añadir a crontab -e
+0 3 * * * cp /ruta/a/rpg_scribe.db /ruta/a/backups/rpg_scribe_$(date +\%Y\%m\%d).db
+```
+
+**Windows (Task Scheduler, PowerShell):**
+```powershell
+# Crear script backup_db.ps1
+Copy-Item "C:\ruta\a\rpg_scribe.db" "C:\ruta\a\backups\rpg_scribe_$(Get-Date -Format yyyyMMdd).db"
+# Programarlo con: schtasks /create /tn "RPG Scribe Backup" /tr "powershell C:\ruta\backup_db.ps1" /sc daily /st 03:00
+```
+
+#### Ejecutar como servicio dedicado
+
+Evitar ejecutar como root/administrador. Crear un usuario sin privilegios:
+
+**Linux (systemd):**
+```ini
+# /etc/systemd/system/rpg-scribe.service
+[Unit]
+Description=RPG Scribe
+After=network.target
+
+[Service]
+Type=simple
+User=rpg-scribe
+WorkingDirectory=/opt/rpg-scribe
+EnvironmentFile=/opt/rpg-scribe/.env
+ExecStart=/opt/rpg-scribe/.venv/bin/rpg-scribe --campaign config/campaigns/mi-campana.toml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo useradd -r -s /usr/sbin/nologin rpg-scribe
+sudo systemctl enable --now rpg-scribe
+```
+
+**Windows (NSSM):**
+```powershell
+# Instalar NSSM (https://nssm.cc) y registrar como servicio
+nssm install RPGScribe "C:\ruta\.venv\Scripts\rpg-scribe.exe"
+nssm set RPGScribe AppParameters "--campaign config\campaigns\mi-campana.toml"
+nssm set RPGScribe AppDirectory "C:\ruta\Rpg-Scriber"
+nssm set RPGScribe ObjectName ".\rpg-scribe-user"
+nssm start RPGScribe
+```
+
 ## Licencia
 
 Este proyecto es software privado. Todos los derechos reservados.
