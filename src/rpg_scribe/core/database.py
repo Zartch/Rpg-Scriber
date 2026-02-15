@@ -237,6 +237,42 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
+    # ── NPCs ────────────────────────────────────────────────────────
+
+    async def save_npc(
+        self,
+        campaign_id: str,
+        name: str,
+        description: str = "",
+        first_seen_session: str = "",
+    ) -> None:
+        """Insert a new NPC record."""
+        import uuid
+
+        npc_id = str(uuid.uuid4())
+        await self.conn.execute(
+            "INSERT INTO npcs (id, campaign_id, name, description, first_seen_session) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (npc_id, campaign_id, name, description, first_seen_session),
+        )
+        await self.conn.commit()
+
+    async def get_npcs(self, campaign_id: str) -> list[dict[str, Any]]:
+        """Get all NPCs for a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM npcs WHERE campaign_id = ? ORDER BY name",
+            (campaign_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def npc_exists(self, campaign_id: str, name: str) -> bool:
+        """Check if an NPC with the given name already exists in a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM npcs WHERE campaign_id = ? AND name = ? LIMIT 1",
+            (campaign_id, name),
+        )
+        return await cursor.fetchone() is not None
+
     # ── Questions ──────────────────────────────────────────────────
 
     async def save_question(

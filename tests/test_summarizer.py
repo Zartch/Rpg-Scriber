@@ -786,6 +786,233 @@ class TestClaudeSummarizer:
 
 
 # ===================================================================
+# NPC/Location extraction tests
+# ===================================================================
+
+
+class TestExtractionParsing:
+    """Tests for _parse_extraction_response."""
+
+    def test_parse_valid_json(self):
+        text = '{"npcs": [{"name": "Gareth", "description": "Un mercader ambulante"}], "locations": [{"name": "Bosque Oscuro", "description": "Un bosque tenebroso"}]}'
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert len(result["npcs"]) == 1
+        assert result["npcs"][0]["name"] == "Gareth"
+        assert len(result["locations"]) == 1
+        assert result["locations"][0]["name"] == "Bosque Oscuro"
+
+    def test_parse_empty_lists(self):
+        text = '{"npcs": [], "locations": []}'
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert result["npcs"] == []
+        assert result["locations"] == []
+
+    def test_parse_json_with_surrounding_text(self):
+        text = 'Aquí tienes el resultado:\n{"npcs": [{"name": "Elara", "description": "Elfa sanadora"}], "locations": []}\nEspero que sea útil.'
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert len(result["npcs"]) == 1
+        assert result["npcs"][0]["name"] == "Elara"
+
+    def test_parse_invalid_json(self):
+        text = "Esto no es JSON válido"
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert result == {"npcs": [], "locations": []}
+
+    def test_parse_malformed_json(self):
+        text = '{"npcs": "not a list", "locations": 42}'
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert result["npcs"] == []
+        assert result["locations"] == []
+
+    def test_parse_missing_keys(self):
+        text = '{"other": "data"}'
+        result = ClaudeSummarizer._parse_extraction_response(text)
+        assert result["npcs"] == []
+        assert result["locations"] == []
+
+
+class TestFinalizeSessionWithExtraction:
+    """Tests for finalize_session with NPC/location extraction."""
+
+    @pytest.fixture
+    def bus(self):
+        return EventBus()
+
+    @pytest.fixture
+    def config(self):
+        return _make_config()
+
+    @pytest.fixture
+    def campaign(self):
+        return _make_campaign()
+
+    @pytest.fixture
+    def mock_client(self):
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_finalize_extracts_and_saves_npcs(
+        self, bus, config, campaign, mock_client
+    ):
+        """finalize_session should extract NPCs via a second LLM call and save them."""
+        db = AsyncMock(spec=Database)
+        db.npc_exists = AsyncMock(return_value=False)
+        db.save_npc = AsyncMock()
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        finalize_response = (
+            "---SESSION_SUMMARY---\n"
+            "El grupo conoció a Gareth en la taberna.\n\n"
+            "---CAMPAIGN_SUMMARY---\n"
+            "La campaña continúa."
+        )
+        extraction_response = (
+            '{"npcs": [{"name": "Gareth", "description": "Mercader ambulante"}], '
+            '"locations": [{"name": "Cueva del Dragón", "description": "Cueva peligrosa"}]}'
+        )
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(extraction_response),
+            ]
+        )
+
+        await summarizer.start("session-1")
+        await summarizer.finalize_session()
+
+        # Verify NPC was saved
+        db.save_npc.assert_called_once_with(
+            campaign_id="test-campaign",
+            name="Gareth",
+            description="Mercader ambulante",
+            first_seen_session="session-1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_finalize_skips_known_npcs(
+        self, bus, config, campaign, mock_client
+    ):
+        """Known NPCs should not be saved again."""
+        db = AsyncMock(spec=Database)
+        db.npc_exists = AsyncMock(return_value=True)
+        db.save_npc = AsyncMock()
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        finalize_response = (
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+        )
+        extraction_response = (
+            '{"npcs": [{"name": "Tabernero", "description": "Ya conocido"}], "locations": []}'
+        )
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(extraction_response),
+            ]
+        )
+
+        await summarizer.start("session-1")
+        await summarizer.finalize_session()
+
+        db.save_npc.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_finalize_no_database_skips_extraction(
+        self, bus, config, campaign, mock_client
+    ):
+        """Without a database, extraction should be skipped."""
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=None
+        )
+
+        finalize_response = (
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+        )
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response(finalize_response)
+        )
+
+        await summarizer.start("session-1")
+        await summarizer.finalize_session()
+
+        # Only one API call (finalize), no extraction call
+        assert mock_client.messages.create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_finalize_extraction_failure_does_not_crash(
+        self, bus, config, campaign, mock_client
+    ):
+        """If extraction LLM call fails, finalize_session should still complete."""
+        db = AsyncMock(spec=Database)
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        finalize_response = (
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+        )
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_anthropic_response(finalize_response),
+                RuntimeError("Extraction API failed"),
+            ]
+        )
+        # max_retries=1 so the extraction fails fast
+        summarizer.config.max_retries = 1
+
+        await summarizer.start("session-1")
+        result = await summarizer.finalize_session()
+
+        # Should still return the session summary despite extraction failure
+        assert result == "Resumen."
+
+    @pytest.mark.asyncio
+    async def test_finalize_extraction_skips_empty_names(
+        self, bus, config, campaign, mock_client
+    ):
+        """NPCs with empty names should be skipped."""
+        db = AsyncMock(spec=Database)
+        db.npc_exists = AsyncMock(return_value=False)
+        db.save_npc = AsyncMock()
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+
+        finalize_response = (
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+        )
+        extraction_response = (
+            '{"npcs": [{"name": "", "description": "Sin nombre"}, '
+            '{"name": "Valida", "description": "NPC válida"}], "locations": []}'
+        )
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(extraction_response),
+            ]
+        )
+
+        await summarizer.start("session-1")
+        await summarizer.finalize_session()
+
+        # Only the valid NPC should be saved
+        db.save_npc.assert_called_once_with(
+            campaign_id="test-campaign",
+            name="Valida",
+            description="NPC válida",
+            first_seen_session="session-1",
+        )
+
+
+# ===================================================================
 # TranscriptionEntry tests
 # ===================================================================
 
