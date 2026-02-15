@@ -354,3 +354,207 @@ Las fases 2A, 2B, 2D y 2E son independientes entre sí y se pueden hacer en cual
 - **No romper lo existente**: ejecutar `pytest` tras cada fase para asegurar que nada se ha roto.
 - **Commits por subfase**: un commit por cada subfase completada (2A.1, 2A.2, etc.) o al menos uno por fase completa.
 - **Respetar convenciones**: `from __future__ import annotations`, async/await, frozen dataclasses para eventos, ABC para interfaces.
+
+---
+
+## Prompts Recomendados para Claude Code
+
+Copiar y pegar el prompt correspondiente a la fase que se quiera implementar. Cada prompt está diseñado para dar suficiente contexto sin necesidad de explicaciones adicionales.
+
+---
+
+### Fase 2A — Sistema de Preguntas
+
+```
+Lee los documentos rpg-scribe-architecture.md (sección 6.4),
+architectural_differences.md e implementation_fase2.md (Fase 2A).
+
+Implementa el sistema de preguntas del summarizer:
+
+1. En claude_summarizer.py, tras recibir la respuesta del LLM en
+   _update_summary(), parsea el texto buscando marcadores [PREGUNTA: ...].
+   Extrae cada pregunta y guárdala en la DB con database.save_question().
+   Limpia los marcadores del resumen antes de publicarlo.
+
+2. Antes de cada llamada al LLM, consulta las preguntas respondidas
+   recientemente (answered pero no procesadas) y añádelas al contexto
+   del prompt como "RESPUESTAS DEL USUARIO: ...". Considera añadir un
+   campo 'processed' a la tabla questions o filtrar por answered_at.
+
+3. Crea tests en tests/test_summarizer.py:
+   - Test de extracción de preguntas del texto
+   - Test de que las preguntas se guardan en DB
+   - Test de que el resumen queda limpio de marcadores
+   - Test de inyección de respuestas en el contexto
+
+Ejecuta pytest al terminar para verificar que no se ha roto nada.
+Haz commit con un mensaje descriptivo.
+```
+
+---
+
+### Fase 2B — Extracción de PNJs y Localizaciones
+
+```
+Lee los documentos rpg-scribe-architecture.md (secciones 6.4 y 8.1),
+architectural_differences.md e implementation_fase2.md (Fase 2B).
+
+Implementa la extracción automática de PNJs y localizaciones al
+finalizar sesión:
+
+1. En database.py, añade métodos CRUD para la tabla npcs:
+   - save_npc(campaign_id, name, description, first_seen_session)
+   - get_npcs(campaign_id) -> list[dict]
+   - npc_exists(campaign_id, name) -> bool
+
+2. En claude_summarizer.py, modifica finalize_session() para que tras
+   generar el resumen final, haga una segunda llamada al LLM pidiendo
+   extraer PNJs y localizaciones nuevas en formato JSON. El prompt debe
+   incluir la lista de PNJs ya conocidos para no duplicar.
+   Parsea la respuesta JSON y guarda los nuevos PNJs con save_npc().
+
+3. Crea tests:
+   - Tests de CRUD de NPCs en tests/test_database.py
+   - Test de parseo JSON de extracción en tests/test_summarizer.py
+   - Test de finalize_session() completo con mock del LLM
+
+Ejecuta pytest al terminar. Haz commit con un mensaje descriptivo.
+```
+
+---
+
+### Fase 2C — Comandos Discord `/scribe summary` y `/scribe ask`
+
+```
+Lee los documentos rpg-scribe-architecture.md (sección 7.3),
+architectural_differences.md e implementation_fase2.md (Fase 2C).
+
+Lee primero src/rpg_scribe/discord_bot/commands.py para ver los
+comandos existentes (start, stop, status) y seguir el mismo patrón.
+
+Implementa dos comandos nuevos:
+
+1. /scribe summary:
+   - Obtener el session_id activo
+   - Consultar el resumen actual de la sesión (via DB o WebState)
+   - Responder con un embed de Discord formateado
+   - Si el resumen supera 4096 chars, truncar con indicación
+     de que se puede ver completo en la web
+
+2. /scribe ask:
+   - Consultar la primera pregunta pendiente con
+     database.get_pending_questions()
+   - Si no hay preguntas, responder "No hay preguntas pendientes"
+   - Si hay, mostrar un discord.ui.Modal con la pregunta y un
+     campo de texto para la respuesta
+   - Al enviar, guardar con database.answer_question()
+
+3. Tests en tests/test_discord_bot.py (ampliar si existe, crear si no):
+   - Test del comando summary
+   - Test del comando ask con y sin preguntas pendientes
+
+Ejecuta pytest al terminar. Haz commit con un mensaje descriptivo.
+```
+
+---
+
+### Fase 2D — Historial de Sesiones
+
+```
+Lee implementation_fase2.md (Fase 2D) y luego lee los archivos:
+- src/rpg_scribe/web/routes.py
+- src/rpg_scribe/web/static/index.html
+- src/rpg_scribe/web/static/app.js
+- src/rpg_scribe/web/static/style.css
+- src/rpg_scribe/core/database.py (método list_sessions)
+
+Implementa el historial de sesiones:
+
+1. Backend — en routes.py añade:
+   GET /api/campaigns/{campaign_id}/sessions
+   que llame a database.list_sessions() y devuelva la lista con
+   id, started_at, ended_at, status y resumen truncado (primeros
+   150 chars).
+
+2. Frontend — en index.html:
+   Añade un panel lateral o un <select> para elegir sesión.
+   La sesión activa debe estar marcada visualmente.
+   Las sesiones completadas muestran fecha y fragmento del resumen.
+
+3. Frontend — en app.js:
+   Al seleccionar una sesión pasada, hacer fetch de sus
+   transcripciones y resumen y mostrarlos en los paneles existentes.
+   Desactivar la actualización via WebSocket cuando se ve una sesión
+   histórica. Reactivar al volver a la sesión activa.
+
+4. Tests en tests/test_web.py:
+   - Test del endpoint de listado de sesiones
+   - Test de que devuelve sesiones ordenadas por fecha
+
+Ejecuta pytest al terminar. Haz commit con un mensaje descriptivo.
+```
+
+---
+
+### Fase 2E — Archivos Auxiliares
+
+```
+Lee implementation_fase2.md (Fase 2E) y luego lee:
+- src/rpg_scribe/config.py
+- src/rpg_scribe/core/models.py (para ver los defaults hardcodeados)
+- config/campaigns/example.toml
+
+Implementa los archivos auxiliares:
+
+1. Crea config/default.toml con los valores por defecto del sistema:
+   listener (chunk_duration, silence_threshold, vad_aggressiveness),
+   transcriber (provider, language, max_concurrent),
+   summarizer (provider, update_interval, max_buffer),
+   web (host, port), database (path).
+   Extrae los valores actuales de los dataclasses de models.py.
+
+2. Modifica config.py para cargar default.toml como base,
+   sobreescribir con el TOML de campaña, y finalmente sobreescribir
+   con variables de entorno. Mantener retrocompatibilidad: si
+   default.toml no existe, usar los defaults actuales de models.py.
+
+3. Crea scripts/import_campaign.py:
+   Script interactivo que pide nombre, sistema de juego, idioma,
+   descripción, datos de jugadores (discord_id, nombre, personaje),
+   y PNJs iniciales. Genera un archivo TOML en config/campaigns/.
+   Soportar también modo no interactivo con argumentos CLI
+   (--name, --system, --output).
+
+4. Tests:
+   - Test de carga de default.toml con merge de configuraciones
+   - Test de que sin default.toml sigue funcionando
+
+Ejecuta pytest al terminar. Haz commit con un mensaje descriptivo.
+```
+
+---
+
+### Fase 2F — Mejoras de Frontend (Opcional)
+
+```
+Lee implementation_fase2.md (Fase 2F) y luego lee los archivos
+del frontend en src/rpg_scribe/web/static/.
+
+Esta fase es opcional y cosmética. Elige qué mejoras aplicar:
+
+1. (Opcional) Migrar a Tailwind CSS o mejorar los estilos vanilla
+   existentes. Si se usa Tailwind, añadir via CDN en index.html
+   para no complicar el build.
+
+2. Mejorar el panel de preguntas: añadir indicador visual cuando
+   hay preguntas nuevas (badge/contador), mejorar el formulario
+   de respuesta con feedback al usuario.
+
+3. Añadir indicadores de latencia al panel de estado: mostrar
+   el tiempo de respuesta del transcriber y summarizer. Los
+   SystemStatusEvent ya contienen timestamps, solo falta calcular
+   y mostrar los deltas.
+
+No es necesario hacer las tres. Elige las que aporten más valor.
+Ejecuta pytest al terminar. Haz commit con un mensaje descriptivo.
+```
