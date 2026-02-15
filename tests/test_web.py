@@ -435,6 +435,108 @@ class TestEventBusIntegration:
         assert len(state.transcriptions) == 3
 
 
+# ── Session list endpoint tests ──────────────────────────────────
+
+
+class TestSessionListEndpoint:
+    async def test_list_sessions_no_database(self, event_bus: EventBus):
+        """Without a database, the endpoint returns an empty list."""
+        app = create_app(event_bus, database=None)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/campaigns/camp-1/sessions")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["sessions"] == []
+
+    async def test_list_sessions_returns_sessions(self, event_bus: EventBus):
+        """With a database, sessions are returned with truncated summaries."""
+        db = AsyncMock()
+        db.list_sessions = AsyncMock(return_value=[
+            {
+                "id": "sess-001",
+                "campaign_id": "camp-1",
+                "started_at": "2025-01-15T20:00:00",
+                "ended_at": "2025-01-15T23:00:00",
+                "status": "completed",
+                "session_summary": "The party entered the tavern and met a stranger.",
+            },
+            {
+                "id": "sess-002",
+                "campaign_id": "camp-1",
+                "started_at": "2025-01-22T20:00:00",
+                "ended_at": None,
+                "status": "active",
+                "session_summary": "",
+            },
+        ])
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/campaigns/camp-1/sessions")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert len(body["sessions"]) == 2
+            # First session has summary preview
+            assert body["sessions"][0]["id"] == "sess-001"
+            assert body["sessions"][0]["status"] == "completed"
+            assert "tavern" in body["sessions"][0]["summary_preview"]
+            # Second session has empty summary
+            assert body["sessions"][1]["summary_preview"] == ""
+
+    async def test_list_sessions_ordered_by_date(self, event_bus: EventBus):
+        """Sessions should be returned in the order provided by database (desc by started_at)."""
+        db = AsyncMock()
+        db.list_sessions = AsyncMock(return_value=[
+            {
+                "id": "sess-new",
+                "campaign_id": "camp-1",
+                "started_at": "2025-02-01T20:00:00",
+                "ended_at": "2025-02-01T23:00:00",
+                "status": "completed",
+                "session_summary": "New session.",
+            },
+            {
+                "id": "sess-old",
+                "campaign_id": "camp-1",
+                "started_at": "2025-01-01T20:00:00",
+                "ended_at": "2025-01-01T23:00:00",
+                "status": "completed",
+                "session_summary": "Old session.",
+            },
+        ])
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/campaigns/camp-1/sessions")
+            body = resp.json()
+            ids = [s["id"] for s in body["sessions"]]
+            assert ids == ["sess-new", "sess-old"]
+
+    async def test_list_sessions_truncates_long_summary(self, event_bus: EventBus):
+        """Long summaries should be truncated to 150 chars with ellipsis."""
+        long_summary = "A" * 200
+        db = AsyncMock()
+        db.list_sessions = AsyncMock(return_value=[
+            {
+                "id": "sess-long",
+                "campaign_id": "camp-1",
+                "started_at": "2025-01-15T20:00:00",
+                "ended_at": "2025-01-15T23:00:00",
+                "status": "completed",
+                "session_summary": long_summary,
+            },
+        ])
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/campaigns/camp-1/sessions")
+            body = resp.json()
+            preview = body["sessions"][0]["summary_preview"]
+            assert len(preview) == 153  # 150 + "..."
+            assert preview.endswith("...")
+
+
 # ── create_app factory tests ─────────────────────────────────────
 
 
@@ -444,6 +546,7 @@ class TestCreateApp:
         assert "/api/status" in paths
         assert "/api/questions" in paths
         assert "/ws/live" in paths
+        assert "/api/campaigns/{campaign_id}/sessions" in paths
 
     def test_app_title(self, app):
         assert app.title == "RPG Scribe"

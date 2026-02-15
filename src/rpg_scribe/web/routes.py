@@ -76,6 +76,11 @@ def _get_manager() -> ConnectionManager:
     return router.ws_manager  # type: ignore[attr-defined]
 
 
+def _get_database():
+    """Access the optional database attached to the router."""
+    return getattr(router, "database", None)
+
+
 # ── REST endpoints ────────────────────────────────────────────────
 
 
@@ -136,6 +141,32 @@ async def get_campaigns() -> dict[str, Any]:
     """Return active campaign info (if any)."""
     state = _get_state()
     return {"campaign": state.active_campaign}
+
+
+_SUMMARY_PREVIEW_LEN = 150
+
+
+@router.get("/api/campaigns/{campaign_id}/sessions")
+async def list_campaign_sessions(campaign_id: str) -> dict[str, Any]:
+    """Return all sessions for a campaign, ordered by date descending."""
+    db = _get_database()
+    if db is None:
+        return {"sessions": []}
+    sessions = await db.list_sessions(campaign_id)
+    result = []
+    for s in sessions:
+        summary = s.get("session_summary") or ""
+        preview = summary[:_SUMMARY_PREVIEW_LEN]
+        if len(summary) > _SUMMARY_PREVIEW_LEN:
+            preview += "..."
+        result.append({
+            "id": s["id"],
+            "started_at": s.get("started_at"),
+            "ended_at": s.get("ended_at"),
+            "status": s.get("status", ""),
+            "summary_preview": preview,
+        })
+    return {"sessions": result}
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────
