@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -83,6 +84,25 @@ Responde con el siguiente formato exacto:
 
 ---CAMPAIGN_SUMMARY---
 (resumen actualizado de la campaña)
+"""
+
+EXTRACTION_USER = """\
+A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
+localizaciones nuevas que hayan aparecido.
+
+RESUMEN DE LA SESIÓN:
+{session_summary}
+
+PNJS YA CONOCIDOS (NO los incluyas de nuevo):
+{known_npcs}
+
+Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
+texto adicional antes o después:
+
+{{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
+"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}]}}
+
+Si no hay PNJs o localizaciones nuevas, devuelve listas vacías.
 """
 
 
@@ -362,5 +382,85 @@ class ClaudeSummarizer(BaseSummarizer):
             self._campaign_summary = campaign_part
 
         await self._publish_summary("final")
+
+        # Extract NPCs and locations from the final summary
+        await self._extract_npcs_and_locations()
+
         logger.info("Session finalized")
         return self._session_summary
+
+    # ------------------------------------------------------------------
+    # NPC / location extraction
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_extraction_response(text: str) -> dict:
+        """Parse the JSON extraction response from the LLM.
+
+        Returns a dict with 'npcs' and 'locations' lists, or empty lists
+        if parsing fails.
+        """
+        # Try to find JSON in the response (the LLM may add surrounding text)
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return {"npcs": [], "locations": []}
+        try:
+            data = json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            return {"npcs": [], "locations": []}
+
+        # Validate structure
+        npcs = data.get("npcs", [])
+        locations = data.get("locations", [])
+        if not isinstance(npcs, list):
+            npcs = []
+        if not isinstance(locations, list):
+            locations = []
+
+        return {"npcs": npcs, "locations": locations}
+
+    async def _extract_npcs_and_locations(self) -> None:
+        """Make a second LLM call to extract new NPCs and locations, then save them."""
+        if not self._database or not self._session_summary:
+            return
+
+        known_npcs_lines = [
+            f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
+        ] or ["(ninguno)"]
+
+        user_msg = EXTRACTION_USER.format(
+            session_summary=self._session_summary,
+            known_npcs="\n".join(known_npcs_lines),
+        )
+
+        try:
+            result = await self._call_api(
+                "Eres un asistente que extrae información estructurada de "
+                "resúmenes de partidas de rol. Responde solo con JSON válido.",
+                user_msg,
+            )
+            extracted = self._parse_extraction_response(result)
+
+            for npc in extracted["npcs"]:
+                name = npc.get("name", "").strip()
+                description = npc.get("description", "").strip()
+                if not name:
+                    continue
+                if await self._database.npc_exists(
+                    self.campaign.campaign_id, name
+                ):
+                    continue
+                await self._database.save_npc(
+                    campaign_id=self.campaign.campaign_id,
+                    name=name,
+                    description=description,
+                    first_seen_session=self._session_id,
+                )
+
+            logger.info(
+                "Extracted %d new NPC(s) and %d location(s)",
+                len(extracted["npcs"]),
+                len(extracted["locations"]),
+            )
+        except Exception as exc:
+            logger.error("NPC/location extraction failed: %s", exc)
