@@ -21,16 +21,19 @@
           <span class="status-dot idle"></span>
           <strong>Listener</strong>
           <span class="status-msg">idle</span>
+          <span class="status-latency"></span>
         </div>
         <div class="status-card" data-component="transcriber">
           <span class="status-dot idle"></span>
           <strong>Transcriber</strong>
           <span class="status-msg">idle</span>
+          <span class="status-latency"></span>
         </div>
         <div class="status-card" data-component="summarizer">
           <span class="status-dot idle"></span>
           <strong>Summarizer</strong>
           <span class="status-msg">idle</span>
+          <span class="status-latency"></span>
         </div>
       </div>
     </section>
@@ -57,7 +60,7 @@
 
     <!-- Questions panel -->
     <section id="questions-panel" class="panel">
-      <h2>Pending Questions</h2>
+      <h2>Pending Questions <span id="questions-badge" class="q-badge hidden">0</span></h2>
       <div id="questions-list" class="questions">
         <p class="placeholder">No pending questions.</p>
       </div>
