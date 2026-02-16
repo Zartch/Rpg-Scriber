@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import time
 
+from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import SystemStatusEvent, TranscriptionEvent
 from rpg_scribe.core.models import CampaignContext, SummarizerConfig
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
 
 logger = logging.getLogger(__name__)
+
+# Regex for extracting [PREGUNTA: ...] markers from LLM responses
+QUESTION_PATTERN = re.compile(r"\[PREGUNTA:\s*(.+?)\]")
 
 # ---------------------------------------------------------------------------
 # System prompt template
@@ -53,7 +59,7 @@ TRANSCRIPCIÓN RECIENTE:
 
 RESUMEN ACTUAL DE LA SESIÓN:
 {current_session_summary}
-
+{user_answers_block}\
 Actualiza el resumen incorporando la nueva transcripción. \
 Devuelve ÚNICAMENTE el resumen actualizado, sin explicaciones adicionales."""
 
@@ -80,6 +86,25 @@ Responde con el siguiente formato exacto:
 (resumen actualizado de la campaña)
 """
 
+EXTRACTION_USER = """\
+A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
+localizaciones nuevas que hayan aparecido.
+
+RESUMEN DE LA SESIÓN:
+{session_summary}
+
+PNJS YA CONOCIDOS (NO los incluyas de nuevo):
+{known_npcs}
+
+Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
+texto adicional antes o después:
+
+{{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
+"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}]}}
+
+Si no hay PNJs o localizaciones nuevas, devuelve listas vacías.
+"""
+
 
 class ClaudeSummarizer(BaseSummarizer):
     """Summarizer that uses Anthropic's Claude API.
@@ -96,10 +121,12 @@ class ClaudeSummarizer(BaseSummarizer):
         campaign: CampaignContext,
         *,
         client: object | None = None,
+        database: Database | None = None,
     ) -> None:
         super().__init__(event_bus, config, campaign)
         # Allow injecting a client for testing; lazy-load otherwise.
         self._client = client
+        self._database = database
         self._update_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
@@ -168,6 +195,55 @@ class ClaudeSummarizer(BaseSummarizer):
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
+    # Question extraction & answer injection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_questions(text: str) -> tuple[str, list[str]]:
+        """Extract [PREGUNTA: ...] markers from text.
+
+        Returns the cleaned text and a list of extracted question strings.
+        """
+        questions = QUESTION_PATTERN.findall(text)
+        cleaned = QUESTION_PATTERN.sub("", text).strip()
+        # Collapse multiple blank lines left by removal
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned, questions
+
+    async def _save_questions(self, questions: list[str]) -> None:
+        """Persist extracted questions to the database."""
+        if not self._database or not questions:
+            return
+        for q in questions:
+            await self._database.save_question(self._session_id, q)
+        logger.info("Saved %d question(s) to database", len(questions))
+
+    async def _build_user_answers_block(self) -> str:
+        """Fetch answered-but-unprocessed questions and format them for the prompt.
+
+        Returns an empty string if there are no answers or no database.
+        """
+        if not self._database:
+            return ""
+        answered = await self._database.get_answered_unprocessed_questions(
+            self._session_id
+        )
+        if not answered:
+            return ""
+        lines: list[str] = []
+        for row in answered:
+            lines.append(f"- Pregunta: {row['question']}\n  Respuesta: {row['answer']}")
+        # Mark them as processed so they aren't injected again
+        await self._database.mark_questions_processed(
+            [row["id"] for row in answered]
+        )
+        return (
+            "\nRESPUESTAS DEL USUARIO:\n"
+            + "\n".join(lines)
+            + "\n\n"
+        )
+
+    # ------------------------------------------------------------------
     # API call with retry
     # ------------------------------------------------------------------
 
@@ -215,15 +291,24 @@ class ClaudeSummarizer(BaseSummarizer):
             entries = list(self._pending)
             self._pending.clear()
 
+            # Fetch answered questions to inject into the prompt
+            user_answers_block = await self._build_user_answers_block()
+
             system = self._build_system_prompt()
             user_msg = SESSION_UPDATE_USER.format(
                 recent_transcriptions=self._format_transcriptions(entries),
                 current_session_summary=self._session_summary or "(inicio de sesión)",
+                user_answers_block=user_answers_block if user_answers_block else "\n",
             )
 
             try:
                 result = await self._call_api(system, user_msg)
-                self._session_summary = result.strip()
+
+                # Extract questions and clean the summary
+                cleaned, questions = self._extract_questions(result.strip())
+                await self._save_questions(questions)
+
+                self._session_summary = cleaned
                 self._last_update_time = time.time()
                 await self._publish_summary("incremental")
                 logger.info(
@@ -297,5 +382,85 @@ class ClaudeSummarizer(BaseSummarizer):
             self._campaign_summary = campaign_part
 
         await self._publish_summary("final")
+
+        # Extract NPCs and locations from the final summary
+        await self._extract_npcs_and_locations()
+
         logger.info("Session finalized")
         return self._session_summary
+
+    # ------------------------------------------------------------------
+    # NPC / location extraction
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_extraction_response(text: str) -> dict:
+        """Parse the JSON extraction response from the LLM.
+
+        Returns a dict with 'npcs' and 'locations' lists, or empty lists
+        if parsing fails.
+        """
+        # Try to find JSON in the response (the LLM may add surrounding text)
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return {"npcs": [], "locations": []}
+        try:
+            data = json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            return {"npcs": [], "locations": []}
+
+        # Validate structure
+        npcs = data.get("npcs", [])
+        locations = data.get("locations", [])
+        if not isinstance(npcs, list):
+            npcs = []
+        if not isinstance(locations, list):
+            locations = []
+
+        return {"npcs": npcs, "locations": locations}
+
+    async def _extract_npcs_and_locations(self) -> None:
+        """Make a second LLM call to extract new NPCs and locations, then save them."""
+        if not self._database or not self._session_summary:
+            return
+
+        known_npcs_lines = [
+            f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
+        ] or ["(ninguno)"]
+
+        user_msg = EXTRACTION_USER.format(
+            session_summary=self._session_summary,
+            known_npcs="\n".join(known_npcs_lines),
+        )
+
+        try:
+            result = await self._call_api(
+                "Eres un asistente que extrae información estructurada de "
+                "resúmenes de partidas de rol. Responde solo con JSON válido.",
+                user_msg,
+            )
+            extracted = self._parse_extraction_response(result)
+
+            for npc in extracted["npcs"]:
+                name = npc.get("name", "").strip()
+                description = npc.get("description", "").strip()
+                if not name:
+                    continue
+                if await self._database.npc_exists(
+                    self.campaign.campaign_id, name
+                ):
+                    continue
+                await self._database.save_npc(
+                    campaign_id=self.campaign.campaign_id,
+                    name=name,
+                    description=description,
+                    first_seen_session=self._session_id,
+                )
+
+            logger.info(
+                "Extracted %d new NPC(s) and %d location(s)",
+                len(extracted["npcs"]),
+                len(extracted["locations"]),
+            )
+        except Exception as exc:
+            logger.error("NPC/location extraction failed: %s", exc)

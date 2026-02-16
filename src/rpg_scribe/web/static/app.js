@@ -11,13 +11,14 @@
   var campaignSummaryEl = document.getElementById("campaign-summary");
   var questionsList = document.getElementById("questions-list");
   var componentStatusEl = document.getElementById("component-status");
-  var questionsBadge = document.getElementById("questions-badge");
+  var sessionListEl = document.getElementById("session-list");
+  var backToLiveBtn = document.getElementById("back-to-live");
 
   // ── State ─────────────────────────────────────────────────────
 
-  var previousQuestionCount = 0;
-  // Track last status timestamp per component for latency display
-  var lastStatusTimestamp = {};
+  var viewingHistorical = false;  // true when viewing a past session
+  var activeSessionId = null;     // current live session id
+  var activeCampaignId = null;    // current campaign id
 
   // ── WebSocket ─────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@
     };
 
     ws.onmessage = function (evt) {
+      if (viewingHistorical) return; // ignore live updates when viewing history
       var msg;
       try { msg = JSON.parse(evt.data); } catch (_) { return; }
       handleMessage(msg);
@@ -73,6 +75,12 @@
     if (!ts) return "";
     var d = new Date(ts * 1000);
     return d.toLocaleTimeString();
+  }
+
+  function formatDate(ts) {
+    if (!ts) return "";
+    var d = new Date(ts);
+    return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
   function addTranscription(data) {
@@ -234,9 +242,139 @@
       .catch(function () { callback(false); });
   }
 
+  // ── Session history ───────────────────────────────────────────
+
+  function fetchSessionList() {
+    // First get the active status to know campaign and session ids
+    fetch("/api/status")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        activeSessionId = data.active_session_id;
+      })
+      .catch(function () {});
+
+    fetch("/api/campaigns")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.campaign && data.campaign.id) {
+          activeCampaignId = data.campaign.id;
+          return fetch("/api/campaigns/" + data.campaign.id + "/sessions");
+        }
+        return null;
+      })
+      .then(function (r) { return r ? r.json() : null; })
+      .then(function (data) {
+        if (data) renderSessionList(data.sessions || []);
+      })
+      .catch(function () {});
+  }
+
+  function renderSessionList(sessions) {
+    if (sessions.length === 0) {
+      sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
+      return;
+    }
+    sessionListEl.innerHTML = "";
+    sessions.forEach(function (s) {
+      var item = document.createElement("div");
+      var isActive = s.id === activeSessionId;
+      item.className = "session-item" + (isActive ? " active" : "") +
+        (s.status === "completed" ? " completed" : "");
+      item.dataset.sessionId = s.id;
+
+      var label = isActive ? "LIVE" : (s.status || "");
+      var dateStr = s.started_at ? formatDate(s.started_at) : "";
+      var preview = s.summary_preview || "";
+
+      item.innerHTML =
+        '<div class="session-header">' +
+        '<span class="session-id">' + escapeHtml(s.id.substring(0, 8)) + '</span>' +
+        '<span class="session-badge ' + (isActive ? 'live' : s.status) + '">' +
+        escapeHtml(label) + '</span>' +
+        '</div>' +
+        (dateStr ? '<div class="session-date">' + escapeHtml(dateStr) + '</div>' : '') +
+        (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : '');
+
+      if (!isActive) {
+        item.addEventListener("click", function () {
+          loadHistoricalSession(s.id);
+          highlightSession(s.id);
+        });
+      } else {
+        item.addEventListener("click", function () {
+          switchToLive();
+        });
+      }
+
+      sessionListEl.appendChild(item);
+    });
+  }
+
+  function highlightSession(sessionId) {
+    var items = sessionListEl.querySelectorAll(".session-item");
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove("selected");
+      if (items[i].dataset.sessionId === sessionId) {
+        items[i].classList.add("selected");
+      }
+    }
+  }
+
+  function loadHistoricalSession(sessionId) {
+    viewingHistorical = true;
+    backToLiveBtn.classList.remove("hidden");
+
+    // Fetch transcriptions and summary for the historical session
+    Promise.all([
+      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+    ])
+      .then(function (results) {
+        var transData = results[0];
+        var summData = results[1];
+
+        // Clear and render transcriptions
+        transcriptionFeed.innerHTML = "";
+        var transcriptions = transData.transcriptions || [];
+        if (transcriptions.length === 0) {
+          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions for this session.</p>';
+        } else {
+          transcriptions.forEach(function (t) { addTranscription(t); });
+        }
+
+        // Render summary
+        sessionSummaryEl.textContent = summData.session_summary || "(no summary)";
+        campaignSummaryEl.textContent = summData.campaign_summary || "(no campaign summary)";
+      })
+      .catch(function () {
+        transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
+      });
+  }
+
+  function switchToLive() {
+    viewingHistorical = false;
+    backToLiveBtn.classList.add("hidden");
+
+    // Remove selected highlighting
+    var items = sessionListEl.querySelectorAll(".session-item");
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove("selected");
+    }
+
+    // Restore live view — clear and let WebSocket repopulate
+    transcriptionFeed.innerHTML = "";
+    sessionSummaryEl.innerHTML = '<p class="placeholder">Waiting for summary updates&hellip;</p>';
+    campaignSummaryEl.innerHTML = '<p class="placeholder">No campaign summary yet.</p>';
+  }
+
+  backToLiveBtn.addEventListener("click", switchToLive);
+
   // ── Init ──────────────────────────────────────────────────────
 
   connectWS();
   pollQuestions();
   setInterval(pollQuestions, 5000);
+  fetchSessionList();
+  // Refresh session list periodically
+  setInterval(fetchSessionList, 30000);
 })();

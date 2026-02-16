@@ -12,59 +12,67 @@
     <span id="connection-badge" class="badge badge-idle">Disconnected</span>
   </header>
 
-  <main>
-    <!-- Status panel -->
-    <section id="status-panel" class="panel">
-      <h2>System Status</h2>
-      <div id="component-status" class="status-grid">
-        <div class="status-card" data-component="listener">
-          <span class="status-dot idle"></span>
-          <strong>Listener</strong>
-          <span class="status-msg">idle</span>
-          <span class="status-latency"></span>
-        </div>
-        <div class="status-card" data-component="transcriber">
-          <span class="status-dot idle"></span>
-          <strong>Transcriber</strong>
-          <span class="status-msg">idle</span>
-          <span class="status-latency"></span>
-        </div>
-        <div class="status-card" data-component="summarizer">
-          <span class="status-dot idle"></span>
-          <strong>Summarizer</strong>
-          <span class="status-msg">idle</span>
-          <span class="status-latency"></span>
-        </div>
+  <main class="main-layout">
+    <!-- Session sidebar -->
+    <aside id="session-sidebar" class="panel sidebar">
+      <h2>Sessions</h2>
+      <button id="back-to-live" class="btn-live hidden">Back to Live</button>
+      <div id="session-list" class="session-list">
+        <p class="placeholder">No sessions loaded.</p>
       </div>
-    </section>
+    </aside>
 
-    <div class="columns">
-      <!-- Live transcription -->
-      <section id="transcription-panel" class="panel">
-        <h2>Live Transcription</h2>
-        <div id="transcription-feed" class="feed"></div>
+    <div class="main-content">
+      <!-- Status panel -->
+      <section id="status-panel" class="panel">
+        <h2>System Status</h2>
+        <div id="component-status" class="status-grid">
+          <div class="status-card" data-component="listener">
+            <span class="status-dot idle"></span>
+            <strong>Listener</strong>
+            <span class="status-msg">idle</span>
+          </div>
+          <div class="status-card" data-component="transcriber">
+            <span class="status-dot idle"></span>
+            <strong>Transcriber</strong>
+            <span class="status-msg">idle</span>
+          </div>
+          <div class="status-card" data-component="summarizer">
+            <span class="status-dot idle"></span>
+            <strong>Summarizer</strong>
+            <span class="status-msg">idle</span>
+          </div>
+        </div>
       </section>
 
-      <!-- Live summary -->
-      <section id="summary-panel" class="panel">
-        <h2>Session Summary</h2>
-        <div id="session-summary" class="summary-content">
-          <p class="placeholder">Waiting for summary updates&hellip;</p>
-        </div>
-        <h3>Campaign Summary</h3>
-        <div id="campaign-summary" class="summary-content">
-          <p class="placeholder">No campaign summary yet.</p>
+      <div class="columns">
+        <!-- Live transcription -->
+        <section id="transcription-panel" class="panel">
+          <h2>Live Transcription</h2>
+          <div id="transcription-feed" class="feed"></div>
+        </section>
+
+        <!-- Live summary -->
+        <section id="summary-panel" class="panel">
+          <h2>Session Summary</h2>
+          <div id="session-summary" class="summary-content">
+            <p class="placeholder">Waiting for summary updates&hellip;</p>
+          </div>
+          <h3>Campaign Summary</h3>
+          <div id="campaign-summary" class="summary-content">
+            <p class="placeholder">No campaign summary yet.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Questions panel -->
+      <section id="questions-panel" class="panel">
+        <h2>Pending Questions</h2>
+        <div id="questions-list" class="questions">
+          <p class="placeholder">No pending questions.</p>
         </div>
       </section>
     </div>
-
-    <!-- Questions panel -->
-    <section id="questions-panel" class="panel">
-      <h2>Pending Questions <span id="questions-badge" class="q-badge hidden">0</span></h2>
-      <div id="questions-list" class="questions">
-        <p class="placeholder">No pending questions.</p>
-      </div>
-    </section>
   </main>
 
   <script src="/app.js"></script>

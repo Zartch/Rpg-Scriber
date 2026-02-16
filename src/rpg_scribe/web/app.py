@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(event_bus: EventBus) -> FastAPI:
+def create_app(event_bus: EventBus, database: object | None = None) -> FastAPI:
     """Create and configure the FastAPI application.
 
     The app subscribes to the event bus so that incoming events are
@@ -76,6 +76,7 @@ def create_app(event_bus: EventBus) -> FastAPI:
     # Attach shared objects to the router so route handlers can access them.
     router.state = state  # type: ignore[attr-defined]
     router.ws_manager = manager  # type: ignore[attr-defined]
+    router.database = database  # type: ignore[attr-defined]
 
     app.include_router(router)
 

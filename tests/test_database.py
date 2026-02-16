@@ -121,6 +121,49 @@ class TestDatabaseTranscriptions:
         assert result == []
 
 
+class TestDatabaseNPCs:
+    async def test_save_and_get_npcs(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Tabernero", "Dueño de la taberna", "s1")
+        npcs = await db.get_npcs("c1")
+        assert len(npcs) == 1
+        assert npcs[0]["name"] == "Tabernero"
+        assert npcs[0]["description"] == "Dueño de la taberna"
+        assert npcs[0]["first_seen_session"] == "s1"
+
+    async def test_get_npcs_empty(self, db: Database) -> None:
+        npcs = await db.get_npcs("nonexistent")
+        assert npcs == []
+
+    async def test_npc_exists_true(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Tabernero", "Dueño", "s1")
+        assert await db.npc_exists("c1", "Tabernero") is True
+
+    async def test_npc_exists_false(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        assert await db.npc_exists("c1", "Desconocido") is False
+
+    async def test_multiple_npcs_ordered_by_name(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Zara", "Maga", "s1")
+        await db.save_npc("c1", "Aldric", "Guerrero", "s1")
+        await db.save_npc("c1", "Marco", "Mercader", "s2")
+        npcs = await db.get_npcs("c1")
+        assert len(npcs) == 3
+        names = [n["name"] for n in npcs]
+        assert names == ["Aldric", "Marco", "Zara"]
+
+    async def test_npcs_isolated_by_campaign(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Campaign 1")
+        await db.upsert_campaign(campaign_id="c2", name="Campaign 2")
+        await db.save_npc("c1", "NPC1", "Desc1", "s1")
+        await db.save_npc("c2", "NPC2", "Desc2", "s1")
+        assert len(await db.get_npcs("c1")) == 1
+        assert len(await db.get_npcs("c2")) == 1
+        assert await db.npc_exists("c1", "NPC2") is False
+
+
 class TestDatabaseQuestions:
     async def test_save_and_get_questions(self, db: Database) -> None:
         await db.upsert_campaign(campaign_id="c1", name="Test")
