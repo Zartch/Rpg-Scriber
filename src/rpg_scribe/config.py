@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
@@ -21,6 +22,11 @@ from rpg_scribe.core.models import (
     SummarizerConfig,
     TranscriberConfig,
 )
+
+logger = logging.getLogger(__name__)
+
+# Standard location for the default config file
+_DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "default.toml"
 
 
 @dataclass
@@ -49,6 +55,49 @@ class AppConfig:
 
     # Discord summary channel
     discord_summary_channel_id: str = ""
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    """Load a TOML file and return the parsed dict."""
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _apply_defaults_to_config(config: AppConfig, defaults: dict[str, Any]) -> None:
+    """Apply values from a default.toml dict onto an AppConfig.
+
+    Only sets values that are present in the TOML; dataclass defaults
+    remain for any keys not specified.
+    """
+    # Listener
+    listener_data = defaults.get("listener", {})
+    for key, value in listener_data.items():
+        if hasattr(config.listener, key):
+            setattr(config.listener, key, value)
+
+    # Transcriber
+    transcriber_data = defaults.get("transcriber", {})
+    for key, value in transcriber_data.items():
+        if hasattr(config.transcriber, key):
+            setattr(config.transcriber, key, value)
+
+    # Summarizer
+    summarizer_data = defaults.get("summarizer", {})
+    for key, value in summarizer_data.items():
+        if hasattr(config.summarizer, key):
+            setattr(config.summarizer, key, value)
+
+    # Web
+    web_data = defaults.get("web", {})
+    if "host" in web_data:
+        config.web_host = web_data["host"]
+    if "port" in web_data:
+        config.web_port = web_data["port"]
+
+    # Database
+    db_data = defaults.get("database", {})
+    if "path" in db_data:
+        config.database_path = db_data["path"]
 
 
 def load_campaign_toml(path: str | Path) -> CampaignContext:
@@ -105,18 +154,42 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
     )
 
 
-def load_app_config(campaign_path: str | Path | None = None) -> AppConfig:
-    """Build an AppConfig from environment variables and an optional campaign file."""
-    config = AppConfig(
-        discord_bot_token=os.environ.get("DISCORD_BOT_TOKEN", ""),
-        openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        web_host=os.environ.get("RPG_SCRIBE_HOST", "127.0.0.1"),
-        web_port=int(os.environ.get("RPG_SCRIBE_PORT", "8000")),
-        database_path=os.environ.get("RPG_SCRIBE_DB", "rpg_scribe.db"),
-        discord_summary_channel_id=os.environ.get("DISCORD_SUMMARY_CHANNEL_ID", ""),
+def load_app_config(
+    campaign_path: str | Path | None = None,
+    defaults_path: str | Path | None = None,
+) -> AppConfig:
+    """Build an AppConfig from default.toml, env vars, and an optional campaign file.
+
+    Loading order (later wins):
+      1. Dataclass defaults (hardcoded in models.py)
+      2. config/default.toml (if it exists)
+      3. Environment variables
+      4. Campaign TOML (language propagation)
+    """
+    config = AppConfig()
+
+    # 1. Load default.toml if available
+    default_path = Path(defaults_path) if defaults_path else _DEFAULT_CONFIG_PATH
+    if default_path.is_file():
+        try:
+            defaults = _load_toml(default_path)
+            _apply_defaults_to_config(config, defaults)
+            logger.debug("Loaded default config from %s", default_path)
+        except Exception as exc:
+            logger.warning("Failed to load default config %s: %s", default_path, exc)
+
+    # 2. Environment variables override defaults
+    config.discord_bot_token = os.environ.get("DISCORD_BOT_TOKEN", config.discord_bot_token)
+    config.openai_api_key = os.environ.get("OPENAI_API_KEY", config.openai_api_key)
+    config.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", config.anthropic_api_key)
+    config.web_host = os.environ.get("RPG_SCRIBE_HOST", config.web_host)
+    config.web_port = int(os.environ.get("RPG_SCRIBE_PORT", str(config.web_port)))
+    config.database_path = os.environ.get("RPG_SCRIBE_DB", config.database_path)
+    config.discord_summary_channel_id = os.environ.get(
+        "DISCORD_SUMMARY_CHANNEL_ID", config.discord_summary_channel_id
     )
 
+    # 3. Campaign file
     if campaign_path is not None:
         config.campaign = load_campaign_toml(campaign_path)
         # Propagate language to transcriber
