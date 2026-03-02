@@ -22,6 +22,73 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+
+# ── Monkey-patch: Disable DAVE E2EE for voice_recv compatibility ────
+# discord.py 2.7+ supports DAVE (Discord Audio-Visual Experience) E2EE
+# which encrypts opus payloads with an additional layer on top of the
+# transport encryption (xsalsa20/aead).  discord-ext-voice-recv does NOT
+# support DAVE decryption, so if DAVE is negotiated the opus decoder
+# receives encrypted data and produces noise.
+#
+# Fix: force max_dave_protocol_version to 0 so Discord does not enable
+# DAVE for the bot's voice connection.
+def _patch_disable_dave() -> None:
+    try:
+        from discord.voice_state import VoiceConnectionState
+    except ImportError:
+        return
+
+    @property  # type: ignore[misc]
+    def _no_dave(self: VoiceConnectionState) -> int:  # type: ignore[type-arg]
+        return 0
+
+    VoiceConnectionState.max_dave_protocol_version = _no_dave  # type: ignore[assignment]
+    logger.info(
+        "Parcheado VoiceConnectionState.max_dave_protocol_version → 0 "
+        "(DAVE E2EE desactivado, incompatible con voice_recv)"
+    )
+
+
+_patch_disable_dave()
+
+
+# ── Monkey-patch: voice_recv PacketRouter resilience ───────────────
+# discord-ext-voice-recv (<=0.5.2a) tiene un bug donde un solo
+# OpusError('corrupted stream') mata el hilo PacketRouter y detiene
+# toda la recepción de audio.  Parcheamos _do_run() para capturar
+# OpusError por paquete, logearlo como warning, y seguir procesando.
+# Ref: https://github.com/imayhaveborkedit/discord-ext-voice-recv/issues/49
+def _patch_packet_router() -> None:
+    try:
+        from discord.ext.voice_recv.router import PacketRouter
+        from discord.opus import OpusError
+    except ImportError:
+        return  # voice_recv no instalado, nada que parchear
+
+    _log = logging.getLogger("discord.ext.voice_recv.router")
+
+    def _resilient_do_run(self: PacketRouter) -> None:  # type: ignore[type-arg]
+        while not self._end_thread.is_set():
+            self.waiter.wait()
+            with self._lock:
+                for decoder in self.waiter.items:
+                    try:
+                        data = decoder.pop_data()
+                        if data is not None:
+                            self.sink.write(data.source, data)
+                    except OpusError as exc:
+                        _log.debug(
+                            "OpusError en decoder (paquete ignorado): %s", exc
+                        )
+                    except Exception:
+                        _log.exception("Error inesperado procesando paquete")
+
+    PacketRouter._do_run = _resilient_do_run  # type: ignore[assignment]
+    logger.info("Parcheado PacketRouter._do_run para tolerancia a OpusError")
+
+
+_patch_packet_router()
+
 # Discord sends 48 kHz 16-bit stereo; we convert to mono.
 DISCORD_SAMPLE_RATE = 48000
 DISCORD_SAMPLE_WIDTH = 2  # 16-bit
@@ -159,7 +226,50 @@ class DiscordListener(BaseListener):
             try:
                 from discord.ext import voice_recv  # type: ignore[import-untyped]
 
-                self._voice_client = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)  # type: ignore[arg-type]
+                # Verificar permisos del bot antes de intentar conectar
+                bot_member = voice_channel.guild.me
+                perms = voice_channel.permissions_for(bot_member)
+                logger.info(
+                    "Permisos del bot en '%s': connect=%s, speak=%s, "
+                    "use_voice_activation=%s, view_channel=%s",
+                    voice_channel.name,
+                    perms.connect,
+                    perms.speak,
+                    perms.use_voice_activation,
+                    perms.view_channel,
+                )
+                if not perms.connect:
+                    raise PermissionError(
+                        f"El bot no tiene permiso 'Connect' en el canal "
+                        f"'{voice_channel.name}' del servidor "
+                        f"'{voice_channel.guild.name}'. "
+                        f"Revisa los permisos del rol del bot en ese servidor."
+                    )
+
+                # Log channel info and members before connecting
+                members = [m for m in voice_channel.members]
+                logger.info(
+                    "Conectando al canal de voz: '%s' (id=%s) | Sesión: %s",
+                    voice_channel.name,
+                    voice_channel.id,
+                    session_id,
+                )
+                if members:
+                    for m in members:
+                        logger.info(
+                            "  👤 Miembro en canal: %s (discord_id=%s)",
+                            m.display_name,
+                            m.id,
+                        )
+                else:
+                    logger.info("  (Canal vacío, el bot entrará solo)")
+
+                logger.info("Conectando con VoiceRecvClient al canal '%s'...", voice_channel.name)
+                self._voice_client = await voice_channel.connect(
+                    cls=voice_recv.VoiceRecvClient,  # type: ignore[arg-type]
+                    timeout=30.0,
+                )
+                logger.info("Conectado correctamente al canal '%s' con VoiceRecvClient", voice_channel.name)
             except Exception as exc:
                 await self.event_bus.publish(
                     SystemStatusEvent(
@@ -183,7 +293,7 @@ class DiscordListener(BaseListener):
                 message=f"Connected to voice. Session: {session_id}",
             )
         )
-        logger.info("DiscordListener connected for session %s", session_id)
+        logger.info("DiscordListener listo y escuchando — sesión %s", session_id)
 
     def _start_receiving(self) -> None:
         """Register the audio callback on the voice client."""
@@ -201,8 +311,13 @@ class DiscordListener(BaseListener):
 
                 if uid not in self._user_buffers:
                     self._user_buffers[uid] = UserAudioBuffer(self.config)
+                    logger.debug("Nuevo buffer creado para '%s' (id=%s)", name, uid)
 
                 self._user_buffers[uid].add_audio(mono_pcm)
+                logger.debug(
+                    "Audio recibido de '%s' (id=%s) | %d bytes PCM mono",
+                    name, uid, len(mono_pcm),
+                )
 
             self._voice_client.listen(voice_recv.BasicSink(audio_callback))
         except ImportError:
@@ -229,10 +344,18 @@ class DiscordListener(BaseListener):
         if buf is None or buf.duration_s < self.config.min_chunk_duration_s:
             return
         audio, start_ts, duration_ms = buf.flush()
+        speaker_name = self._user_names.get(user_id, user_id)
+        logger.info(
+            "🎙️  Chunk de audio listo → '%s' (id=%s) | %.1fs | %d bytes → enviando a transcriber",
+            speaker_name,
+            user_id,
+            duration_ms / 1000,
+            len(audio),
+        )
         event = AudioChunkEvent(
             session_id=self._session_id or "",
             speaker_id=user_id,
-            speaker_name=self._user_names.get(user_id, user_id),
+            speaker_name=speaker_name,
             audio_data=audio,
             timestamp=start_ts,
             duration_ms=duration_ms,
@@ -271,4 +394,4 @@ class DiscordListener(BaseListener):
                 message="Disconnected from voice.",
             )
         )
-        logger.info("DiscordListener disconnected")
+        logger.info("DiscordListener desconectado — sesión %s finalizada", self._session_id)

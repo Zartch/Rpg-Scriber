@@ -39,7 +39,6 @@ class OpenAITranscriber(BaseTranscriber):
 
     Features:
     - Async processing queue with bounded concurrency
-    - Contextual prompt with character names for better accuracy
     - Retry with exponential backoff
     - Result cache by audio content hash
     """
@@ -63,13 +62,6 @@ class OpenAITranscriber(BaseTranscriber):
                 )
         return self._client
 
-    def _build_prompt(self) -> str:
-        """Build the contextual prompt hint for the transcription API."""
-        parts = []
-        if self.config.prompt_hint:
-            parts.append(self.config.prompt_hint)
-        return ". ".join(parts) if parts else ""
-
     @staticmethod
     def _audio_hash(audio_data: bytes) -> str:
         """Compute a short hash of audio data for caching."""
@@ -79,6 +71,9 @@ class OpenAITranscriber(BaseTranscriber):
         """Transcribe an audio chunk via OpenAI API with retry."""
         cache_key = self._audio_hash(event.audio_data)
         if cache_key in self._cache:
+            logger.debug(
+                "Cache hit para chunk de '%s' (hash=%s)", event.speaker_name, cache_key[:8]
+            )
             return TranscriptionEvent(
                 session_id=event.session_id,
                 speaker_id=event.speaker_id,
@@ -90,9 +85,17 @@ class OpenAITranscriber(BaseTranscriber):
             )
 
         wav_data = _pcm_to_wav_bytes(event.audio_data)
-        prompt = self._build_prompt()
 
-        text = await self._call_api_with_retry(wav_data, prompt)
+        logger.info(
+            "🌐 Enviando a OpenAI (%s) | hablante='%s' | tamaño=%.1fKB | idioma=%s",
+            self.config.model,
+            event.speaker_name,
+            len(wav_data) / 1024,
+            self.config.language,
+        )
+        text = await self._call_api_with_retry(wav_data)
+        logger.debug("Respuesta OpenAI en bruto para '%s': \"%s\"", event.speaker_name, text[:120])
+
         self._cache[cache_key] = text
 
         return TranscriptionEvent(
@@ -105,14 +108,14 @@ class OpenAITranscriber(BaseTranscriber):
             is_partial=False,
         )
 
-    async def _call_api_with_retry(self, wav_data: bytes, prompt: str) -> str:
+    async def _call_api_with_retry(self, wav_data: bytes) -> str:
         """Call the OpenAI transcription API with retry and backoff."""
         last_exc: Exception | None = None
 
         for attempt in range(self.config.max_retries + 1):
             try:
                 async with self._semaphore:
-                    return await self._call_api(wav_data, prompt)
+                    return await self._call_api(wav_data)
             except Exception as exc:
                 last_exc = exc
                 if attempt < self.config.max_retries:
@@ -130,22 +133,18 @@ class OpenAITranscriber(BaseTranscriber):
             f"OpenAI API failed after {self.config.max_retries + 1} attempts: {last_exc}"
         )
 
-    async def _call_api(self, wav_data: bytes, prompt: str) -> str:
+    async def _call_api(self, wav_data: bytes) -> str:
         """Make a single call to the OpenAI transcription API."""
         client = self._get_client()
 
         audio_file = io.BytesIO(wav_data)
         audio_file.name = "audio.wav"
 
-        kwargs: dict = {
-            "model": self.config.model,
-            "file": audio_file,
-            "language": self.config.language,
-        }
-        if prompt:
-            kwargs["prompt"] = prompt
-
-        response = await client.audio.transcriptions.create(**kwargs)  # type: ignore[union-attr]
+        response = await client.audio.transcriptions.create(  # type: ignore[union-attr]
+            model=self.config.model,
+            file=audio_file,
+            language=self.config.language,
+        )
         return response.text
 
     async def start(self) -> None:

@@ -205,6 +205,13 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
+    async def list_all_sessions(self) -> list[dict[str, Any]]:
+        """List all sessions across all campaigns, ordered by date descending."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM sessions ORDER BY started_at DESC",
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
     # ── Transcriptions ─────────────────────────────────────────────
 
     async def save_transcription(

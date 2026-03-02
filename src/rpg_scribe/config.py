@@ -5,6 +5,10 @@ from __future__ import annotations
 import logging
 import os
 import sys
+
+from dotenv import load_dotenv
+
+load_dotenv()
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -195,11 +199,5 @@ def load_app_config(
         # Propagate language to transcriber
         if config.campaign:
             config.transcriber.language = config.campaign.language
-            # Build prompt hint from player/character names
-            names = [p.character_name for p in config.campaign.players]
-            if names:
-                config.transcriber.prompt_hint = (
-                    "Nombres esperados: " + ", ".join(names)
-                )
 
     return config

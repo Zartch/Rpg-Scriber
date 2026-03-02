@@ -2,7 +2,12 @@ __pycache__/
 *.pyc
 *.egg-info/
 *.egg
+.env
 dist/
 build/
 .pytest_cache/
 .ruff_cache/
+.idea/
+.venv/
+.claude
+logs/

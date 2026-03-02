@@ -54,13 +54,31 @@ class BaseTranscriber(ABC):
 
     async def _handle_audio(self, event: AudioChunkEvent) -> None:
         """Handle an AudioChunkEvent: transcribe and publish result."""
+        logger.info(
+            "📨 Chunk recibido de '%s' (id=%s) | %.1fs | sesión=%s → transcribiendo...",
+            event.speaker_name,
+            event.speaker_id,
+            event.duration_ms / 1000,
+            event.session_id,
+        )
         try:
             result = await self.transcribe(event)
             if result.text.strip():
+                preview = result.text[:100] + ("…" if len(result.text) > 100 else "")
+                logger.info(
+                    "✅ Transcripción de '%s': \"%s\" → publicando al EventBus",
+                    result.speaker_name,
+                    preview,
+                )
                 await self.event_bus.publish(result)
+            else:
+                logger.debug(
+                    "Chunk de '%s' descartado (sin texto tras transcribir)",
+                    event.speaker_name,
+                )
         except Exception as exc:
             logger.error(
-                "Transcription failed for chunk from %s: %s",
+                "❌ Error transcribiendo chunk de '%s': %s",
                 event.speaker_name,
                 exc,
             )

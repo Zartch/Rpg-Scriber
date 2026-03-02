@@ -88,6 +88,22 @@ class ScribeCog(commands.Cog):
         self.session_id = uuid.uuid4().hex[:12]
         self.listener = DiscordListener(self.event_bus, self.config)
 
+        # Log del inicio de sesión con contexto completo
+        members_in_channel = [m for m in voice_channel.members if not m.bot]
+        logger.info(
+            "▶️  /scribe start | usuario='%s' (id=%s) | canal='%s' (id=%s) | sesión=%s",
+            member.display_name,
+            member.id,
+            voice_channel.name,
+            voice_channel.id,
+            self.session_id,
+        )
+        logger.info(
+            "   Participantes en el canal (%d): %s",
+            len(members_in_channel),
+            ", ".join(f"{m.display_name}(id={m.id})" for m in members_in_channel) or "—",
+        )
+
         await interaction.response.defer()
         try:
             await self.listener.connect(
@@ -98,9 +114,15 @@ class ScribeCog(commands.Cog):
                 f"Recording started in **{voice_channel.name}**.\n"
                 f"Session: `{self.session_id}`"
             )
+            logger.info("Sesión %s grabando en '%s'", self.session_id, voice_channel.name)
         except Exception as exc:
             self.listener = None
             self.session_id = None
+            logger.error(
+                "Error al iniciar grabación en '%s': [%s] %s",
+                voice_channel.name, type(exc).__name__, exc,
+                exc_info=True,
+            )
             await interaction.followup.send(
                 f"Failed to start recording: {exc}",
                 ephemeral=True,
@@ -115,10 +137,13 @@ class ScribeCog(commands.Cog):
             return
 
         await interaction.response.defer()
-        await self.listener.disconnect()
         sid = self.session_id
+        logger.info("⏹️  /scribe stop | sesión=%s | solicitado por '%s' (id=%s)",
+                    sid, interaction.user.display_name, interaction.user.id)
+        await self.listener.disconnect()
         self.listener = None
         self.session_id = None
+        logger.info("Sesión %s detenida correctamente", sid)
         await interaction.followup.send(f"Recording stopped. Session `{sid}` ended.")
 
     @scribe_group.command(

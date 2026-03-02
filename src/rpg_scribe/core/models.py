@@ -58,6 +58,20 @@ class CampaignContext:
 
     custom_instructions: str = ""
 
+    # True when running without a campaign TOML (generic summarization)
+    is_generic: bool = False
+
+    @classmethod
+    def create_generic(cls, language: str = "es") -> CampaignContext:
+        """Create a minimal context for campaign-free summarization."""
+        return cls(
+            campaign_id="__generic__",
+            name="Sesión sin campaña",
+            game_system="",
+            language=language,
+            is_generic=True,
+        )
+
 
 @dataclass
 class TranscriberConfig:
@@ -75,9 +89,6 @@ class TranscriberConfig:
     # Retry settings
     max_retries: int = 3
     retry_base_delay_s: float = 1.0  # Exponential backoff base
-
-    # Contextual prompt hints (character names, etc.)
-    prompt_hint: str = ""  # e.g. "Nombres esperados: Rodrigo, Aelar, DM"
 
     # Local (FasterWhisper) settings
     local_model_size: str = "medium"  # tiny, base, small, medium, large-v3

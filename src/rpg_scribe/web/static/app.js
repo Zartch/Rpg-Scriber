@@ -14,11 +14,28 @@
   var sessionListEl = document.getElementById("session-list");
   var backToLiveBtn = document.getElementById("back-to-live");
 
+  // Campaign bar elements
+  var campaignBar = document.getElementById("campaign-bar");
+  var campaignDisplay = document.getElementById("campaign-display");
+  var campaignNameEl = document.getElementById("campaign-name");
+  var campaignSystemEl = document.getElementById("campaign-system");
+  var campaignEditBtn = document.getElementById("campaign-edit-btn");
+  var campaignEditForm = document.getElementById("campaign-edit-form");
+  var campaignEditCancel = document.getElementById("campaign-edit-cancel");
+  var editNameInput = document.getElementById("edit-campaign-name");
+  var editSystemInput = document.getElementById("edit-campaign-system");
+  var editDescInput = document.getElementById("edit-campaign-desc");
+  var editInstructionsInput = document.getElementById("edit-campaign-instructions");
+
   // ── State ─────────────────────────────────────────────────────
 
   var viewingHistorical = false;  // true when viewing a past session
   var activeSessionId = null;     // current live session id
   var activeCampaignId = null;    // current campaign id
+  var currentCampaign = null;     // full campaign data object
+  var lastStatusTimestamp = {};   // for latency tracking
+  var previousQuestionCount = 0;
+  var questionsBadge = null;      // may not exist in DOM
 
   // ── WebSocket ─────────────────────────────────────────────────
 
@@ -79,8 +96,16 @@
 
   function formatDate(ts) {
     if (!ts) return "";
-    var d = new Date(ts);
+    var d = new Date(ts * 1000);
     return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatDuration(minutes) {
+    if (!minutes && minutes !== 0) return "";
+    if (minutes < 60) return Math.round(minutes) + " min";
+    var h = Math.floor(minutes / 60);
+    var m = Math.round(minutes % 60);
+    return h + "h " + (m > 0 ? m + "m" : "");
   }
 
   function addTranscription(data) {
@@ -154,6 +179,105 @@
     return div.innerHTML;
   }
 
+  // ── Campaign info ───────────────────────────────────────────────
+
+  function fetchCampaignInfo() {
+    fetch("/api/campaigns")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.campaign) {
+          currentCampaign = data.campaign;
+          activeCampaignId = data.campaign.id;
+          renderCampaignBar(data.campaign);
+        } else {
+          campaignBar.classList.add("hidden");
+          currentCampaign = null;
+          activeCampaignId = null;
+        }
+      })
+      .catch(function () {});
+  }
+
+  function renderCampaignBar(campaign) {
+    campaignBar.classList.remove("hidden");
+    campaignNameEl.textContent = campaign.name || "Unnamed Campaign";
+
+    var systemText = "";
+    if (campaign.game_system) systemText += campaign.game_system;
+    if (campaign.language) {
+      systemText += (systemText ? " · " : "") + campaign.language.toUpperCase();
+    }
+    campaignSystemEl.textContent = systemText ? "(" + systemText + ")" : "";
+
+    // Hide edit for generic campaigns
+    if (campaign.is_generic) {
+      campaignEditBtn.classList.add("hidden");
+      campaignNameEl.textContent = campaign.name + " (generic)";
+    } else {
+      campaignEditBtn.classList.remove("hidden");
+    }
+  }
+
+  function openCampaignEdit() {
+    if (!currentCampaign) return;
+    editNameInput.value = currentCampaign.name || "";
+    editSystemInput.value = currentCampaign.game_system || "";
+    editDescInput.value = currentCampaign.description || "";
+    editInstructionsInput.value = currentCampaign.custom_instructions || "";
+
+    campaignDisplay.classList.add("hidden");
+    campaignEditForm.classList.remove("hidden");
+    editNameInput.focus();
+  }
+
+  function closeCampaignEdit() {
+    campaignEditForm.classList.add("hidden");
+    campaignDisplay.classList.remove("hidden");
+  }
+
+  function saveCampaignEdit(e) {
+    e.preventDefault();
+    if (!currentCampaign || !activeCampaignId) return;
+
+    var body = {
+      name: editNameInput.value.trim(),
+      game_system: editSystemInput.value.trim(),
+      description: editDescInput.value.trim(),
+      custom_instructions: editInstructionsInput.value.trim(),
+    };
+
+    var saveBtn = campaignEditForm.querySelector(".btn-save");
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+
+    fetch("/api/campaigns/" + activeCampaignId, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok && data.campaign) {
+          currentCampaign = data.campaign;
+          renderCampaignBar(data.campaign);
+          closeCampaignEdit();
+        } else {
+          alert("Error: " + (data.error || "Unknown error"));
+        }
+      })
+      .catch(function () {
+        alert("Failed to save campaign changes.");
+      })
+      .finally(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      });
+  }
+
+  campaignEditBtn.addEventListener("click", openCampaignEdit);
+  campaignEditCancel.addEventListener("click", closeCampaignEdit);
+  campaignEditForm.addEventListener("submit", saveCampaignEdit);
+
   // ── Questions polling ─────────────────────────────────────────
 
   function pollQuestions() {
@@ -162,12 +286,15 @@
       .then(function (data) {
         var questions = data.questions || [];
         renderQuestions(questions);
-        updateQuestionsBadge(questions.length);
+        if (questionsBadge) {
+          updateQuestionsBadge(questions.length);
+        }
       })
       .catch(function () {});
   }
 
   function updateQuestionsBadge(count) {
+    if (!questionsBadge) return;
     if (count > 0) {
       questionsBadge.textContent = count;
       questionsBadge.classList.remove("hidden");
@@ -245,7 +372,7 @@
   // ── Session history ───────────────────────────────────────────
 
   function fetchSessionList() {
-    // First get the active status to know campaign and session ids
+    // First get the active status to know session id
     fetch("/api/status")
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -253,18 +380,18 @@
       })
       .catch(function () {});
 
-    fetch("/api/campaigns")
+    // Then fetch sessions — use campaign-specific or all
+    var sessionsUrl;
+    if (activeCampaignId) {
+      sessionsUrl = "/api/campaigns/" + activeCampaignId + "/sessions";
+    } else {
+      sessionsUrl = "/api/sessions";
+    }
+
+    fetch(sessionsUrl)
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.campaign && data.campaign.id) {
-          activeCampaignId = data.campaign.id;
-          return fetch("/api/campaigns/" + data.campaign.id + "/sessions");
-        }
-        return null;
-      })
-      .then(function (r) { return r ? r.json() : null; })
-      .then(function (data) {
-        if (data) renderSessionList(data.sessions || []);
+        renderSessionList(data.sessions || []);
       })
       .catch(function () {});
   }
@@ -285,14 +412,34 @@
       var label = isActive ? "LIVE" : (s.status || "");
       var dateStr = s.started_at ? formatDate(s.started_at) : "";
       var preview = s.summary_preview || "";
+      var duration = s.duration_minutes ? formatDuration(s.duration_minutes) : "";
+
+      var metaLine = "";
+      if (dateStr || duration) {
+        metaLine += '<div class="session-date">';
+        metaLine += escapeHtml(dateStr);
+        if (duration) {
+          metaLine += ' <span class="session-duration">(' + escapeHtml(duration) + ')</span>';
+        }
+        metaLine += '</div>';
+      }
+
+      // Icons for summary / transcription availability
+      var indicators = '';
+      if (s.has_summary) {
+        indicators += '<span class="session-indicator" title="Has summary">S</span>';
+      }
 
       item.innerHTML =
         '<div class="session-header">' +
         '<span class="session-id">' + escapeHtml(s.id.substring(0, 8)) + '</span>' +
+        '<div class="session-header-right">' +
+        indicators +
         '<span class="session-badge ' + (isActive ? 'live' : s.status) + '">' +
         escapeHtml(label) + '</span>' +
         '</div>' +
-        (dateStr ? '<div class="session-date">' + escapeHtml(dateStr) + '</div>' : '') +
+        '</div>' +
+        metaLine +
         (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : '');
 
       if (!isActive) {
@@ -372,9 +519,14 @@
   // ── Init ──────────────────────────────────────────────────────
 
   connectWS();
+  fetchCampaignInfo();
   pollQuestions();
   setInterval(pollQuestions, 5000);
-  fetchSessionList();
-  // Refresh session list periodically
-  setInterval(fetchSessionList, 30000);
+
+  // Delay session list fetch slightly so campaign info is available
+  setTimeout(function () {
+    fetchSessionList();
+    // Refresh session list periodically
+    setInterval(fetchSessionList, 30000);
+  }, 500);
 })();

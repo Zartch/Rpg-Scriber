@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_app(event_bus: EventBus, database: object | None = None) -> FastAPI:
+def create_app(
+    event_bus: EventBus,
+    database: object | None = None,
+    config: object | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     The app subscribes to the event bus so that incoming events are
@@ -77,6 +81,19 @@ def create_app(event_bus: EventBus, database: object | None = None) -> FastAPI:
     router.state = state  # type: ignore[attr-defined]
     router.ws_manager = manager  # type: ignore[attr-defined]
     router.database = database  # type: ignore[attr-defined]
+    router.config = config  # type: ignore[attr-defined]
+
+    # Populate campaign info in WebState from config
+    if config and hasattr(config, "campaign") and config.campaign:
+        state.active_campaign = {
+            "id": config.campaign.campaign_id,
+            "name": config.campaign.name,
+            "game_system": config.campaign.game_system,
+            "language": config.campaign.language,
+            "description": config.campaign.description,
+            "custom_instructions": config.campaign.custom_instructions,
+            "is_generic": getattr(config.campaign, "is_generic", False),
+        }
 
     app.include_router(router)
 

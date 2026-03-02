@@ -23,6 +23,17 @@ QUESTION_PATTERN = re.compile(r"\[PREGUNTA:\s*(.+?)\]")
 # System prompt template
 # ---------------------------------------------------------------------------
 
+GENERIC_SYSTEM_PROMPT = """\
+Eres un cronista que resume conversaciones de voz en tiempo real.
+
+INSTRUCCIONES:
+1. Escribe un resumen claro y estructurado de lo que dicen los participantes.
+2. Usa los nombres de los hablantes tal como aparecen.
+3. Distingue entre temas diferentes si la conversación cambia de asunto.
+4. Mantén el resumen coherente y fluido.
+5. Si algo no está claro, márcalo con [PREGUNTA: ...].
+"""
+
 SESSION_SYSTEM_PROMPT = """\
 Eres un cronista experto de partidas de rol. Tu trabajo es escribir \
 un resumen narrativo de lo que ocurre en la sesión.
@@ -153,6 +164,9 @@ class ClaudeSummarizer(BaseSummarizer):
     def _build_system_prompt(self) -> str:
         """Build the system prompt with campaign context."""
         c = self.campaign
+
+        if c.is_generic:
+            return GENERIC_SYSTEM_PROMPT
 
         players_lines: list[str] = []
         for p in c.players:
@@ -333,9 +347,12 @@ class ClaudeSummarizer(BaseSummarizer):
 
     async def process_transcription(self, event: TranscriptionEvent) -> None:
         """Buffer the transcription and trigger update if thresholds met."""
-        character_name = self.campaign.speaker_map.get(
-            event.speaker_id, event.speaker_name
-        )
+        if self.campaign.is_generic:
+            character_name = event.speaker_name
+        else:
+            character_name = self.campaign.speaker_map.get(
+                event.speaker_id, event.speaker_name
+            )
         self._pending.append(
             TranscriptionEntry(
                 speaker_id=event.speaker_id,

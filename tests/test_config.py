@@ -124,9 +124,6 @@ class TestLoadAppConfig:
         assert config.campaign.name == "Test Campaign"
         # Language should propagate to transcriber
         assert config.transcriber.language == "en"
-        # Prompt hint should contain character names
-        assert "Aria" in config.transcriber.prompt_hint
-        assert "Brom" in config.transcriber.prompt_hint
 
 
 CUSTOM_DEFAULTS_TOML = """\

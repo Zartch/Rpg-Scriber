@@ -12,6 +12,40 @@
     <span id="connection-badge" class="badge badge-idle">Disconnected</span>
   </header>
 
+  <!-- Campaign info bar -->
+  <section id="campaign-bar" class="panel campaign-bar hidden">
+    <div class="campaign-display" id="campaign-display">
+      <div class="campaign-info">
+        <span class="campaign-label">Campaign:</span>
+        <strong id="campaign-name">—</strong>
+        <span class="campaign-meta" id="campaign-system"></span>
+      </div>
+      <button id="campaign-edit-btn" class="btn-small" title="Edit campaign">Edit</button>
+    </div>
+    <form id="campaign-edit-form" class="campaign-edit hidden">
+      <div class="edit-row">
+        <label>Name</label>
+        <input type="text" id="edit-campaign-name" required />
+      </div>
+      <div class="edit-row">
+        <label>System</label>
+        <input type="text" id="edit-campaign-system" placeholder="e.g. Akelarre, D&D 5e" />
+      </div>
+      <div class="edit-row">
+        <label>Description</label>
+        <textarea id="edit-campaign-desc" rows="2" placeholder="Campaign description..."></textarea>
+      </div>
+      <div class="edit-row">
+        <label>Instructions</label>
+        <textarea id="edit-campaign-instructions" rows="2" placeholder="Custom instructions for the summarizer..."></textarea>
+      </div>
+      <div class="edit-actions">
+        <button type="submit" class="btn-small btn-save">Save</button>
+        <button type="button" id="campaign-edit-cancel" class="btn-small btn-cancel">Cancel</button>
+      </div>
+    </form>
+  </section>
+
   <main class="main-layout">
     <!-- Session sidebar -->
     <aside id="session-sidebar" class="panel sidebar">

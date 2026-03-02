@@ -294,7 +294,6 @@ class TestOpenAITranscriber:
             language="es",
             max_retries=2,
             retry_base_delay_s=0.01,
-            prompt_hint="Nombres: Aelar, Rodrigo, DM",
         )
 
     @pytest.fixture
@@ -327,7 +326,7 @@ class TestOpenAITranscriber:
         call_kwargs = mock_client.audio.transcriptions.create.call_args[1]
         assert call_kwargs["model"] == "whisper-1"
         assert call_kwargs["language"] == "es"
-        assert call_kwargs["prompt"] == "Nombres: Aelar, Rodrigo, DM"
+        assert "prompt" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_cache_avoids_duplicate_calls(
@@ -431,24 +430,6 @@ class TestOpenAITranscriber:
         assert max_concurrent <= 2
 
     @pytest.mark.asyncio
-    async def test_prompt_hint_empty(self, bus: EventBus) -> None:
-        config = TranscriberConfig(prompt_hint="")
-        transcriber = OpenAITranscriber(bus, config)
-
-        mock_response = MagicMock()
-        mock_response.text = "Text."
-
-        mock_client = MagicMock()
-        mock_client.audio.transcriptions.create = AsyncMock(return_value=mock_response)
-        transcriber._client = mock_client
-
-        event = _make_audio_event()
-        await transcriber.transcribe(event)
-
-        call_kwargs = mock_client.audio.transcriptions.create.call_args[1]
-        assert "prompt" not in call_kwargs
-
-    @pytest.mark.asyncio
     async def test_stop_clears_cache(
         self, bus: EventBus, config: TranscriberConfig
     ) -> None:
@@ -505,9 +486,7 @@ class TestTranscriberEventBusIntegration:
     async def test_openai_via_event_bus(self) -> None:
         """OpenAITranscriber receives audio via bus and publishes transcription."""
         bus = EventBus()
-        config = TranscriberConfig(
-            prompt_hint="Nombres: Aelar, Fray Bernardo",
-        )
+        config = TranscriberConfig()
         transcriber = OpenAITranscriber(bus, config)
 
         mock_response = MagicMock()
