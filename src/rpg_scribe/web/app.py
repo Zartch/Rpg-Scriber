@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    SessionEndRequestEvent,
+    SessionStartRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -51,11 +53,22 @@ def create_app(
     async def _on_status(event: SystemStatusEvent) -> None:
         state.update_component_status(asdict(event))
 
+    async def _on_session_start(event: SessionStartRequestEvent) -> None:
+        state.active_session_id = event.session_id
+
+    async def _on_session_end(event: SessionEndRequestEvent) -> None:
+        # Session ID cleared after finalization completes; for now mark as
+        # "finalizing" so the UI can show progress. The actual clearing
+        # happens when a SummaryUpdateEvent with update_type="final" arrives.
+        pass
+
     # Subscribe eagerly — EventBus.subscribe is synchronous and the
     # handlers are valid as soon as the app object exists.
     event_bus.subscribe(TranscriptionEvent, _on_transcription)
     event_bus.subscribe(SummaryUpdateEvent, _on_summary)
     event_bus.subscribe(SystemStatusEvent, _on_status)
+    event_bus.subscribe(SessionStartRequestEvent, _on_session_start)
+    event_bus.subscribe(SessionEndRequestEvent, _on_session_end)
     bridge.event_bus = event_bus
     # Bridge also subscribes eagerly (its start is sync-safe)
     event_bus.subscribe(TranscriptionEvent, bridge._on_transcription)
@@ -73,6 +86,8 @@ def create_app(
         event_bus.unsubscribe(TranscriptionEvent, bridge._on_transcription)
         event_bus.unsubscribe(SummaryUpdateEvent, bridge._on_summary)
         event_bus.unsubscribe(SystemStatusEvent, bridge._on_status)
+        event_bus.unsubscribe(SessionStartRequestEvent, _on_session_start)
+        event_bus.unsubscribe(SessionEndRequestEvent, _on_session_end)
         logger.info("RPG Scribe Web UI stopped")
 
     app = FastAPI(title="RPG Scribe", version="0.1.0", lifespan=lifespan)
@@ -82,6 +97,7 @@ def create_app(
     router.ws_manager = manager  # type: ignore[attr-defined]
     router.database = database  # type: ignore[attr-defined]
     router.config = config  # type: ignore[attr-defined]
+    router.event_bus = event_bus  # type: ignore[attr-defined]
 
     # Populate campaign info in WebState from config
     if config and hasattr(config, "campaign") and config.campaign:

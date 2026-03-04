@@ -283,6 +283,20 @@ class DiscordListener(BaseListener):
             raise ValueError("Must provide either voice_channel or voice_client")
 
         self._connected = True
+
+        # Wait for the voice client to be fully ready after connection
+        # (after 4017 retries, the voice state may not be settled yet)
+        if hasattr(self._voice_client, "is_connected"):
+            for _ in range(20):  # up to ~5s
+                if self._voice_client.is_connected():
+                    break
+                logger.debug("Esperando a que VoiceClient esté listo...")
+                await asyncio.sleep(0.25)
+            if not self._voice_client.is_connected():
+                logger.warning(
+                    "VoiceClient no confirmó conexión tras espera; intentando listen() de todas formas"
+                )
+
         self._start_receiving()
         self._flush_task = asyncio.create_task(self._periodic_flush())
 

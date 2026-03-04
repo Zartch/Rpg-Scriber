@@ -409,5 +409,105 @@ header h1 { font-size: 1.25rem; }
 .latency-ok   { color: var(--yellow); }
 .latency-slow { color: var(--red); }
 
+/* ── Entity sections (Players / NPCs) ─────────────────────── */
+.entity-section {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+.entity-section h2 { margin-bottom: 0; }
+.entity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.entity-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.collapse-arrow {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.collapse-arrow.rotated { transform: rotate(-90deg); }
+.entity-body.collapsed { display: none; }
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.entity-card {
+  padding: 0.5rem 0.65rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+}
+.entity-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.entity-info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.entity-name { font-size: 0.9rem; color: var(--accent); }
+.entity-meta { font-size: 0.8rem; color: var(--text-muted); }
+.entity-desc {
+  flex: 1;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.btn-edit-entity { margin-left: auto; flex-shrink: 0; }
+
+.entity-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+}
+.entity-edit-form .edit-row label { width: 100px; }
+
+.btn-add {
+  margin-top: 0.5rem;
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+.btn-add:hover {
+  background: rgba(124, 106, 240, 0.1);
+}
+
+/* Panel header row (title + action button) */
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.panel-header-row h2 { margin-bottom: 0; }
+
+/* Finalize button */
+.btn-finalize {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+  font-weight: 700;
+}
+.btn-finalize:hover { opacity: 0.85; }
+.btn-finalize:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* Utility */
 .hidden { display: none !important; }

@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from rpg_scribe.core.events import (
+    SessionEndRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -87,6 +88,11 @@ def _get_database():
 def _get_config():
     """Access the optional AppConfig attached to the router."""
     return getattr(router, "config", None)
+
+
+def _get_event_bus():
+    """Access the optional EventBus attached to the router."""
+    return getattr(router, "event_bus", None)
 
 
 # ── REST endpoints ────────────────────────────────────────────────
@@ -202,18 +208,18 @@ async def answer_question(question_id: str, body: dict[str, str]) -> dict[str, A
 
 @router.get("/api/campaigns")
 async def get_campaigns() -> dict[str, Any]:
-    """Return active campaign info (if any).
+    """Return active campaign info including players and NPCs.
 
     Tries in-memory state first, then falls back to the database.
     """
     state = _get_state()
-    if state.active_campaign:
-        return {"campaign": state.active_campaign}
-
-    # Fall back to DB if campaign is set in config
-    config = _get_config()
     db = _get_database()
-    if config and hasattr(config, "campaign") and config.campaign and db:
+    config = _get_config()
+
+    campaign = state.active_campaign
+
+    # Fall back to DB if campaign is not in memory
+    if not campaign and config and hasattr(config, "campaign") and config.campaign and db:
         try:
             row = await db.get_campaign(config.campaign.campaign_id)
             if row:
@@ -227,11 +233,30 @@ async def get_campaigns() -> dict[str, Any]:
                     "is_generic": False,
                 }
                 state.active_campaign = campaign
-                return {"campaign": campaign}
         except Exception as exc:
             logger.error("Error fetching campaign from DB: %s", exc)
 
-    return {"campaign": None}
+    if not campaign:
+        return {"campaign": None}
+
+    # Attach players and NPCs from DB
+    campaign_id = campaign.get("id", "")
+    if db and campaign_id and not campaign.get("is_generic"):
+        try:
+            campaign["players"] = await db.get_players(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching players: %s", exc)
+            campaign.setdefault("players", [])
+        try:
+            campaign["npcs"] = await db.get_npcs(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching NPCs: %s", exc)
+            campaign.setdefault("npcs", [])
+    else:
+        campaign.setdefault("players", [])
+        campaign.setdefault("npcs", [])
+
+    return {"campaign": campaign}
 
 
 @router.patch("/api/campaigns/{campaign_id}")
@@ -299,6 +324,151 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     return {"ok": True, "campaign": state.active_campaign}
 
 
+# ── Player endpoints ──────────────────────────────────────────────
+
+
+@router.put("/api/campaigns/{campaign_id}/players/{player_id}")
+async def update_player(
+    campaign_id: str, player_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Update a player's editable fields.
+
+    Accepts: discord_name, character_name, character_description.
+    If character_name changes, also updates speaker_map.
+    """
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    editable = {"discord_name", "character_name", "character_description"}
+    updates = {k: v for k, v in body.items() if k in editable and isinstance(v, str)}
+    if not updates:
+        return {"ok": False, "error": "No valid fields to update"}
+
+    # Persist to database
+    if db is not None:
+        try:
+            await db.update_player(player_id, **updates)
+        except Exception as exc:
+            logger.error("Error updating player: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
+
+    # Update in-memory config (CampaignContext.players and speaker_map)
+    if config and hasattr(config, "campaign") and config.campaign:
+        campaign_obj = config.campaign
+        discord_id = body.get("discord_id", "")
+        for p in campaign_obj.players:
+            if p.discord_id == discord_id:
+                for k, v in updates.items():
+                    object.__setattr__(p, k, v)
+                # Update speaker_map if character_name changed
+                if "character_name" in updates and p.discord_id in campaign_obj.speaker_map:
+                    campaign_obj.speaker_map[p.discord_id] = updates["character_name"]
+                break
+
+        # Persist updated speaker_map to DB
+        if db is not None and "character_name" in updates:
+            try:
+                current = await db.get_campaign(campaign_id)
+                if current:
+                    await db.upsert_campaign(
+                        campaign_id=campaign_id,
+                        name=current["name"],
+                        game_system=current.get("game_system", ""),
+                        language=current.get("language", "es"),
+                        description=current.get("description", ""),
+                        campaign_summary=current.get("campaign_summary", ""),
+                        speaker_map=campaign_obj.speaker_map,
+                        dm_speaker_id=current.get("dm_speaker_id", ""),
+                        custom_instructions=current.get("custom_instructions", ""),
+                    )
+            except Exception as exc:
+                logger.error("Error persisting speaker_map: %s", exc)
+
+    logger.info("Player %s updated: %s", player_id, list(updates.keys()))
+    return {"ok": True}
+
+
+# ── NPC endpoints ─────────────────────────────────────────────────
+
+
+@router.post("/api/campaigns/{campaign_id}/npcs")
+async def create_npc(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Create a new NPC."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    name = body.get("name", "").strip()
+    description = body.get("description", "").strip()
+    if not name:
+        return {"ok": False, "error": "NPC name is required"}
+
+    # Save to DB
+    if db is not None:
+        try:
+            if await db.npc_exists(campaign_id, name):
+                return {"ok": False, "error": "NPC already exists"}
+            await db.save_npc(campaign_id, name, description)
+        except Exception as exc:
+            logger.error("Error saving NPC: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
+
+    # Update in-memory config
+    if config and hasattr(config, "campaign") and config.campaign:
+        from rpg_scribe.core.models import NPCInfo
+
+        config.campaign.known_npcs.append(NPCInfo(name=name, description=description))
+
+    logger.info("NPC '%s' created in campaign %s", name, campaign_id)
+    return {"ok": True}
+
+
+@router.put("/api/campaigns/{campaign_id}/npcs/{npc_id}")
+async def update_npc_endpoint(
+    campaign_id: str, npc_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Update an NPC's editable fields (name, description)."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    editable = {"name", "description"}
+    updates = {k: v for k, v in body.items() if k in editable and isinstance(v, str)}
+    if not updates:
+        return {"ok": False, "error": "No valid fields to update"}
+
+    if db is not None:
+        try:
+            await db.update_npc(npc_id, **updates)
+        except Exception as exc:
+            logger.error("Error updating NPC: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
+
+    # Update in-memory config
+    if config and hasattr(config, "campaign") and config.campaign:
+        old_name = body.get("old_name", "")
+        for npc in config.campaign.known_npcs:
+            if npc.name == old_name:
+                for k, v in updates.items():
+                    object.__setattr__(npc, k, v)
+                break
+
+    logger.info("NPC %s updated: %s", npc_id, list(updates.keys()))
+    return {"ok": True}
+
+
 _SUMMARY_PREVIEW_LEN = 150
 
 
@@ -360,6 +530,35 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
             "has_summary": bool(summary),
         })
     return result
+
+
+# ── Session finalize endpoint ─────────────────────────────────────
+
+
+@router.post("/api/sessions/{session_id}/finalize")
+async def finalize_session(session_id: str) -> dict[str, Any]:
+    """Trigger finalization of the active session from the web UI.
+
+    Publishes a ``SessionEndRequestEvent`` which the Application handles
+    in the background.
+    """
+    state = _get_state()
+    event_bus = _get_event_bus()
+
+    if event_bus is None:
+        return {"ok": False, "error": "Event bus not available"}
+
+    if state.active_session_id is None:
+        return {"ok": False, "error": "No active session"}
+
+    if state.active_session_id != session_id:
+        return {"ok": False, "error": "Session ID does not match active session"}
+
+    await event_bus.publish(
+        SessionEndRequestEvent(session_id=session_id, source="web")
+    )
+    state.active_session_id = None
+    return {"ok": True, "status": "finalizing"}
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────

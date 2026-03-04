@@ -371,21 +371,61 @@ class ClaudeSummarizer(BaseSummarizer):
     async def get_campaign_summary(self) -> str:
         return self._campaign_summary
 
-    async def finalize_session(self) -> str:
-        """Generate a final polished summary and update the campaign summary."""
-        # Include any remaining pending transcriptions
-        pending_text = self._format_transcriptions(self._pending) if self._pending else "(ninguna)"
-        self._pending.clear()
+    # ------------------------------------------------------------------
+    # Batch helpers
+    # ------------------------------------------------------------------
 
-        system = self._build_system_prompt()
-        user_msg = FINALIZE_USER.format(
-            session_summary=self._session_summary or "(sin resumen todavía)",
-            pending_transcriptions=pending_text,
-        )
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Rough token estimate: ~4 characters per token for mixed lang text."""
+        return len(text) // 4
 
-        result = await self._call_api(system, user_msg)
+    def _split_into_batches(
+        self, entries: list[TranscriptionEntry], max_chars: int
+    ) -> list[list[TranscriptionEntry]]:
+        """Split transcription entries into batches that fit within *max_chars*.
 
-        # Parse the structured response
+        Each batch is sized so that its formatted text is at most *max_chars*.
+        """
+        if not entries:
+            return []
+
+        batches: list[list[TranscriptionEntry]] = []
+        current_batch: list[TranscriptionEntry] = []
+        current_chars = 0
+
+        for entry in entries:
+            entry_text = f"[{entry.speaker_name}]: {entry.text}\n"
+            entry_len = len(entry_text)
+
+            # If a single entry exceeds max_chars, put it alone in a batch
+            if entry_len >= max_chars:
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_chars = 0
+                batches.append([entry])
+                continue
+
+            if current_chars + entry_len > max_chars and current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_chars = 0
+
+            current_batch.append(entry)
+            current_chars += entry_len
+
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
+
+    @staticmethod
+    def _parse_finalize_response(result: str) -> tuple[str, str]:
+        """Parse the ---SESSION_SUMMARY--- / ---CAMPAIGN_SUMMARY--- response.
+
+        Returns (session_summary, campaign_summary).
+        """
         session_part = result
         campaign_part = ""
 
@@ -393,6 +433,95 @@ class ClaudeSummarizer(BaseSummarizer):
             parts = result.split("---CAMPAIGN_SUMMARY---")
             session_part = parts[0].replace("---SESSION_SUMMARY---", "").strip()
             campaign_part = parts[1].strip() if len(parts) > 1 else ""
+
+        return session_part, campaign_part
+
+    # ------------------------------------------------------------------
+    # Finalization
+    # ------------------------------------------------------------------
+
+    async def finalize_session(self) -> str:
+        """Generate a final polished summary and update the campaign summary.
+
+        For long sessions where all transcriptions don't fit in a single API
+        call, the pending text is split into batches.  Intermediate batches
+        use ``SESSION_UPDATE_USER`` to produce a running summary; the last
+        batch uses ``FINALIZE_USER`` to produce the final summary + campaign
+        update.
+        """
+        # Gather all remaining pending transcriptions
+        all_entries = list(self._pending)
+        self._pending.clear()
+
+        system = self._build_system_prompt()
+
+        # Calculate overhead from the finalize template (without dynamic content)
+        template_overhead = len(FINALIZE_USER) + len(self._session_summary or "") + 200
+        # Max chars available for transcriptions in a single call
+        max_chars_for_transcriptions = self.config.max_input_chars - template_overhead
+
+        if max_chars_for_transcriptions < 1000:
+            max_chars_for_transcriptions = 1000  # Absolute minimum
+
+        pending_text = self._format_transcriptions(all_entries) if all_entries else ""
+
+        # Check whether everything fits in a single API call
+        if not pending_text or len(pending_text) <= max_chars_for_transcriptions:
+            # Single batch — original behavior
+            result = await self._call_api(
+                system,
+                FINALIZE_USER.format(
+                    session_summary=self._session_summary or "(sin resumen todavía)",
+                    pending_transcriptions=pending_text or "(ninguna)",
+                ),
+            )
+            session_part, campaign_part = self._parse_finalize_response(result)
+        else:
+            # Multi-batch — progressive summarization
+            logger.info(
+                "Transcriptions too large for single call (%d chars, max %d). "
+                "Using batched finalization.",
+                len(pending_text),
+                max_chars_for_transcriptions,
+            )
+            batches = self._split_into_batches(
+                all_entries, max_chars_for_transcriptions
+            )
+            logger.info("Split into %d batch(es)", len(batches))
+
+            running_summary = self._session_summary or "(inicio de sesión)"
+            session_part = running_summary
+            campaign_part = ""
+
+            for i, batch in enumerate(batches):
+                batch_text = self._format_transcriptions(batch)
+                is_last = i == len(batches) - 1
+
+                if is_last:
+                    # Last batch: use FINALIZE_USER for final + campaign summary
+                    user_msg = FINALIZE_USER.format(
+                        session_summary=running_summary,
+                        pending_transcriptions=batch_text,
+                    )
+                    result = await self._call_api(system, user_msg)
+                    session_part, campaign_part = self._parse_finalize_response(
+                        result
+                    )
+                else:
+                    # Intermediate batch: use SESSION_UPDATE_USER for incremental
+                    user_msg = SESSION_UPDATE_USER.format(
+                        recent_transcriptions=batch_text,
+                        current_session_summary=running_summary,
+                        user_answers_block="\n",
+                    )
+                    result = await self._call_api(system, user_msg)
+                    running_summary = result.strip()
+                    logger.info(
+                        "Batch %d/%d processed (%d transcriptions)",
+                        i + 1,
+                        len(batches),
+                        len(batch),
+                    )
 
         self._session_summary = session_part
         if campaign_part:

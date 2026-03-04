@@ -46,6 +46,47 @@
     </form>
   </section>
 
+  <!-- Players section (collapsible) -->
+  <section id="players-section" class="panel entity-section hidden">
+    <div class="entity-header" id="players-header">
+      <h2>Players <span class="entity-count" id="players-count"></span></h2>
+      <span class="collapse-arrow">&#9660;</span>
+    </div>
+    <div id="players-body" class="entity-body">
+      <div id="players-list" class="entity-list">
+        <p class="placeholder">No players loaded.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- NPCs section (collapsible) -->
+  <section id="npcs-section" class="panel entity-section hidden">
+    <div class="entity-header" id="npcs-header">
+      <h2>NPCs <span class="entity-count" id="npcs-count"></span></h2>
+      <span class="collapse-arrow">&#9660;</span>
+    </div>
+    <div id="npcs-body" class="entity-body">
+      <div id="npcs-list" class="entity-list">
+        <p class="placeholder">No NPCs loaded.</p>
+      </div>
+      <button id="add-npc-btn" class="btn-small btn-add">+ Add NPC</button>
+      <form id="add-npc-form" class="entity-edit-form hidden">
+        <div class="edit-row">
+          <label>Name</label>
+          <input type="text" id="new-npc-name" required />
+        </div>
+        <div class="edit-row">
+          <label>Description</label>
+          <textarea id="new-npc-desc" rows="2" placeholder="NPC description..."></textarea>
+        </div>
+        <div class="edit-actions">
+          <button type="submit" class="btn-small btn-save">Save</button>
+          <button type="button" id="add-npc-cancel" class="btn-small btn-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
   <main class="main-layout">
     <!-- Session sidebar -->
     <aside id="session-sidebar" class="panel sidebar">
@@ -88,7 +129,10 @@
 
         <!-- Live summary -->
         <section id="summary-panel" class="panel">
-          <h2>Session Summary</h2>
+          <div class="panel-header-row">
+            <h2>Session Summary</h2>
+            <button id="finalize-btn" class="btn-small btn-finalize hidden" title="Finalize and stop the current session">Finalize Session</button>
+          </div>
           <div id="session-summary" class="summary-content">
             <p class="placeholder">Waiting for summary updates&hellip;</p>
           </div>

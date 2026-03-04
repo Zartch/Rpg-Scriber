@@ -8,6 +8,7 @@ import discord
 import pytest
 
 from rpg_scribe.core.event_bus import EventBus
+from rpg_scribe.core.events import SessionEndRequestEvent, SessionStartRequestEvent
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.discord_bot.commands import (
     AnswerQuestionModal,
@@ -240,3 +241,87 @@ class TestAnswerQuestionModal:
         args, kwargs = interaction.response.send_message.call_args
         assert "Respuesta guardada" in args[0]
         assert kwargs["ephemeral"] is True
+
+
+# ---------------------------------------------------------------------------
+# Event publishing tests — /scribe start and /scribe stop
+# ---------------------------------------------------------------------------
+
+
+class TestScribeStartStopEvents:
+    """Verify that /scribe start and /scribe stop publish session events."""
+
+    @pytest.mark.asyncio
+    async def test_scribe_start_publishes_session_start_event(self) -> None:
+        """After successful connect, SessionStartRequestEvent should be published."""
+        bus = EventBus()
+        config = ListenerConfig()
+        cog = ScribeCog(MagicMock(), bus, config)
+
+        published: list[SessionStartRequestEvent] = []
+
+        async def _capture(event: SessionStartRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(SessionStartRequestEvent, _capture)
+
+        interaction = _make_interaction()
+        # Simulate user in a voice channel
+        member = MagicMock(spec=discord.Member)
+        voice_state = MagicMock()
+        voice_state.channel = MagicMock(spec=discord.VoiceChannel)
+        voice_state.channel.name = "General"
+        voice_state.channel.members = [member]
+        member.voice = voice_state
+        member.display_name = "TestUser"
+        member.id = 12345
+        member.bot = False
+        interaction.user = member
+
+        mock_listener = AsyncMock()
+        mock_listener.connect = AsyncMock()
+        mock_listener.is_connected = MagicMock(return_value=False)
+
+        with patch(
+            "rpg_scribe.discord_bot.commands.DiscordListener",
+            return_value=mock_listener,
+        ):
+            await cog.scribe_start.callback(cog, interaction)
+
+        assert len(published) == 1
+        assert published[0].source == "discord"
+        assert published[0].session_id is not None
+
+    @pytest.mark.asyncio
+    async def test_scribe_stop_publishes_session_end_event(self) -> None:
+        """After disconnect, SessionEndRequestEvent should be published."""
+        bus = EventBus()
+        config = ListenerConfig()
+        cog = ScribeCog(MagicMock(), bus, config)
+
+        # Set up an active session
+        cog.session_id = "test-session-123"
+        mock_listener = AsyncMock()
+        mock_listener.is_connected = MagicMock(return_value=True)
+        mock_listener.disconnect = AsyncMock()
+        cog.listener = mock_listener
+
+        published: list[SessionEndRequestEvent] = []
+
+        async def _capture(event: SessionEndRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(SessionEndRequestEvent, _capture)
+
+        interaction = _make_interaction()
+        interaction.user.display_name = "TestUser"
+        interaction.user.id = 12345
+
+        await cog.scribe_stop.callback(cog, interaction)
+
+        assert len(published) == 1
+        assert published[0].session_id == "test-session-123"
+        assert published[0].source == "discord"
+        # Cog should have cleared session state
+        assert cog.session_id is None
+        assert cog.listener is None

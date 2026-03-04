@@ -163,6 +163,74 @@ class TestDatabaseNPCs:
         assert len(await db.get_npcs("c2")) == 1
         assert await db.npc_exists("c1", "NPC2") is False
 
+    async def test_update_npc(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Tabernero", "Dueño", "s1")
+        npcs = await db.get_npcs("c1")
+        npc_id = npcs[0]["id"]
+        await db.update_npc(npc_id, description="Dueño de la taberna del pueblo")
+        npcs = await db.get_npcs("c1")
+        assert npcs[0]["description"] == "Dueño de la taberna del pueblo"
+
+    async def test_update_npc_name(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "OldName", "desc")
+        npcs = await db.get_npcs("c1")
+        npc_id = npcs[0]["id"]
+        await db.update_npc(npc_id, name="NewName")
+        npcs = await db.get_npcs("c1")
+        assert npcs[0]["name"] == "NewName"
+
+
+class TestDatabasePlayers:
+    async def test_save_and_get_players(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        pid = await db.save_player("c1", "111", "Juan", "Rodrigo", "Guerrero")
+        assert pid  # UUID string
+        players = await db.get_players("c1")
+        assert len(players) == 1
+        assert players[0]["discord_name"] == "Juan"
+        assert players[0]["character_name"] == "Rodrigo"
+        assert players[0]["character_description"] == "Guerrero"
+
+    async def test_get_players_empty(self, db: Database) -> None:
+        players = await db.get_players("nonexistent")
+        assert players == []
+
+    async def test_player_exists(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_player("c1", "111", "Juan", "Rodrigo", "")
+        assert await db.player_exists("c1", "111") is True
+        assert await db.player_exists("c1", "999") is False
+
+    async def test_update_player(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        pid = await db.save_player("c1", "111", "Juan", "Rodrigo", "Guerrero")
+        await db.update_player(pid, character_name="Rodrigo el Valiente")
+        players = await db.get_players("c1")
+        assert players[0]["character_name"] == "Rodrigo el Valiente"
+        # Other fields unchanged
+        assert players[0]["discord_name"] == "Juan"
+        assert players[0]["character_description"] == "Guerrero"
+
+    async def test_update_player_multiple_fields(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        pid = await db.save_player("c1", "111", "Juan", "Rodrigo", "Guerrero")
+        await db.update_player(
+            pid, discord_name="JuanUpdated", character_description="Mago",
+        )
+        players = await db.get_players("c1")
+        assert players[0]["discord_name"] == "JuanUpdated"
+        assert players[0]["character_description"] == "Mago"
+
+    async def test_players_isolated_by_campaign(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Campaign 1")
+        await db.upsert_campaign(campaign_id="c2", name="Campaign 2")
+        await db.save_player("c1", "111", "Juan", "Rodrigo", "")
+        await db.save_player("c2", "222", "Maria", "Aelar", "")
+        assert len(await db.get_players("c1")) == 1
+        assert len(await db.get_players("c2")) == 1
+
 
 class TestDatabaseQuestions:
     async def test_save_and_get_questions(self, db: Database) -> None:

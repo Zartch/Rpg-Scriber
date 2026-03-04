@@ -122,3 +122,6 @@ class SummarizerConfig:
     # Retry settings
     max_retries: int = 3
     retry_base_delay_s: float = 1.0
+
+    # Batch finalization — max chars per API call (~4 chars/token)
+    max_input_chars: int = 600_000  # ~150K tokens, safe for Sonnet 200K

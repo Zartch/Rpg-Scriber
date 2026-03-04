@@ -21,6 +21,8 @@ from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
     AudioChunkEvent,
+    SessionEndRequestEvent,
+    SessionStartRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -156,6 +158,8 @@ class Application:
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
         self._shutdown_event = asyncio.Event()
+        self._active_session_id: str | None = None
+        self._finalize_task: asyncio.Task[None] | None = None
 
     # ── Database persistence handlers ──────────────────────────────
 
@@ -329,10 +333,34 @@ class Application:
                 dm_speaker_id=c.dm_speaker_id,
                 custom_instructions=c.custom_instructions,
             )
+            # Persist players from TOML to DB (idempotent)
+            for player in c.players:
+                if not await self.db.player_exists(c.campaign_id, player.discord_id):
+                    await self.db.save_player(
+                        campaign_id=c.campaign_id,
+                        discord_id=player.discord_id,
+                        discord_name=player.discord_name,
+                        character_name=player.character_name,
+                        character_description=player.character_description,
+                    )
+            # Persist NPCs from TOML to DB (idempotent)
+            for npc in c.known_npcs:
+                if not await self.db.npc_exists(c.campaign_id, npc.name):
+                    await self.db.save_npc(
+                        c.campaign_id, npc.name, npc.description,
+                    )
 
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)
         self.event_bus.subscribe(SummaryUpdateEvent, self._persist_summary)
+
+        # Subscribe session lifecycle handlers
+        self.event_bus.subscribe(
+            SessionStartRequestEvent, self._on_session_start_request
+        )
+        self.event_bus.subscribe(
+            SessionEndRequestEvent, self._on_session_end_request
+        )
 
         # Transcription file writer (logs/<timestamp>/transcriptions.txt)
         if self._log_dir is not None:
@@ -378,14 +406,84 @@ class Application:
     async def on_session_end(self, session_id: str) -> None:
         """Called when a recording session ends."""
         summary = ""
+        campaign_summary = ""
         if self._summarizer is not None:
             try:
                 summary = await self._summarizer.finalize_session()  # type: ignore[union-attr]
+                campaign_summary = await self._summarizer.get_campaign_summary()  # type: ignore[union-attr]
                 await self._summarizer.stop()  # type: ignore[union-attr]
             except Exception as exc:
                 logger.error("Failed to finalize session: %s", exc)
         await self.db.end_session(session_id, summary)
+        self._active_session_id = None
+
+        # Save summary to log file
+        if summary:
+            self._save_summary_to_file(session_id, summary, campaign_summary)
+
         logger.info("Session %s ended", session_id)
+
+    def _save_summary_to_file(
+        self, session_id: str, session_summary: str, campaign_summary: str
+    ) -> None:
+        """Write the final session summary to a markdown file in the logs dir."""
+        if self._log_dir is None:
+            return
+        try:
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            content = (
+                f"# Resumen de Sesion - {session_id}\n"
+                f"Fecha: {ts}\n\n"
+                f"## Resumen de Sesion\n\n"
+                f"{session_summary}\n\n"
+                f"## Resumen de Campana\n\n"
+                f"{campaign_summary or '(sin resumen de campana)'}\n"
+            )
+            summary_path = self._log_dir / "session_summary.md"
+            summary_path.write_text(content, encoding="utf-8")
+            logger.info(
+                "Resumen guardado en: %s", summary_path,
+            )
+        except Exception as exc:
+            logger.error("Failed to save summary file: %s", exc)
+
+    # ── EventBus session lifecycle handlers ────────────────────────
+
+    async def _on_session_start_request(
+        self, event: SessionStartRequestEvent
+    ) -> None:
+        """Handle a session start request from any source."""
+        logger.info(
+            "Session start request: session=%s source=%s",
+            event.session_id,
+            event.source,
+        )
+        self._active_session_id = event.session_id
+        await self.on_session_start(event.session_id)
+
+    async def _on_session_end_request(
+        self, event: SessionEndRequestEvent
+    ) -> None:
+        """Handle a session end request from any source.
+
+        Runs finalization as a background task so callers (e.g. Discord
+        slash commands) are not blocked.
+        """
+        logger.info(
+            "Session end request: session=%s source=%s",
+            event.session_id,
+            event.source,
+        )
+
+        async def _finalize() -> None:
+            try:
+                await self.on_session_end(event.session_id)
+            except Exception as exc:
+                logger.error("Background finalization failed: %s", exc)
+
+        self._finalize_task = asyncio.create_task(
+            _finalize(), name=f"finalize-{event.session_id}"
+        )
 
     async def shutdown(self) -> None:
         """Gracefully shut down all components."""
@@ -528,20 +626,31 @@ def cli_main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # En Windows, asyncio.run() queda bloqueado en I/O del ProactorEventLoop
-    # (_overlapped.GetQueuedCompletionStatusEx) donde Python no puede inyectar
-    # excepciones. La única salida fiable es os._exit() directo desde el handler.
     if sys.platform == "win32":
-        def _win_sigint(signum: int, frame: object) -> None:
-            # Flush log handlers para que el fichero quede completo
-            for handler in logging.getLogger().handlers:
-                try:
-                    handler.flush()
-                except Exception:
-                    pass
-            os._exit(0)
+        # Python's signal.signal(SIGINT) is delivered via Py_AddPendingCall,
+        # which only fires when the interpreter is between bytecodes.  If the
+        # main thread is stuck inside a C call (ProactorEventLoop's
+        # GetQueuedCompletionStatusEx), the Python handler never executes.
+        #
+        # SetConsoleCtrlHandler registers a native Windows callback that runs
+        # in a *separate OS thread* — independent of the GIL and the event
+        # loop.  os._exit() from that thread terminates the process instantly.
+        import ctypes
 
-        signal.signal(signal.SIGINT, _win_sigint)
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+        def _ctrl_handler(ctrl_type: int) -> bool:
+            if ctrl_type == 0:  # CTRL_C_EVENT
+                for h in logging.getLogger().handlers:
+                    try:
+                        h.flush()
+                    except Exception:
+                        pass
+                os._exit(0)
+            return False
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_ctrl_handler, True)
+        # prevent GC of the ctypes callback while cli_main is alive
+        _ctrl_handler_ref = _ctrl_handler  # noqa: F841
 
     try:
         asyncio.run(async_main(args))

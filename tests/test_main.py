@@ -10,7 +10,12 @@ import pytest
 
 from rpg_scribe.config import AppConfig, load_app_config
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import SummaryUpdateEvent, TranscriptionEvent
+from rpg_scribe.core.events import (
+    SessionEndRequestEvent,
+    SessionStartRequestEvent,
+    SummaryUpdateEvent,
+    TranscriptionEvent,
+)
 from rpg_scribe.main import Application, build_parser
 
 
@@ -174,3 +179,89 @@ class TestApplication:
         assert session["session_summary"] == "Final summary"
 
         await app.db.close()
+
+    async def test_session_start_event_triggers_on_session_start(
+        self, config: AppConfig
+    ) -> None:
+        """SessionStartRequestEvent should trigger on_session_start."""
+        app = Application(config)
+        await app.db.connect()
+        await app.db.upsert_campaign(
+            campaign_id="integration-test", name="Test"
+        )
+
+        # Subscribe the handler
+        app.event_bus.subscribe(
+            SessionStartRequestEvent, app._on_session_start_request
+        )
+
+        # Mock summarizer setup to avoid real API calls
+        with patch.object(app, "_setup_summarizer", new_callable=AsyncMock):
+            await app.event_bus.publish(
+                SessionStartRequestEvent(session_id="evt-s1", source="discord")
+            )
+
+        assert app._active_session_id == "evt-s1"
+        session = await app.db.get_session("evt-s1")
+        assert session is not None
+        assert session["status"] == "active"
+
+        await app.db.close()
+
+    async def test_session_end_event_triggers_background_finalization(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        """SessionEndRequestEvent should trigger on_session_end via background task."""
+        app = Application(config, log_dir=tmp_path)
+        await app.db.connect()
+        await app.db.upsert_campaign(
+            campaign_id="integration-test", name="Test"
+        )
+        await app.db.create_session("evt-s2", "integration-test")
+        app._active_session_id = "evt-s2"
+
+        # Mock summarizer
+        app._summarizer = AsyncMock()
+        app._summarizer.finalize_session = AsyncMock(return_value="Final")
+        app._summarizer.get_campaign_summary = AsyncMock(return_value="Campaign")
+        app._summarizer.stop = AsyncMock()
+
+        # Subscribe the handler
+        app.event_bus.subscribe(
+            SessionEndRequestEvent, app._on_session_end_request
+        )
+
+        await app.event_bus.publish(
+            SessionEndRequestEvent(session_id="evt-s2", source="discord")
+        )
+
+        # Wait for background task to complete
+        assert app._finalize_task is not None
+        await app._finalize_task
+
+        assert app._active_session_id is None
+        session = await app.db.get_session("evt-s2")
+        assert session["status"] == "completed"
+        assert session["session_summary"] == "Final"
+
+        await app.db.close()
+
+    async def test_save_summary_to_file(
+        self, config: AppConfig, tmp_path: Path
+    ) -> None:
+        """Summary should be written to session_summary.md in log dir."""
+        app = Application(config, log_dir=tmp_path)
+        app._save_summary_to_file("test-s1", "Session text", "Campaign text")
+
+        summary_file = tmp_path / "session_summary.md"
+        assert summary_file.exists()
+        content = summary_file.read_text(encoding="utf-8")
+        assert "test-s1" in content
+        assert "Session text" in content
+        assert "Campaign text" in content
+
+    async def test_save_summary_no_log_dir(self, config: AppConfig) -> None:
+        """When log_dir is None, no file should be written."""
+        app = Application(config, log_dir=None)
+        # Should not raise
+        app._save_summary_to_file("s1", "text", "camp")
