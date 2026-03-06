@@ -1,4 +1,4 @@
-"""Tests for the TOML configuration loader."""
+﻿"""Tests for the TOML configuration loader."""
 
 from __future__ import annotations
 
@@ -114,10 +114,16 @@ class TestLoadAppConfig:
         monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
         monkeypatch.setenv("RPG_SCRIBE_PORT", "9000")
         monkeypatch.setenv("DISCORD_SUMMARY_CHANNEL_ID", "12345")
+        monkeypatch.setenv("RPG_SCRIBE_SUMMARIZER_MODEL", "claude-3-5-sonnet-latest")
+        monkeypatch.setenv("RPG_SCRIBE_SUMMARIZER_MAX_TOKENS", "2048")
+        monkeypatch.setenv("RPG_SCRIBE_SUMMARIZER_MAX_INPUT_CHARS", "120000")
         config = load_app_config()
         assert config.discord_bot_token == "test-token"
         assert config.web_port == 9000
         assert config.discord_summary_channel_id == "12345"
+        assert config.summarizer.model == "claude-3-5-sonnet-latest"
+        assert config.summarizer.max_tokens == 2048
+        assert config.summarizer.max_input_chars == 120000
 
     def test_with_campaign_file(self, campaign_toml_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)

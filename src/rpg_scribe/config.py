@@ -1,4 +1,4 @@
-"""Campaign configuration loader from TOML files."""
+﻿"""Campaign configuration loader from TOML files."""
 
 from __future__ import annotations
 
@@ -192,6 +192,20 @@ def load_app_config(
     config.discord_summary_channel_id = os.environ.get(
         "DISCORD_SUMMARY_CHANNEL_ID", config.discord_summary_channel_id
     )
+    # Summarizer configuration via env:
+    # - RPG_SCRIBE_SUMMARIZER_MODEL controls the Claude model ID.
+    # - RPG_SCRIBE_SUMMARIZER_MAX_TOKENS controls max output tokens per call.
+    # - RPG_SCRIBE_SUMMARIZER_MAX_INPUT_CHARS controls input text budget in chars
+    #   (project uses ~4 chars/token estimate).
+    config.summarizer.model = os.environ.get(
+        "RPG_SCRIBE_SUMMARIZER_MODEL", config.summarizer.model
+    )
+    summarizer_max_tokens = os.environ.get("RPG_SCRIBE_SUMMARIZER_MAX_TOKENS")
+    if summarizer_max_tokens is not None:
+        config.summarizer.max_tokens = int(summarizer_max_tokens)
+    summarizer_max_input_chars = os.environ.get("RPG_SCRIBE_SUMMARIZER_MAX_INPUT_CHARS")
+    if summarizer_max_input_chars is not None:
+        config.summarizer.max_input_chars = int(summarizer_max_input_chars)
 
     # 3. Campaign file
     if campaign_path is not None:
@@ -201,3 +215,4 @@ def load_app_config(
             config.transcriber.language = config.campaign.language
 
     return config
+
