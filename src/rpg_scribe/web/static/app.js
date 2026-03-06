@@ -13,6 +13,7 @@
   var componentStatusEl = document.getElementById("component-status");
   var sessionListEl = document.getElementById("session-list");
   var backToLiveBtn = document.getElementById("back-to-live");
+  var openTranscriptBtn = document.getElementById("open-transcript-btn");
 
   // Campaign bar elements
   var campaignBar = document.getElementById("campaign-bar");
@@ -54,6 +55,9 @@
   var lastStatusTimestamp = {};   // for latency tracking
   var previousQuestionCount = 0;
   var questionsBadge = null;      // may not exist in DOM
+  var maxFeedItems = 1000;        // max rows kept in DOM for live feed
+  var loadedLiveSessionId = null; // latest session snapshot loaded into feed
+  var currentHistoricalSessionId = null;
 
   // ── WebSocket ─────────────────────────────────────────────────
 
@@ -138,9 +142,19 @@
       escapeHtml(data.text) +
       '<span class="ts">' + formatTime(data.timestamp) + "</span>";
     transcriptionFeed.appendChild(entry);
+    if (!viewingHistorical) {
+      trimTranscriptionFeed();
+    }
     transcriptionFeed.scrollTop = transcriptionFeed.scrollHeight;
   }
 
+  function trimTranscriptionFeed() {
+    var entries = transcriptionFeed.querySelectorAll(".feed-entry");
+    var overflow = entries.length - maxFeedItems;
+    for (var i = 0; i < overflow; i++) {
+      entries[i].remove();
+    }
+  }
   function updateSummary(data) {
     if (data.session_summary) {
       sessionSummaryEl.textContent = data.session_summary;
@@ -625,7 +639,15 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         activeSessionId = data.active_session_id;
+        var limits = data.web_limits || {};
+        if (typeof limits.live_feed_max_items === "number" && limits.live_feed_max_items > 0) {
+          maxFeedItems = limits.live_feed_max_items;
+        }
         updateFinalizeButton();
+
+        if (!viewingHistorical && activeSessionId && loadedLiveSessionId !== activeSessionId) {
+          loadLiveSessionSnapshot(activeSessionId);
+        }
       })
       .catch(function () {});
 
@@ -714,8 +736,33 @@
     }
   }
 
+  function loadLiveSessionSnapshot(sessionId) {
+    Promise.all([
+      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+    ])
+      .then(function (results) {
+        var transData = results[0];
+        var summData = results[1];
+
+        transcriptionFeed.innerHTML = "";
+        var transcriptions = transData.transcriptions || [];
+        if (transcriptions.length === 0) {
+          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions yet.</p>';
+        } else {
+          transcriptions.forEach(function (t) { addTranscription(t); });
+        }
+
+        sessionSummaryEl.textContent = summData.session_summary || "";
+        campaignSummaryEl.textContent = summData.campaign_summary || "";
+        loadedLiveSessionId = sessionId;
+      })
+      .catch(function () {});
+  }
+
   function loadHistoricalSession(sessionId) {
     viewingHistorical = true;
+    currentHistoricalSessionId = sessionId;
     backToLiveBtn.classList.remove("hidden");
 
     Promise.all([
@@ -744,6 +791,8 @@
 
   function switchToLive() {
     viewingHistorical = false;
+    currentHistoricalSessionId = null;
+    loadedLiveSessionId = null;
     backToLiveBtn.classList.add("hidden");
 
     var items = sessionListEl.querySelectorAll(".session-item");
@@ -754,9 +803,34 @@
     transcriptionFeed.innerHTML = "";
     sessionSummaryEl.innerHTML = '<p class="placeholder">Waiting for summary updates&hellip;</p>';
     campaignSummaryEl.innerHTML = '<p class="placeholder">No campaign summary yet.</p>';
+    if (activeSessionId) {
+      loadLiveSessionSnapshot(activeSessionId);
+    }
   }
 
   backToLiveBtn.addEventListener("click", switchToLive);
+
+  function getSessionIdForTranscriptView() {
+    if (viewingHistorical && currentHistoricalSessionId) {
+      return currentHistoricalSessionId;
+    }
+    if (activeSessionId) {
+      return activeSessionId;
+    }
+    return null;
+  }
+
+  if (openTranscriptBtn) {
+    openTranscriptBtn.addEventListener("click", function () {
+      var sessionId = getSessionIdForTranscriptView();
+      if (!sessionId) {
+        alert("No active or selected session.");
+        return;
+      }
+      var url = "/transcript.html?session_id=" + encodeURIComponent(sessionId);
+      window.open(url, "_blank");
+    });
+  }
 
   // ── Finalize session ───────────────────────────────────────────
 
@@ -815,3 +889,9 @@
     setInterval(fetchSessionList, 30000);
   }, 500);
 })();
+
+
+
+
+
+

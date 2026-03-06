@@ -142,6 +142,14 @@ class TestWebState:
             )
         assert len(state.transcriptions) == 5
 
+    def test_transcriptions_buffer_is_capped(self):
+        state = WebState(max_transcriptions=3)
+        for i in range(5):
+            state.add_transcription(asdict(_make_transcription(text=f"Line {i}")))
+        assert len(state.transcriptions) == 3
+        assert state.transcriptions[0]["text"] == "Line 2"
+        assert state.transcriptions[-1]["text"] == "Line 4"
+
     def test_update_summary_overwrites(self):
         state = WebState()
         state.update_summary(asdict(_make_summary(session_summary="v1")))
@@ -284,12 +292,36 @@ class TestRESTEndpoints:
         body = resp.json()
         assert "components" in body
         assert body["active_session_id"] is None
+        assert body["web_limits"]["transcriptions_buffer_max_items"] > 0
+        assert body["web_limits"]["live_feed_max_items"] > 0
 
     async def test_get_transcriptions_empty(self, client: AsyncClient):
         resp = await client.get("/api/sessions/sess-001/transcriptions")
         assert resp.status_code == 200
         body = resp.json()
         assert body["transcriptions"] == []
+
+    async def test_get_full_transcriptions_prefers_db(self, event_bus: EventBus):
+        db = AsyncMock()
+        db.get_transcriptions = AsyncMock(return_value=[
+            {
+                "session_id": "sess-001",
+                "speaker_name": "Ana",
+                "text": "Stored line",
+                "timestamp": 1700000000.0,
+            },
+        ])
+
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/sessions/sess-001/transcriptions/full")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["transcriptions"]) == 1
+        assert body["transcriptions"][0]["text"] == "Stored line"
+
 
     async def test_get_summary_empty(self, client: AsyncClient):
         resp = await client.get("/api/sessions/sess-001/summary")

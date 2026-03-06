@@ -1,4 +1,4 @@
-﻿"""Tests for the TOML configuration loader."""
+"""Tests for the TOML configuration loader."""
 
 from __future__ import annotations
 
@@ -108,11 +108,15 @@ class TestLoadAppConfig:
         assert isinstance(config, AppConfig)
         assert config.web_host == "127.0.0.1"
         assert config.web_port == 8000
+        assert config.web_transcriptions_max_items == 5000
+        assert config.web_feed_max_items == 1000
         assert config.campaign is None
 
     def test_env_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
         monkeypatch.setenv("RPG_SCRIBE_PORT", "9000")
+        monkeypatch.setenv("RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS", "12000")
+        monkeypatch.setenv("RPG_SCRIBE_WEB_FEED_MAX_ITEMS", "2500")
         monkeypatch.setenv("DISCORD_SUMMARY_CHANNEL_ID", "12345")
         monkeypatch.setenv("RPG_SCRIBE_SUMMARIZER_MODEL", "claude-3-5-sonnet-latest")
         monkeypatch.setenv("RPG_SCRIBE_SUMMARIZER_MAX_TOKENS", "2048")
@@ -120,6 +124,8 @@ class TestLoadAppConfig:
         config = load_app_config()
         assert config.discord_bot_token == "test-token"
         assert config.web_port == 9000
+        assert config.web_transcriptions_max_items == 12000
+        assert config.web_feed_max_items == 2500
         assert config.discord_summary_channel_id == "12345"
         assert config.summarizer.model == "claude-3-5-sonnet-latest"
         assert config.summarizer.max_tokens == 2048
@@ -150,6 +156,8 @@ model = "claude-opus-4-20250514"
 [web]
 host = "0.0.0.0"
 port = 9090
+transcriptions_max_items = 8000
+feed_max_items = 1500
 
 [database]
 path = "custom.db"
@@ -177,6 +185,8 @@ class TestDefaultTomlLoading:
         assert config.summarizer.model == "claude-opus-4-20250514"
         assert config.web_host == "0.0.0.0"
         assert config.web_port == 9090
+        assert config.web_transcriptions_max_items == 8000
+        assert config.web_feed_max_items == 1500
         assert config.database_path == "custom.db"
 
     def test_unset_fields_keep_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,4 +1,4 @@
-﻿"""Campaign configuration loader from TOML files."""
+"""Campaign configuration loader from TOML files."""
 
 from __future__ import annotations
 
@@ -45,7 +45,9 @@ class AppConfig:
     # Web server
     web_host: str = "127.0.0.1"
     web_port: int = 8000
-
+    # Web UI limits
+    web_transcriptions_max_items: int = 5000
+    web_feed_max_items: int = 1000
     # Component configs
     listener: ListenerConfig = field(default_factory=ListenerConfig)
     transcriber: TranscriberConfig = field(default_factory=TranscriberConfig)
@@ -95,6 +97,10 @@ def _apply_defaults_to_config(config: AppConfig, defaults: dict[str, Any]) -> No
     web_data = defaults.get("web", {})
     if "host" in web_data:
         config.web_host = web_data["host"]
+    if "transcriptions_max_items" in web_data:
+        config.web_transcriptions_max_items = int(web_data["transcriptions_max_items"])
+    if "feed_max_items" in web_data:
+        config.web_feed_max_items = int(web_data["feed_max_items"])
     if "port" in web_data:
         config.web_port = web_data["port"]
 
@@ -188,6 +194,18 @@ def load_app_config(
     config.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", config.anthropic_api_key)
     config.web_host = os.environ.get("RPG_SCRIBE_HOST", config.web_host)
     config.web_port = int(os.environ.get("RPG_SCRIBE_PORT", str(config.web_port)))
+    config.web_transcriptions_max_items = int(
+        os.environ.get(
+            "RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS",
+            str(config.web_transcriptions_max_items),
+        )
+    )
+    config.web_feed_max_items = int(
+        os.environ.get(
+            "RPG_SCRIBE_WEB_FEED_MAX_ITEMS",
+            str(config.web_feed_max_items),
+        )
+    )
     config.database_path = os.environ.get("RPG_SCRIBE_DB", config.database_path)
     config.discord_summary_channel_id = os.environ.get(
         "DISCORD_SUMMARY_CHANNEL_ID", config.discord_summary_channel_id
@@ -215,4 +233,5 @@ def load_app_config(
             config.transcriber.language = config.campaign.language
 
     return config
+
 

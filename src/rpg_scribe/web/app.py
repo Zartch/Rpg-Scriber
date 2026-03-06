@@ -38,7 +38,8 @@ def create_app(
     both stored in ``WebState`` (for REST queries) and broadcast to
     all connected WebSocket clients via ``WebSocketBridge``.
     """
-    state = WebState()
+    max_transcriptions = max(1, int(getattr(config, "web_transcriptions_max_items", 5000)))
+    state = WebState(max_transcriptions=max_transcriptions)
     manager = ConnectionManager()
     bridge = WebSocketBridge(event_bus, manager)
 

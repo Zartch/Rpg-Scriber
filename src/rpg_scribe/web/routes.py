@@ -30,8 +30,9 @@ class WebState:
     requiring a database.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_transcriptions: int = 5000) -> None:
         self.transcriptions: list[dict[str, Any]] = []
+        self.max_transcriptions = max(1, max_transcriptions)
         self.session_summary: str = ""
         self.campaign_summary: str = ""
         self.last_summary_update: float = 0.0
@@ -42,6 +43,9 @@ class WebState:
 
     def add_transcription(self, data: dict[str, Any]) -> None:
         self.transcriptions.append(data)
+        overflow = len(self.transcriptions) - self.max_transcriptions
+        if overflow > 0:
+            del self.transcriptions[:overflow]
 
     def update_summary(self, data: dict[str, Any]) -> None:
         self.session_summary = data.get("session_summary", "")
@@ -102,12 +106,16 @@ def _get_event_bus():
 async def get_status() -> dict[str, Any]:
     """Return current component statuses."""
     state = _get_state()
+    config = _get_config()
     return {
         "components": state.component_status,
         "active_session_id": state.active_session_id,
         "websocket_clients": _get_manager().active_count,
+        "web_limits": {
+            "transcriptions_buffer_max_items": state.max_transcriptions,
+            "live_feed_max_items": getattr(config, "web_feed_max_items", 1000),
+        },
     }
-
 
 @router.get("/api/sessions/{session_id}/transcriptions")
 async def get_transcriptions(session_id: str) -> dict[str, Any]:
@@ -138,6 +146,25 @@ async def get_transcriptions(session_id: str) -> dict[str, Any]:
 
     return {"session_id": session_id, "transcriptions": filtered}
 
+
+@router.get("/api/sessions/{session_id}/transcriptions/full")
+async def get_full_transcriptions(session_id: str) -> dict[str, Any]:
+    """Return full stored transcriptions for a session (DB-first)."""
+    db = _get_database()
+    state = _get_state()
+
+    if db is not None:
+        try:
+            rows = await db.get_transcriptions(session_id)
+            return {"session_id": session_id, "transcriptions": rows}
+        except Exception as exc:
+            logger.error("Error fetching full transcriptions from DB: %s", exc)
+
+    # Fallback when no DB is available: return in-memory snapshot for this session.
+    filtered = [
+        t for t in state.transcriptions if t.get("session_id") == session_id
+    ]
+    return {"session_id": session_id, "transcriptions": filtered}
 
 @router.get("/api/sessions/{session_id}/summary")
 async def get_summary(session_id: str) -> dict[str, Any]:

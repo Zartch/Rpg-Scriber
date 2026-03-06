@@ -37,6 +37,8 @@ retry_base_delay_s = 1.0
 [web]
 host = "127.0.0.1"
 port = 8000
+transcriptions_max_items = 5000
+feed_max_items = 1000
 
 [database]
 path = "rpg_scribe.db"

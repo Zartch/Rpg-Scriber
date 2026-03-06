@@ -90,6 +90,8 @@ export ANTHROPIC_API_KEY="tu_api_key_de_anthropic"
 export RPG_SCRIBE_HOST="127.0.0.1"     # Host del dashboard web
 export RPG_SCRIBE_PORT="8000"           # Puerto del dashboard web
 export RPG_SCRIBE_DB="rpg_scribe.db"    # Ruta de la base de datos
+export RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS="5000"  # Max transcripciones en memoria para la vista live
+export RPG_SCRIBE_WEB_FEED_MAX_ITEMS="1000"            # Max filas visibles en Live Transcription (DOM)
 export DISCORD_SUMMARY_CHANNEL_ID=""    # Canal para publicar resúmenes
 ```
 
@@ -158,6 +160,7 @@ rpg-scribe [opciones]
   --port PORT            Puerto del Web UI (default: 8000)
   --log-level LEVEL      Nivel de log: DEBUG, INFO, WARNING, ERROR (default: INFO)
   --json-logs            Activar salida de logs en formato JSON
+  --web-only             Arranca solo Web UI + API (sin listener/transcriber/bot)
 ```
 
 ### Comandos de Discord
@@ -178,6 +181,18 @@ Al iniciar RPG Scribe, el dashboard web estará disponible en `http://127.0.0.1:
 - Transcripciones en vivo
 - Resumen de sesión actualizado incrementalmente
 - Resumen acumulado de campaña
+
+### Limites de transcripcion en la UI
+
+- `RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS` limita cuantas transcripciones recientes mantiene el backend en memoria para la vista live (FIFO: se descartan las mas antiguas).
+- `RPG_SCRIBE_WEB_FEED_MAX_ITEMS` limita cuantas filas renderiza el navegador en "Live Transcription".
+
+Referencia rapida de memoria (aproximada, depende del tama�o real de texto):
+- 1.000 transcripciones cortas (~300-500 bytes cada una en memoria Python): ~0.3-0.5 MB
+- 5.000 transcripciones: ~1.5-2.5 MB
+- 20.000 transcripciones: ~6-10 MB
+
+Para sesiones largas, un valor razonable suele ser `5000` en backend y `1000` en frontend.
 
 ## Configuración del Bot de Discord
 
