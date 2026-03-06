@@ -141,11 +141,17 @@ class Application:
         6. On shutdown, finalize the session and tear down cleanly.
     """
 
-    def __init__(self, config: AppConfig, log_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        log_dir: Path | None = None,
+        web_only: bool = False,
+    ) -> None:
         self.config = config
         self.event_bus = EventBus()
         self.db = Database(config.database_path)
         self._log_dir = log_dir
+        self._web_only = web_only
 
         # Components (initialised in start())
         self._transcriber: object | None = None
@@ -376,14 +382,18 @@ class Application:
             self._audio_diagnostic = AudioDiagnosticSaver(self._log_dir)
             self.event_bus.subscribe(AudioChunkEvent, self._audio_diagnostic.save)
 
-        # Start transcriber
-        await self._setup_transcriber()
+        if self._web_only:
+            logger.info("Web-only mode enabled: skipping transcriber and Discord bot")
+        else:
+            # Start transcriber
+            await self._setup_transcriber()
 
         # Start web UI
         await self._start_web()
 
         # Start Discord bot
-        await self._start_discord_bot()
+        if not self._web_only:
+            await self._start_discord_bot()
 
         await self.event_bus.publish(
             SystemStatusEvent(
@@ -590,6 +600,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output logs as JSON lines",
     )
+    parser.add_argument(
+        "--web-only",
+        action="store_true",
+        help="Run only the Web UI + API (skip transcriber/listener/Discord bot)",
+    )
     return parser
 
 
@@ -608,7 +623,7 @@ async def async_main(args: argparse.Namespace) -> None:
     if args.port:
         config.web_port = args.port
 
-    app = Application(config, log_dir=log_dir)
+    app = Application(config, log_dir=log_dir, web_only=args.web_only)
 
     if sys.platform != "win32":
         loop = asyncio.get_running_loop()

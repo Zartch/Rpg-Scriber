@@ -148,9 +148,9 @@ async def get_summary(session_id: str) -> dict[str, Any]:
     """
     state = _get_state()
 
-    # Return in-memory data if this is the live session, or if no
-    # active session is set (covers tests without a full app lifecycle).
-    if state.active_session_id is None or session_id == state.active_session_id:
+    # Return in-memory data only for the live session. Historical
+    # sessions should come from DB when available.
+    if session_id == state.active_session_id:
         return {
             "session_id": session_id,
             "session_summary": state.session_summary,
@@ -179,13 +179,21 @@ async def get_summary(session_id: str) -> dict[str, Any]:
         except Exception as exc:
             logger.error("Error fetching summary from DB: %s", exc)
 
+    # If there is no DB wired (e.g. isolated tests), return in-memory snapshot.
+    if db is None:
+        return {
+            "session_id": session_id,
+            "session_summary": state.session_summary,
+            "campaign_summary": state.campaign_summary,
+            "last_updated": state.last_summary_update,
+        }
+
     return {
         "session_id": session_id,
         "session_summary": "",
         "campaign_summary": "",
         "last_updated": 0,
     }
-
 
 @router.get("/api/questions")
 async def get_questions() -> dict[str, Any]:

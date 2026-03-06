@@ -298,6 +298,33 @@ class TestRESTEndpoints:
         assert body["session_summary"] == ""
         assert body["campaign_summary"] == ""
 
+    async def test_get_summary_historical_from_db_when_no_active_session(
+        self, event_bus: EventBus
+    ):
+        db = AsyncMock()
+        db.get_session = AsyncMock(return_value={
+            "id": "sess-001",
+            "campaign_id": "camp-1",
+            "session_summary": "Stored DB summary",
+            "ended_at": 1700001111.0,
+        })
+        db.get_campaign = AsyncMock(return_value={"campaign_summary": "Camp DB summary"})
+
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = None
+        state.session_summary = "in-memory summary"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/sessions/sess-001/summary")
+
+        body = resp.json()
+        assert body["session_summary"] == "Stored DB summary"
+        assert body["campaign_summary"] == "Camp DB summary"
+
     async def test_get_questions_empty(self, client: AsyncClient):
         resp = await client.get("/api/questions")
         assert resp.status_code == 200

@@ -42,6 +42,7 @@ class TestBuildParser:
         assert args.port is None
         assert args.log_level == "INFO"
         assert args.json_logs is False
+        assert args.web_only is False
 
     def test_campaign_arg(self) -> None:
         parser = build_parser()
@@ -63,6 +64,11 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["--json-logs"])
         assert args.json_logs is True
+
+    def test_web_only(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--web-only"])
+        assert args.web_only is True
 
 
 class TestApplication:
@@ -102,6 +108,25 @@ class TestApplication:
 
             await app.shutdown()
             assert app.db._conn is None
+
+    async def test_start_web_only_skips_transcriber_and_discord(
+        self, config: AppConfig
+    ) -> None:
+        """Web-only mode starts web+db without transcriber/bot."""
+        app = Application(config, web_only=True)
+
+        with patch.object(app, "_setup_transcriber", new_callable=AsyncMock) as setup_transcriber, patch.object(
+            app, "_start_web", new_callable=AsyncMock
+        ) as start_web, patch.object(
+            app, "_start_discord_bot", new_callable=AsyncMock
+        ) as start_discord:
+            await app.start()
+
+            setup_transcriber.assert_not_called()
+            start_web.assert_called_once()
+            start_discord.assert_not_called()
+
+            await app.shutdown()
 
     async def test_persist_transcription(self, config: AppConfig) -> None:
         """Test that transcriptions are persisted to the database."""

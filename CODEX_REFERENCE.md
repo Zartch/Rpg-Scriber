@@ -1,23 +1,14 @@
-﻿# CODEX_REFERENCE.md - Mapa rapido del proyecto
-
-Documento de referencia generado a partir de:
-
-- `README.md`
-- `ANTIGRAVITY.md`
-- `CLAUDE.md`
-- `rpg-scribe-architecture.md`
-- `architectural_differences.md`
-- `implementation_fase2.md`
+# CODEX_REFERENCE.md - mapa rapido del proyecto
 
 ## 1) Que es RPG Scribe
 
 RPG Scribe es una app Python que:
 
-1. Escucha audio de partidas (Discord).
+1. Escucha partidas (Discord u origen de archivo).
 2. Transcribe por hablante.
-3. Genera resumen narrativo incremental (in-game vs meta-rol).
-4. Expone estado, transcripciones y resumen en web en tiempo real.
-5. Persiste campañas/sesiones/transcripciones en SQLite.
+3. Genera resumen incremental de sesion y de campana.
+4. Publica estado en Web UI y Discord.
+5. Persiste campanas, sesiones y transcripciones en SQLite.
 
 ## 2) Arquitectura funcional
 
@@ -25,125 +16,94 @@ Pipeline principal:
 
 `Listener -> Transcriber -> Summarizer`
 
-Todo se desacopla por `EventBus` (pub/sub async) con eventos tipados:
+Desacople por `EventBus` async con eventos tipados (`AudioChunkEvent`, `TranscriptionEvent`, `SummaryUpdateEvent`, `SystemStatusEvent`, etc.).
 
-- `AudioChunkEvent`
-- `TranscriptionEvent`
-- `SummaryUpdateEvent`
-- `SystemStatusEvent`
-
-Salidas paralelas del bus:
+Consumidores paralelos:
 
 - DB SQLite
-- Web UI (FastAPI + WebSocket)
-- Discord Bot / Publisher
+- Web UI (REST + WebSocket)
+- Discord publisher/bot
 
 ## 3) Estructura de codigo (fuente)
 
 Raiz: `src/rpg_scribe/`
 
-- `main.py`: entrypoint/orquestacion de componentes.
-- `config.py`: carga config de campaña + env vars.
-- `logging_config.py`: logging estructurado.
-- `core/`: `event_bus.py`, `events.py`, `models.py`, `database.py`, `resilience.py`.
-- `listeners/`: `base.py`, `discord_listener.py`, `file_listener.py`.
-- `transcribers/`: `base.py`, `openai_transcriber.py`, `faster_whisper_transcriber.py`.
-- `summarizers/`: `base.py`, `claude_summarizer.py`.
-- `discord_bot/`: `bot.py`, `commands.py`, `publisher.py`.
-- `web/`: `app.py`, `routes.py`, `websocket.py`, `static/`.
+- `main.py`: orquestacion y ciclo de vida.
+- `config.py`: carga config de campana + env vars.
+- `core/`: eventos, modelos, DB, resiliencia.
+- `listeners/`: fuentes de audio/eventos.
+- `transcribers/`: STT OpenAI y faster-whisper.
+- `summarizers/`: resumen incremental con Claude.
+- `discord_bot/`: comandos slash y publicacion.
+- `web/`: FastAPI, rutas REST, bridge WS, frontend estatico.
 
-## 4) Interfaces externas y stack
+## 4) UI web actual (revisado en codigo)
 
+Frontend: `src/rpg_scribe/web/static/index.html`, `app.js`, `style.css`  
+Backend UI: `src/rpg_scribe/web/app.py`, `routes.py`, `websocket.py`
+
+Que hace hoy:
+
+1. Muestra conexion WS (`/ws/live`) y estado de componentes (`listener`, `transcriber`, `summarizer`).
+2. Renderiza transcripcion en vivo y resumen de sesion/campana.
+3. Panel de campana editable (nombre, sistema, descripcion, instrucciones) con `PATCH /api/campaigns/{campaign_id}`.
+4. Gestion de jugadores:
+   - lista y edicion inline (`PUT /api/campaigns/{campaign_id}/players/{player_id}`).
+5. Gestion de NPCs:
+   - lista, alta y edicion (`POST/PUT /api/campaigns/{campaign_id}/npcs...`).
+6. Preguntas pendientes:
+   - polling cada 5s a `/api/questions` y respuesta por `POST /api/questions/{id}/answer`.
+7. Historial de sesiones en sidebar:
+   - carga por campana (`/api/campaigns/{campaign_id}/sessions`) o global (`/api/sessions`).
+   - permite abrir una sesion historica y cargar transcripciones + resumen por REST.
+   - modo "Back to Live" para volver al stream en tiempo real.
+8. Finalizacion manual de sesion activa:
+   - boton "Finalize Session" -> `POST /api/sessions/{session_id}/finalize`.
+
+Comportamiento tecnico:
+
+- `create_app()` suscribe `WebState` y `WebSocketBridge` al `EventBus`.
+- REST sirve snapshot actual (memoria) y, para historico, fallback a DB.
+- El frontend ignora mensajes WS cuando visualiza una sesion historica.
+
+## 5) Stack e integraciones
+
+- Web: FastAPI + WebSocket.
+- DB: SQLite async (`aiosqlite`).
+- STT: OpenAI + faster-whisper.
+- LLM resumen: Anthropic Claude.
 - Discord: `discord.py` + `discord-ext-voice-recv`.
-- Transcripcion: OpenAI (`gpt-4o-transcribe`) y fallback local (`faster-whisper`).
-- Resumen: Anthropic Claude (Sonnet).
-- Backend web: FastAPI + WebSocket.
-- Persistencia: SQLite async (`aiosqlite`).
 - Calidad: `pytest`, `pytest-asyncio`, `ruff`.
 
-## 5) Ejecucion y comandos utiles
-
-Instalacion (dev):
+## 6) Ejecucion rapida
 
 ```bash
 pip install -e ".[dev]"
-```
-
-Ejecucion con campaña:
-
-```bash
 rpg-scribe --campaign config/campaigns/example.toml
-```
-
-Tests/lint:
-
-```bash
 pytest
 ruff check src/ tests/
-ruff format src/ tests/
 ```
 
-Comandos slash confirmados:
+## 7) Estado real vs backlog
 
-- `/scribe start`
-- `/scribe stop`
-- `/scribe status`
+Pendientes importantes (segun docs + codigo actual):
 
-## 6) Configuracion y datos
+1. Completar flujo end-to-end de preguntas generadas por summarizer (UI ya responde preguntas, pero la generacion automatica sigue incompleta).
+2. Comandos slash adicionales (`/scribe summary`, `/scribe ask`).
+3. Extraccion automatica de NPCs/localizaciones al cierre de sesion.
 
-Variables de entorno clave:
-
-- `DISCORD_BOT_TOKEN`
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `RPG_SCRIBE_HOST`
-- `RPG_SCRIBE_PORT`
-- `RPG_SCRIBE_DB`
-- `DISCORD_SUMMARY_CHANNEL_ID`
-- `RPG_SCRIBE_SUMMARIZER_MODEL`
-- `RPG_SCRIBE_SUMMARIZER_MAX_TOKENS`
-- `RPG_SCRIBE_SUMMARIZER_MAX_INPUT_CHARS`
-
-Configuracion de campaña:
-
-- TOML en `config/campaigns/*.toml`
-
-Persistencia principal (tabla segun docs):
-
-- `campaigns`
-- `players`
-- `npcs`
-- `sessions`
-- `transcriptions`
-- `questions`
-
-## 7) Estado real vs plan (importante)
-
-Segun `architectural_differences.md` e `implementation_fase2.md`, pendientes principales:
-
-1. Comandos `/scribe summary` y `/scribe ask`.
-2. Flujo completo de preguntas del summarizer al usuario.
-3. Extraccion automatica de NPCs/localizaciones al cerrar sesion.
-4. Historial de sesiones en frontend.
-5. `config/default.toml` y `scripts/import_campaign.py`.
+Nota: el historial de sesiones en frontend ya esta implementado.
 
 ## 8) Ruta rapida para cambios
 
-- Si el cambio toca audio/voz: `listeners/` + `discord_bot/`.
-- Si toca STT: `transcribers/`.
-- Si toca narrativa/contexto IA: `summarizers/`.
-- Si toca API/UI: `web/routes.py` + `web/static/*`.
-- Si toca modelos/eventos/persistencia: `core/events.py`, `core/models.py`, `core/database.py`.
+- Audio/voz: `listeners/` + `discord_bot/`.
+- STT: `transcribers/`.
+- Resumen/IA: `summarizers/`.
+- API/UI: `web/routes.py` + `web/static/*`.
+- Modelos/eventos/DB: `core/models.py`, `core/events.py`, `core/database.py`.
 
-Regla de seguridad tecnica:
+Reglas:
 
 - Mantener contratos async y eventos inmutables.
-- Evitar acoplar modulos saltando el `EventBus`.
+- Evitar acople directo saltando el `EventBus`.
 - Acompanhar cambios funcionales con tests.
-
-## 9) Notas operativas para agentes
-
-- El repo ya incluye `ANTIGRAVITY.md` y `CLAUDE.md`; este archivo unifica lo esencial para lectura rapida.
-- Ante conflicto entre docs, priorizar `README.md` + codigo actual + `architectural_differences.md`.
-- Para trabajo incremental, usar `implementation_fase2.md` como backlog inmediato.
-
