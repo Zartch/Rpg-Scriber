@@ -73,6 +73,14 @@ class BaseSummarizer(ABC):
     async def finalize_session(self) -> str:
         """Generate the final polished session summary and update the campaign summary."""
         ...
+    async def refresh_summary_on_demand(self) -> bool:
+        """Force a summary refresh for the current session.
+
+        Returns ``True`` when a refresh was triggered. Subclasses can override
+        to run their own update logic.
+        """
+        await self._publish_summary("on_demand")
+        return True
 
     async def start(self, session_id: str) -> None:
         """Subscribe to the event bus and start processing transcriptions."""
@@ -143,3 +151,4 @@ class BaseSummarizer(ABC):
             update_type=update_type,
         )
         await self.event_bus.publish(event)
+

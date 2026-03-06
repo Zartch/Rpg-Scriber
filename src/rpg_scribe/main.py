@@ -23,6 +23,7 @@ from rpg_scribe.core.events import (
     AudioChunkEvent,
     SessionEndRequestEvent,
     SessionStartRequestEvent,
+    SummaryRefreshRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -72,7 +73,7 @@ class TranscriptionFileWriter:
             self._file_index += 1
             self._path = self._next_path()
             logger.info(
-                "📄 Transcription file rotated to %s", self._path.name,
+                "ðŸ“„ Transcription file rotated to %s", self._path.name,
             )
 
         ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
@@ -120,13 +121,13 @@ class AudioDiagnosticSaver:
             filepath.write_bytes(buf.getvalue())
             self._counts[uid] = count + 1
             logger.info(
-                "🔍 Audio diagnóstico: %s (%.1fKB, %.1fs)",
+                "ðŸ” Audio diagnÃ³stico: %s (%.1fKB, %.1fs)",
                 filepath.name,
                 len(event.audio_data) / 1024,
                 event.duration_ms / 1000,
             )
         except Exception as exc:
-            logger.error("Error guardando audio diagnóstico: %s", exc)
+            logger.error("Error guardando audio diagnÃ³stico: %s", exc)
 
 
 class Application:
@@ -167,7 +168,7 @@ class Application:
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
 
-    # ── Database persistence handlers ──────────────────────────────
+    # â”€â”€ Database persistence handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database."""
@@ -213,8 +214,19 @@ class Application:
                 )
         except Exception as exc:
             logger.error("Failed to persist summary: %s", exc)
+    async def _write_summary_snapshot_to_file(self, event: SummaryUpdateEvent) -> None:
+        """Persist on-demand summary snapshots for traceability in logs."""
+        if self._log_dir is None or event.update_type != "on_demand":
+            return
+        if not event.session_summary:
+            return
 
-    # ── Component setup ────────────────────────────────────────────
+        try:
+            self._save_on_demand_summary_to_file(event.session_id, event.session_summary)
+        except Exception as exc:
+            logger.error("Failed to write on-demand summary snapshot: %s", exc)
+
+    # â”€â”€ Component setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _setup_transcriber(self) -> None:
         """Create and start the transcriber."""
@@ -236,7 +248,7 @@ class Application:
                 language=self.config.transcriber.language,
             )
             logger.info(
-                "No campaign configured — using generic summarization mode"
+                "No campaign configured â€” using generic summarization mode"
             )
 
         self._summarizer = ClaudeSummarizer(
@@ -269,7 +281,7 @@ class Application:
         if self._web_task.done():
             exc = self._web_task.exception()
             if exc:
-                logger.error("❌ Web UI failed to start: %s", exc)
+                logger.error("âŒ Web UI failed to start: %s", exc)
             else:
                 logger.warning("Web UI task finished unexpectedly")
         else:
@@ -282,7 +294,7 @@ class Application:
     async def _start_discord_bot(self) -> None:
         """Start the Discord bot as a background task."""
         if not self.config.discord_bot_token:
-            logger.warning("DISCORD_BOT_TOKEN not set — Discord bot not started")
+            logger.warning("DISCORD_BOT_TOKEN not set â€” Discord bot not started")
             return
 
         from rpg_scribe.discord_bot.bot import create_bot
@@ -314,12 +326,12 @@ class Application:
 
         self._bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
 
-    # ── Lifecycle ──────────────────────────────────────────────────
+    # â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def start(self) -> None:
         """Start all components."""
-        # NOTA: NO llamar a setup_logging() aquí — ya se configuró en async_main
-        # incluyendo el FileHandler. Llamarlo otra vez borraría los handlers.
+        # NOTA: NO llamar a setup_logging() aquÃ­ â€” ya se configurÃ³ en async_main
+        # incluyendo el FileHandler. Llamarlo otra vez borrarÃ­a los handlers.
         logger.info("RPG Scribe starting up")
 
         # Database
@@ -359,6 +371,7 @@ class Application:
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)
         self.event_bus.subscribe(SummaryUpdateEvent, self._persist_summary)
+        self.event_bus.subscribe(SummaryUpdateEvent, self._write_summary_snapshot_to_file)
 
         # Subscribe session lifecycle handlers
         self.event_bus.subscribe(
@@ -366,6 +379,9 @@ class Application:
         )
         self.event_bus.subscribe(
             SessionEndRequestEvent, self._on_session_end_request
+        )
+        self.event_bus.subscribe(
+            SummaryRefreshRequestEvent, self._on_summary_refresh_request
         )
 
         # Transcription file writer (logs/<timestamp>/transcriptions.txt)
@@ -375,7 +391,7 @@ class Application:
                 TranscriptionEvent, self._write_transcription_to_file
             )
             logger.info(
-                "📄 Transcripciones se guardarán en: %s", self._log_dir,
+                "ðŸ“„ Transcripciones se guardarÃ¡n en: %s", self._log_dir,
             )
 
             # Audio diagnostic: save first chunks per user as WAV for inspection
@@ -402,7 +418,7 @@ class Application:
                 message="RPG Scribe is ready",
             )
         )
-        logger.info("RPG Scribe is ready — waiting for session to begin")
+        logger.info("RPG Scribe is ready â€” waiting for session to begin")
 
     async def on_session_start(self, session_id: str) -> None:
         """Called when a new recording session begins."""
@@ -456,8 +472,23 @@ class Application:
             )
         except Exception as exc:
             logger.error("Failed to save summary file: %s", exc)
+    def _save_on_demand_summary_to_file(
+        self, session_id: str, session_summary: str
+    ) -> None:
+        """Append an on-demand summary snapshot for debugging/tracing."""
+        if self._log_dir is None:
+            return
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        summary_path = self._log_dir / "ongoing_summaries.md"
+        content = (
+            f"## {ts} - {session_id}\n\n"
+            f"{session_summary}\n\n"
+            "---\n\n"
+        )
+        with open(summary_path, "a", encoding="utf-8") as f:
+            f.write(content)
 
-    # ── EventBus session lifecycle handlers ────────────────────────
+    # â”€â”€ EventBus session lifecycle handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _on_session_start_request(
         self, event: SessionStartRequestEvent
@@ -494,6 +525,34 @@ class Application:
         self._finalize_task = asyncio.create_task(
             _finalize(), name=f"finalize-{event.session_id}"
         )
+    async def _on_summary_refresh_request(
+        self, event: SummaryRefreshRequestEvent
+    ) -> None:
+        """Handle an explicit on-demand summary refresh request."""
+        if self._summarizer is None:
+            logger.warning("Summary refresh requested but summarizer is not running")
+            return
+        if self._active_session_id != event.session_id:
+            logger.warning(
+                "Summary refresh ignored for session %s (active=%s)",
+                event.session_id,
+                self._active_session_id,
+            )
+            return
+
+        try:
+            refreshed = await self._summarizer.refresh_summary_on_demand()  # type: ignore[union-attr]
+            if refreshed:
+                logger.info("On-demand summary refreshed for session %s", event.session_id)
+        except Exception as exc:
+            logger.error("On-demand summary refresh failed: %s", exc)
+            await self.event_bus.publish(
+                SystemStatusEvent(
+                    component="summarizer",
+                    status="error",
+                    message=f"On-demand summary failed: {exc}",
+                )
+            )
 
     async def shutdown(self) -> None:
         """Gracefully shut down all components."""
@@ -561,14 +620,14 @@ class Application:
             try:
                 await asyncio.wait_for(self.shutdown(), timeout=8.0)
             except (asyncio.TimeoutError, Exception):
-                logger.warning("Shutdown timed out — forzando salida")
+                logger.warning("Shutdown timed out â€” forzando salida")
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="rpg-scribe",
-        description="RPG Scribe — live RPG session transcriber and summarizer",
+        description="RPG Scribe â€” live RPG session transcriber and summarizer",
     )
     parser.add_argument(
         "--campaign", "-c",
@@ -648,7 +707,7 @@ def cli_main() -> None:
         # GetQueuedCompletionStatusEx), the Python handler never executes.
         #
         # SetConsoleCtrlHandler registers a native Windows callback that runs
-        # in a *separate OS thread* — independent of the GIL and the event
+        # in a *separate OS thread* â€” independent of the GIL and the event
         # loop.  os._exit() from that thread terminates the process instantly.
         import ctypes
 
@@ -675,3 +734,11 @@ def cli_main() -> None:
 
 if __name__ == "__main__":
     cli_main()
+
+
+
+
+
+
+
+

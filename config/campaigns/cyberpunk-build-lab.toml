@@ -1,0 +1,55 @@
+# RPG Scribe campaign configuration
+# Sesion de pruebas: decision de personaje para Cyberpunk
+
+[campaign]
+id = "cyberpunk-build-lab"
+name = "Cyberpunk Build Lab"
+game_system = "Cyberpunk RED"
+language = "es"
+description = """
+Sesion de charla casual para ayudar a Miquel a decidir que personaje crear
+para la proxima partida de Cyberpunk. El tono es de colegas: bromas, propuestas
+de builds y comparaciones de roles.
+"""
+campaign_summary = ""
+locations = ["Afterlife", "Taller de Ripperdoc", "Mesa de teoria de builds"]
+
+[campaign.dm]
+discord_id = "432635509899001877"
+
+[[campaign.players]]
+discord_id = "301071912292057088"
+discord_name = "@Zartch"
+character_name = "Fixer de la mesa"
+character_description = "Coordina ideas, pone orden y aterriza decisiones."
+
+[[campaign.players]]
+discord_id = "321011002856701972"
+discord_name = "Miquel"
+character_name = "Por definir"
+character_description = "Jugador en foco: esta eligiendo concepto y rol para la siguiente partida."
+
+[[campaign.players]]
+discord_id = "341205872615096321"
+discord_name = "Bateman"
+character_name = "Consultor de caos"
+character_description = "Lanza propuestas agresivas o raras para testear limites del personaje."
+
+[[campaign.players]]
+discord_id = "432635509899001877"
+discord_name = "Escalopo"
+character_name = "Afinador tactico"
+character_description = "Aporta equilibrio de grupo, sinergias y contras de cada build."
+
+[[campaign.npcs]]
+name = "Ripperdoc de confianza"
+description = "Figura recurrente para imaginar implantes, costes y consecuencias narrativas."
+
+[campaign.custom_instructions]
+text = """
+- Esta campana es una sesion de pre-juego y decision de build, no una aventura activa.
+- Prioriza capturar argumentos utiles para decidir el personaje de Miquel.
+- Separa claramente propuestas serias de bromas internas.
+- Si hay consenso o decision final, dejalo explicito con pros y contras.
+- Mantener tono informal y natural del grupo sin perder informacion clave.
+"""

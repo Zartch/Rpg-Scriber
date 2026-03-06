@@ -1,9 +1,9 @@
-/* RPG Scribe — frontend WebSocket client and DOM updates */
+/* RPG Scribe â€” frontend WebSocket client and DOM updates */
 
 (function () {
   "use strict";
 
-  // ── Elements ──────────────────────────────────────────────────
+  // â”€â”€ Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   var connectionBadge = document.getElementById("connection-badge");
   var transcriptionFeed = document.getElementById("transcription-feed");
@@ -43,10 +43,11 @@
   var addNpcForm = document.getElementById("add-npc-form");
   var addNpcCancel = document.getElementById("add-npc-cancel");
 
-  // Finalize button
+  // Summary control buttons
+  var refreshSummaryBtn = document.getElementById("refresh-summary-btn");
   var finalizeBtn = document.getElementById("finalize-btn");
 
-  // ── State ─────────────────────────────────────────────────────
+  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   var viewingHistorical = false;  // true when viewing a past session
   var activeSessionId = null;     // current live session id
@@ -59,7 +60,7 @@
   var loadedLiveSessionId = null; // latest session snapshot loaded into feed
   var currentHistoricalSessionId = null;
 
-  // ── WebSocket ─────────────────────────────────────────────────
+  // â”€â”€ WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   var ws = null;
   var reconnectDelay = 1000;
@@ -94,7 +95,7 @@
     };
   }
 
-  // ── Message handlers ──────────────────────────────────────────
+  // â”€â”€ Message handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function handleMessage(msg) {
     switch (msg.type) {
@@ -216,7 +217,7 @@
       .replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  // ── Campaign info ───────────────────────────────────────────────
+  // â”€â”€ Campaign info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function fetchCampaignInfo() {
     fetch("/api/campaigns")
@@ -229,7 +230,7 @@
           renderPlayers(data.campaign.players || []);
           renderNpcs(data.campaign.npcs || []);
         } else {
-          // No campaign loaded — show "Resume mode"
+          // No campaign loaded â€” show "Resume mode"
           campaignBar.classList.remove("hidden");
           campaignNameEl.textContent = "No campaign \u2014 Resume mode";
           campaignSystemEl.textContent = "";
@@ -326,7 +327,7 @@
   campaignEditCancel.addEventListener("click", closeCampaignEdit);
   campaignEditForm.addEventListener("submit", saveCampaignEdit);
 
-  // ── Players & NPCs ──────────────────────────────────────────────
+  // â”€â”€ Players & NPCs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function renderPlayers(players) {
     if (!players || players.length === 0) {
@@ -543,7 +544,7 @@
       });
   });
 
-  // ── Questions polling ─────────────────────────────────────────
+  // â”€â”€ Questions polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function pollQuestions() {
     fetch("/api/questions")
@@ -632,7 +633,7 @@
       .catch(function () { callback(false); });
   }
 
-  // ── Session history ───────────────────────────────────────────
+  // â”€â”€ Session history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function fetchSessionList() {
     fetch("/api/status")
@@ -832,16 +833,53 @@
     });
   }
 
-  // ── Finalize session ───────────────────────────────────────────
+  // â”€â”€ Finalize session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function updateFinalizeButton() {
+    var show = !!(activeSessionId && !viewingHistorical);
+
     if (finalizeBtn) {
-      if (activeSessionId && !viewingHistorical) {
+      if (show) {
         finalizeBtn.classList.remove("hidden");
       } else {
         finalizeBtn.classList.add("hidden");
       }
     }
+
+    if (refreshSummaryBtn) {
+      if (show) {
+        refreshSummaryBtn.classList.remove("hidden");
+      } else {
+        refreshSummaryBtn.classList.add("hidden");
+      }
+    }
+  }
+
+  if (refreshSummaryBtn) {
+    refreshSummaryBtn.addEventListener("click", function () {
+      if (!activeSessionId) return;
+
+      refreshSummaryBtn.disabled = true;
+      refreshSummaryBtn.textContent = "Updating...";
+
+      fetch("/api/sessions/" + activeSessionId + "/refresh-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ok) {
+            alert("Error: " + (data.error || "Failed to update summary"));
+          }
+        })
+        .catch(function () {
+          alert("Failed to update summary.");
+        })
+        .finally(function () {
+          refreshSummaryBtn.disabled = false;
+          refreshSummaryBtn.textContent = "Update Summary";
+        });
+    });
   }
 
   if (finalizeBtn) {
@@ -877,7 +915,7 @@
     });
   }
 
-  // ── Init ──────────────────────────────────────────────────────
+  // â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   connectWS();
   fetchCampaignInfo();
@@ -889,6 +927,10 @@
     setInterval(fetchSessionList, 30000);
   }, 500);
 })();
+
+
+
+
 
 
 

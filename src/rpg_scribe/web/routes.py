@@ -11,6 +11,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
+    SummaryRefreshRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -99,7 +100,7 @@ def _get_event_bus():
     return getattr(router, "event_bus", None)
 
 
-# ── REST endpoints ────────────────────────────────────────────────
+# â”€â”€ REST endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.get("/api/status")
@@ -226,6 +227,15 @@ async def get_summary(session_id: str) -> dict[str, Any]:
 async def get_questions() -> dict[str, Any]:
     """Return pending questions from the summarizer."""
     state = _get_state()
+    db = _get_database()
+
+    if db is not None and state.active_session_id:
+        try:
+            pending = await db.get_pending_questions(state.active_session_id)
+            return {"questions": pending}
+        except Exception as exc:
+            logger.error("Error fetching pending questions from DB: %s", exc)
+
     pending = [q for q in state.questions if q["status"] == "pending"]
     return {"questions": pending}
 
@@ -234,12 +244,24 @@ async def get_questions() -> dict[str, Any]:
 async def answer_question(question_id: str, body: dict[str, str]) -> dict[str, Any]:
     """Answer a pending question from the summarizer."""
     state = _get_state()
+    db = _get_database()
     answer_text = body.get("answer", "")
     if not answer_text:
         return {"ok": False, "error": "answer is required"}
+
+    if db is not None:
+        try:
+            qid = int(question_id)
+            await db.answer_question(qid, answer_text)
+            return {"ok": True}
+        except ValueError:
+            return {"ok": False, "error": "invalid question id"}
+        except Exception as exc:
+            logger.error("Error answering question in DB: %s", exc)
+            return {"ok": False, "error": "failed to save answer"}
+
     found = state.answer_question(question_id, answer_text)
     return {"ok": found}
-
 
 @router.get("/api/campaigns")
 async def get_campaigns() -> dict[str, Any]:
@@ -359,7 +381,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     return {"ok": True, "campaign": state.active_campaign}
 
 
-# ── Player endpoints ──────────────────────────────────────────────
+# â”€â”€ Player endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.put("/api/campaigns/{campaign_id}/players/{player_id}")
@@ -427,7 +449,7 @@ async def update_player(
     return {"ok": True}
 
 
-# ── NPC endpoints ─────────────────────────────────────────────────
+# â”€â”€ NPC endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.post("/api/campaigns/{campaign_id}/npcs")
@@ -567,7 +589,7 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
     return result
 
 
-# ── Session finalize endpoint ─────────────────────────────────────
+# â”€â”€ Session finalize endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @router.post("/api/sessions/{session_id}/finalize")
@@ -596,8 +618,29 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
     return {"ok": True, "status": "finalizing"}
 
 
-# ── WebSocket endpoint ────────────────────────────────────────────
+# â”€â”€ WebSocket endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+
+
+@router.post("/api/sessions/{session_id}/refresh-summary")
+async def refresh_summary(session_id: str) -> dict[str, Any]:
+    """Trigger an on-demand summary refresh for the active session."""
+    state = _get_state()
+    event_bus = _get_event_bus()
+
+    if event_bus is None:
+        return {"ok": False, "error": "Event bus not available"}
+
+    if state.active_session_id is None:
+        return {"ok": False, "error": "No active session"}
+
+    if state.active_session_id != session_id:
+        return {"ok": False, "error": "Session ID does not match active session"}
+
+    await event_bus.publish(
+        SummaryRefreshRequestEvent(session_id=session_id, source="web")
+    )
+    return {"ok": True, "status": "refresh_requested"}
 
 @router.websocket("/ws/live")
 async def websocket_live(ws: WebSocket) -> None:
@@ -612,3 +655,9 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
+
+
+
+
+
+

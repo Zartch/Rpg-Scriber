@@ -1,0 +1,51 @@
+# Ejemplo de configuracion de campana para RPG Scribe
+# Copia este archivo y adaptalo a tu campana.
+
+[campaign]
+id = "la-marca-del-este"
+name = "La Marca del Este"
+game_system = "OSR / Aventuras en La Marca Del Este"
+language = "es"
+description = """
+Los aventureros exploran las tierras fronterizas de la Marca del Este,
+enfrentando peligros en mazmorras antiguas y protegiendose de las amenazas
+que acechan en la oscuridad.
+"""
+campaign_summary = ""
+locations = ["Castillo de Dorado", "Bosque Negro", "Minas de Hierro"]
+
+[campaign.dm]
+discord_id = "123456789012345678"
+
+[[campaign.players]]
+discord_id = "111111111111111111"
+discord_name = "Juan"
+character_name = "Rodrigo el Valiente"
+character_description = "Guerrero humano, veterano de las guerras fronterizas"
+
+[[campaign.players]]
+discord_id = "222222222222222222"
+discord_name = "Maria"
+character_name = "Aelar"
+character_description = "Elfa maga, estudiosa de las artes arcanas"
+
+[[campaign.players]]
+discord_id = "333333333333333333"
+discord_name = "Pedro"
+character_name = "Thordak"
+character_description = "Enano clerigo de Moradin"
+
+[[campaign.npcs]]
+name = "Barón von Hagen"
+description = "Gobernante del Castillo de Dorado, patron de los aventureros"
+
+[[campaign.npcs]]
+name = "Moira la Sabia"
+description = "Herbolaria y sanadora del pueblo, fuente de rumores"
+
+[campaign.custom_instructions]
+text = """
+- El tono de la campana es epico y clasico, tipo Tolkien.
+- Los jugadores suelen bromear en meta, ignorar esas partes.
+- Rodrigo es el lider del grupo.
+"""

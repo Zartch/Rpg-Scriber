@@ -29,18 +29,18 @@ Eres un cronista que resume conversaciones de voz en tiempo real.
 INSTRUCCIONES:
 1. Escribe un resumen claro y estructurado de lo que dicen los participantes.
 2. Usa los nombres de los hablantes tal como aparecen.
-3. Distingue entre temas diferentes si la conversación cambia de asunto.
-4. Mantén el resumen coherente y fluido.
-5. Si algo no está claro, márcalo con [PREGUNTA: ...].
+3. Distingue entre temas diferentes si la conversaciÃ³n cambia de asunto.
+4. MantÃ©n el resumen coherente y fluido.
+5. Si algo no estÃ¡ claro, mÃ¡rcalo con [PREGUNTA: ...].
 """
 
 SESSION_SYSTEM_PROMPT = """\
 Eres un cronista experto de partidas de rol. Tu trabajo es escribir \
-un resumen narrativo de lo que ocurre en la sesión.
+un resumen narrativo de lo que ocurre en la sesiÃ³n.
 
-CONTEXTO DE LA CAMPAÑA:
+CONTEXTO DE LA CAMPAÃ‘A:
 - Sistema: {game_system}
-- Campaña: {name} — {description}
+- CampaÃ±a: {name} â€” {description}
 - Resumen hasta ahora: {campaign_summary}
 
 JUGADORES:
@@ -57,63 +57,63 @@ INSTRUCCIONES:
 conversaciones de los jugadores (meta-rol). El meta-rol NO va \
 en el resumen narrativo, pero puedes anotarlo como [META] si \
 es relevante (decisiones de grupo, dudas de reglas, etc.).
-3. El DM ({dm_name}) habla como múltiples PNJs. Intenta identificar \
-qué PNJ habla basándote en el contexto.
-4. Mantén el resumen coherente y fluido. Reescribe secciones \
-anteriores si nueva información las clarifica.
-5. Si algo no está claro, márcalo con [PREGUNTA: ...].
+3. El DM ({dm_name}) habla como mÃºltiples PNJs. Intenta identificar \
+quÃ© PNJ habla basÃ¡ndote en el contexto.
+4. MantÃ©n el resumen coherente y fluido. Reescribe secciones \
+anteriores si nueva informaciÃ³n las clarifica.
+5. Si algo no estÃ¡ claro, mÃ¡rcalo con [PREGUNTA: ...].
 """
 
 SESSION_UPDATE_USER = """\
-TRANSCRIPCIÓN RECIENTE:
+TRANSCRIPCIÃ“N RECIENTE:
 {recent_transcriptions}
 
-RESUMEN ACTUAL DE LA SESIÓN:
+RESUMEN ACTUAL DE LA SESIÃ“N:
 {current_session_summary}
 {user_answers_block}\
-Actualiza el resumen incorporando la nueva transcripción. \
-Devuelve ÚNICAMENTE el resumen actualizado, sin explicaciones adicionales."""
+Actualiza el resumen incorporando la nueva transcripciÃ³n. \
+Devuelve ÃšNICAMENTE el resumen actualizado, sin explicaciones adicionales."""
 
 FINALIZE_USER = """\
-La sesión ha terminado. A continuación tienes el resumen de sesión \
-y la transcripción completa pendiente.
+La sesiÃ³n ha terminado. A continuaciÃ³n tienes el resumen de sesiÃ³n \
+y la transcripciÃ³n completa pendiente.
 
-RESUMEN DE SESIÓN ACTUAL:
+RESUMEN DE SESIÃ“N ACTUAL:
 {session_summary}
 
-TRANSCRIPCIÓN PENDIENTE:
+TRANSCRIPCIÃ“N PENDIENTE:
 {pending_transcriptions}
 
 Genera:
-1. Un resumen final pulido de la sesión (narrativo, detallado).
-2. Una actualización del resumen de campaña incorporando esta sesión.
+1. Un resumen final pulido de la sesiÃ³n (narrativo, detallado).
+2. Una actualizaciÃ³n del resumen de campaÃ±a incorporando esta sesiÃ³n.
 
 Responde con el siguiente formato exacto:
 
 ---SESSION_SUMMARY---
-(resumen final de la sesión)
+(resumen final de la sesiÃ³n)
 
 ---CAMPAIGN_SUMMARY---
-(resumen actualizado de la campaña)
+(resumen actualizado de la campaÃ±a)
 """
 
 EXTRACTION_USER = """\
-A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
+A partir del siguiente resumen de sesiÃ³n, extrae los PNJs nuevos y \
 localizaciones nuevas que hayan aparecido.
 
-RESUMEN DE LA SESIÓN:
+RESUMEN DE LA SESIÃ“N:
 {session_summary}
 
 PNJS YA CONOCIDOS (NO los incluyas de nuevo):
 {known_npcs}
 
-Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
-texto adicional antes o después:
+Responde ÃšNICAMENTE con un JSON vÃ¡lido con este formato exacto, sin \
+texto adicional antes o despuÃ©s:
 
-{{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
-"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}]}}
+{{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripciÃ³n"}}], \
+"locations": [{{"name": "Nombre del lugar", "description": "Breve descripciÃ³n"}}]}}
 
-Si no hay PNJs o localizaciones nuevas, devuelve listas vacías.
+Si no hay PNJs o localizaciones nuevas, devuelve listas vacÃ­as.
 """
 
 
@@ -193,7 +193,7 @@ class ClaudeSummarizer(BaseSummarizer):
             game_system=c.game_system,
             name=c.name,
             description=c.description,
-            campaign_summary=c.campaign_summary or "(primera sesión)",
+            campaign_summary=c.campaign_summary or "(primera sesiÃ³n)",
             players_block="\n".join(players_lines),
             dm_name=dm_name,
             npcs_block="\n".join(npcs_lines),
@@ -280,7 +280,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 if attempt < self.config.max_retries - 1:
                     delay = self.config.retry_base_delay_s * (2**attempt)
                     logger.warning(
-                        "Claude API call failed (attempt %d/%d): %s — retrying in %.1fs",
+                        "Claude API call failed (attempt %d/%d): %s â€” retrying in %.1fs",
                         attempt + 1,
                         self.config.max_retries,
                         exc,
@@ -311,7 +311,7 @@ class ClaudeSummarizer(BaseSummarizer):
             system = self._build_system_prompt()
             user_msg = SESSION_UPDATE_USER.format(
                 recent_transcriptions=self._format_transcriptions(entries),
-                current_session_summary=self._session_summary or "(inicio de sesión)",
+                current_session_summary=self._session_summary or "(inicio de sesiÃ³n)",
                 user_answers_block=user_answers_block if user_answers_block else "\n",
             )
 
@@ -370,6 +370,17 @@ class ClaudeSummarizer(BaseSummarizer):
 
     async def get_campaign_summary(self) -> str:
         return self._campaign_summary
+    async def refresh_summary_on_demand(self) -> bool:
+        """Generate an on-demand summary snapshot from current pending entries."""
+        if self._pending:
+            await self._update_summary()
+            await self._publish_summary("on_demand")
+            return True
+
+        # No new transcriptions: still publish current snapshot so the caller can
+        # persist/log the current state as an explicit checkpoint.
+        await self._publish_summary("on_demand")
+        return True
 
     # ------------------------------------------------------------------
     # Batch helpers
@@ -467,17 +478,17 @@ class ClaudeSummarizer(BaseSummarizer):
 
         # Check whether everything fits in a single API call
         if not pending_text or len(pending_text) <= max_chars_for_transcriptions:
-            # Single batch — original behavior
+            # Single batch â€” original behavior
             result = await self._call_api(
                 system,
                 FINALIZE_USER.format(
-                    session_summary=self._session_summary or "(sin resumen todavía)",
+                    session_summary=self._session_summary or "(sin resumen todavÃ­a)",
                     pending_transcriptions=pending_text or "(ninguna)",
                 ),
             )
             session_part, campaign_part = self._parse_finalize_response(result)
         else:
-            # Multi-batch — progressive summarization
+            # Multi-batch â€” progressive summarization
             logger.info(
                 "Transcriptions too large for single call (%d chars, max %d). "
                 "Using batched finalization.",
@@ -489,7 +500,7 @@ class ClaudeSummarizer(BaseSummarizer):
             )
             logger.info("Split into %d batch(es)", len(batches))
 
-            running_summary = self._session_summary or "(inicio de sesión)"
+            running_summary = self._session_summary or "(inicio de sesiÃ³n)"
             session_part = running_summary
             campaign_part = ""
 
@@ -581,8 +592,8 @@ class ClaudeSummarizer(BaseSummarizer):
 
         try:
             result = await self._call_api(
-                "Eres un asistente que extrae información estructurada de "
-                "resúmenes de partidas de rol. Responde solo con JSON válido.",
+                "Eres un asistente que extrae informaciÃ³n estructurada de "
+                "resÃºmenes de partidas de rol. Responde solo con JSON vÃ¡lido.",
                 user_msg,
             )
             extracted = self._parse_extraction_response(result)
@@ -610,3 +621,5 @@ class ClaudeSummarizer(BaseSummarizer):
             )
         except Exception as exc:
             logger.error("NPC/location extraction failed: %s", exc)
+
+

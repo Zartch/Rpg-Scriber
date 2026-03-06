@@ -23,7 +23,7 @@ from rpg_scribe.web.routes import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 
-# ── Fixtures ─────────────────────────────────────────────────────
+# â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _make_status(**overrides) -> SystemStatusEvent:
     return SystemStatusEvent(**defaults)
 
 
-# ── WebState unit tests ──────────────────────────────────────────
+# â”€â”€ WebState unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestWebState:
@@ -157,7 +157,7 @@ class TestWebState:
         assert state.session_summary == "v2"
 
 
-# ── ConnectionManager unit tests ─────────────────────────────────
+# â”€â”€ ConnectionManager unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestConnectionManager:
@@ -216,7 +216,7 @@ class TestConnectionManager:
         await mgr.broadcast({"type": "empty"})
 
 
-# ── WebSocketBridge unit tests ───────────────────────────────────
+# â”€â”€ WebSocketBridge unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestWebSocketBridge:
@@ -282,7 +282,7 @@ class TestWebSocketBridge:
         assert payload["data"]["component"] == "listener"
 
 
-# ── REST endpoint tests ──────────────────────────────────────────
+# â”€â”€ REST endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestRESTEndpoints:
@@ -363,6 +363,27 @@ class TestRESTEndpoints:
         body = resp.json()
         assert body["questions"] == []
 
+    async def test_get_questions_from_db_active_session(self, event_bus: EventBus):
+        db = AsyncMock()
+        db.get_pending_questions = AsyncMock(return_value=[
+            {"id": 10, "question": "¿Quién es el PNJ?", "status": "pending"},
+        ])
+
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-live"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.get("/api/questions")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["questions"]) == 1
+        assert body["questions"][0]["id"] == 10
+        db.get_pending_questions.assert_awaited_once_with("sess-live")
     async def test_get_campaigns_empty(self, client: AsyncClient):
         resp = await client.get("/api/campaigns")
         assert resp.status_code == 200
@@ -420,6 +441,26 @@ class TestRESTEndpoints:
         resp = await client.get("/api/questions")
         assert resp.json()["questions"] == []
 
+    async def test_answer_question_persists_to_db(self, event_bus: EventBus):
+        db = AsyncMock()
+        db.answer_question = AsyncMock()
+
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-live"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post(
+                "/api/questions/42/answer",
+                json={"answer": "Es el herrero."},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        db.answer_question.assert_awaited_once_with(42, "Es el herrero.")
     async def test_answer_question_missing(self, client: AsyncClient):
         resp = await client.post(
             "/api/questions/nonexistent/answer",
@@ -441,7 +482,7 @@ class TestRESTEndpoints:
         assert resp.json()["ok"] is False
 
 
-# ── Integration: event bus → WebState ────────────────────────────
+# â”€â”€ Integration: event bus â†’ WebState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestEventBusIntegration:
@@ -495,7 +536,7 @@ class TestEventBusIntegration:
         assert len(state.transcriptions) == 3
 
 
-# ── Session list endpoint tests ──────────────────────────────────
+# â”€â”€ Session list endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestSessionListEndpoint:
@@ -597,7 +638,7 @@ class TestSessionListEndpoint:
             assert preview.endswith("...")
 
 
-# ── create_app factory tests ─────────────────────────────────────
+# â”€â”€ create_app factory tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 class TestFinalizeEndpoint:
@@ -681,6 +722,44 @@ class TestFinalizeEndpoint:
         router.event_bus = bus  # type: ignore[attr-defined]
 
 
+
+    async def test_refresh_summary_active_session(self, event_bus: EventBus):
+        """Refresh summary publishes SummaryRefreshRequestEvent and returns ok."""
+        app = create_app(event_bus)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-live"
+
+        published: list = []
+        from rpg_scribe.core.events import SummaryRefreshRequestEvent
+
+        async def _capture(event: SummaryRefreshRequestEvent) -> None:
+            published.append(event)
+
+        event_bus.subscribe(SummaryRefreshRequestEvent, _capture)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-live/refresh-summary")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["status"] == "refresh_requested"
+        assert len(published) == 1
+        assert published[0].session_id == "sess-live"
+        assert published[0].source == "web"
+
+    async def test_refresh_summary_no_active_session(self, event_bus: EventBus):
+        app = create_app(event_bus)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-none/refresh-summary")
+
+        body = resp.json()
+        assert body["ok"] is False
+        assert "No active session" in body["error"]
 class TestCreateApp:
     def test_app_has_routes(self, app):
         paths = [r.path for r in app.routes]
@@ -689,6 +768,12 @@ class TestCreateApp:
         assert "/ws/live" in paths
         assert "/api/campaigns/{campaign_id}/sessions" in paths
         assert "/api/sessions/{session_id}/finalize" in paths
+        assert "/api/sessions/{session_id}/refresh-summary" in paths
 
     def test_app_title(self, app):
         assert app.title == "RPG Scribe"
+
+
+
+
+

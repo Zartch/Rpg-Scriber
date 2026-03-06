@@ -57,6 +57,12 @@ class SessionEndRequestEvent:
 
     session_id: str
     source: str  # "discord", "file", "web", etc.
+@dataclass(frozen=True)
+class SummaryRefreshRequestEvent:
+    """Published when an on-demand summary refresh is requested."""
+
+    session_id: str
+    source: str  # "web", "discord", etc.
 
 
 @dataclass(frozen=True)
@@ -67,3 +73,5 @@ class SystemStatusEvent:
     status: str  # "running", "error", "idle"
     message: str
     timestamp: float = field(default_factory=time.time)
+
+
