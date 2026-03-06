@@ -13,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    SessionEndRequestEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -540,6 +541,87 @@ class TestSessionListEndpoint:
 # ── create_app factory tests ─────────────────────────────────────
 
 
+class TestFinalizeEndpoint:
+    """Tests for POST /api/sessions/{session_id}/finalize."""
+
+    async def test_finalize_active_session(self, event_bus: EventBus):
+        """Finalize triggers SessionEndRequestEvent and returns ok."""
+        app = create_app(event_bus)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-live"
+
+        published: list = []
+        from rpg_scribe.core.events import SessionEndRequestEvent
+
+        async def _capture(event: SessionEndRequestEvent) -> None:
+            published.append(event)
+
+        event_bus.subscribe(SessionEndRequestEvent, _capture)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-live/finalize")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["status"] == "finalizing"
+        assert state.active_session_id is None
+        assert len(published) == 1
+        assert published[0].session_id == "sess-live"
+        assert published[0].source == "web"
+
+    async def test_finalize_no_active_session(self, event_bus: EventBus):
+        """Returns error when no session is active."""
+        app = create_app(event_bus)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-none/finalize")
+
+        body = resp.json()
+        assert body["ok"] is False
+        assert "No active session" in body["error"]
+
+    async def test_finalize_mismatched_session(self, event_bus: EventBus):
+        """Returns error when session ID doesn't match active session."""
+        app = create_app(event_bus)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-real"
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-wrong/finalize")
+
+        body = resp.json()
+        assert body["ok"] is False
+        assert "does not match" in body["error"]
+
+    async def test_finalize_no_event_bus(self):
+        """Returns error when event bus is not available."""
+        bus = EventBus()
+        app = create_app(bus)
+        from rpg_scribe.web.routes import router
+
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-x"
+        router.event_bus = None  # type: ignore[attr-defined]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-x/finalize")
+
+        body = resp.json()
+        assert body["ok"] is False
+        assert "Event bus not available" in body["error"]
+
+        # Restore event_bus for other tests
+        router.event_bus = bus  # type: ignore[attr-defined]
+
+
 class TestCreateApp:
     def test_app_has_routes(self, app):
         paths = [r.path for r in app.routes]
@@ -547,6 +629,7 @@ class TestCreateApp:
         assert "/api/questions" in paths
         assert "/ws/live" in paths
         assert "/api/campaigns/{campaign_id}/sessions" in paths
+        assert "/api/sessions/{session_id}/finalize" in paths
 
     def test_app_title(self, app):
         assert app.title == "RPG Scribe"

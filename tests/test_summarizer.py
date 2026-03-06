@@ -1039,6 +1039,149 @@ class TestSummarizerConfig:
         assert cfg.model == "claude-sonnet-4-20250514"
         assert cfg.max_tokens == 4096
         assert cfg.max_retries == 3
+        assert cfg.max_input_chars == 600_000
+
+
+# ---------------------------------------------------------------------------
+# Batch finalization tests
+# ---------------------------------------------------------------------------
+
+
+class TestBatchHelpers:
+    def test_estimate_tokens(self):
+        assert ClaudeSummarizer._estimate_tokens("abcd") == 1
+        assert ClaudeSummarizer._estimate_tokens("a" * 100) == 25
+
+    def test_parse_finalize_response_with_markers(self):
+        text = (
+            "---SESSION_SUMMARY---\n"
+            "Session text here\n"
+            "---CAMPAIGN_SUMMARY---\n"
+            "Campaign text here"
+        )
+        session, campaign = ClaudeSummarizer._parse_finalize_response(text)
+        assert session == "Session text here"
+        assert campaign == "Campaign text here"
+
+    def test_parse_finalize_response_without_markers(self):
+        text = "Just a plain summary with no markers"
+        session, campaign = ClaudeSummarizer._parse_finalize_response(text)
+        assert session == text
+        assert campaign == ""
+
+    def test_split_into_batches_single(self):
+        bus = EventBus()
+        config = _make_config()
+        campaign = _make_campaign()
+        s = ClaudeSummarizer(bus, config, campaign)
+
+        entries = [
+            TranscriptionEntry("u1", "Alice", "Short text", 1.0),
+            TranscriptionEntry("u2", "Bob", "Also short", 2.0),
+        ]
+        batches = s._split_into_batches(entries, max_chars=1000)
+        assert len(batches) == 1
+        assert len(batches[0]) == 2
+
+    def test_split_into_batches_multiple(self):
+        bus = EventBus()
+        config = _make_config()
+        campaign = _make_campaign()
+        s = ClaudeSummarizer(bus, config, campaign)
+
+        # Create entries that exceed 100 chars total
+        entries = [
+            TranscriptionEntry("u1", "Alice", "A" * 40, float(i))
+            for i in range(5)
+        ]
+        batches = s._split_into_batches(entries, max_chars=100)
+        assert len(batches) > 1
+        # All entries should be preserved across batches
+        total = sum(len(b) for b in batches)
+        assert total == 5
+
+    def test_split_into_batches_empty(self):
+        bus = EventBus()
+        config = _make_config()
+        campaign = _make_campaign()
+        s = ClaudeSummarizer(bus, config, campaign)
+        assert s._split_into_batches([], max_chars=1000) == []
+
+    def test_split_into_batches_single_oversized_entry(self):
+        bus = EventBus()
+        config = _make_config()
+        campaign = _make_campaign()
+        s = ClaudeSummarizer(bus, config, campaign)
+
+        entries = [
+            TranscriptionEntry("u1", "Alice", "X" * 200, 1.0),
+            TranscriptionEntry("u2", "Bob", "Short", 2.0),
+        ]
+        batches = s._split_into_batches(entries, max_chars=50)
+        # Oversized entry gets its own batch
+        assert len(batches) == 2
+        assert len(batches[0]) == 1
+        assert batches[0][0].text == "X" * 200
+
+
+class TestBatchFinalization:
+    @pytest.fixture
+    def summarizer(self):
+        bus = EventBus()
+        config = _make_config()
+        campaign = _make_campaign()
+        mock_client = MagicMock()
+        s = ClaudeSummarizer(bus, config, campaign, client=mock_client)
+        s._session_id = "session-1"
+        return s
+
+    async def test_finalize_single_batch(self, summarizer):
+        """Single-batch finalization: original behavior."""
+        response = _mock_anthropic_response(
+            "---SESSION_SUMMARY---\nFinal text\n---CAMPAIGN_SUMMARY---\nCampaign update"
+        )
+        summarizer._get_client().messages.create = AsyncMock(return_value=response)
+
+        # Add a few pending entries
+        summarizer._pending = [
+            TranscriptionEntry("u1", "Alice", "Hello", 1.0),
+        ]
+        result = await summarizer.finalize_session()
+
+        assert result == "Final text"
+        assert summarizer._campaign_summary == "Campaign update"
+        # Single API call
+        summarizer._get_client().messages.create.assert_called_once()
+
+    async def test_finalize_multi_batch(self, summarizer):
+        """Multi-batch: should make multiple API calls."""
+        # Set a very small max_input_chars to force batching.
+        # Note: finalize_session clamps max_chars_for_transcriptions to min 1000,
+        # so we need entries whose total formatted text exceeds 1000 chars.
+        summarizer.config.max_input_chars = 200
+
+        # Intermediate call returns a summary
+        intermediate_resp = _mock_anthropic_response("Intermediate summary of batch 1")
+        # Final call returns structured response
+        final_resp = _mock_anthropic_response(
+            "---SESSION_SUMMARY---\nFinal multi-batch\n---CAMPAIGN_SUMMARY---\nUpdated campaign"
+        )
+        summarizer._get_client().messages.create = AsyncMock(
+            side_effect=[intermediate_resp, final_resp]
+        )
+
+        # Each entry formatted: "[Alice]: AAA...250A\n" ≈ 260 chars
+        # 5 entries ≈ 1300 chars > 1000 minimum → forces multi-batch
+        summarizer._pending = [
+            TranscriptionEntry("u1", "Alice", "A" * 250, float(i))
+            for i in range(5)
+        ]
+        result = await summarizer.finalize_session()
+
+        assert result == "Final multi-batch"
+        assert summarizer._campaign_summary == "Updated campaign"
+        # Should have made at least 2 API calls
+        assert summarizer._get_client().messages.create.call_count >= 2
 
 
 # ---------------------------------------------------------------------------

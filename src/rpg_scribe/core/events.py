@@ -44,6 +44,22 @@ class SummaryUpdateEvent:
 
 
 @dataclass(frozen=True)
+class SessionStartRequestEvent:
+    """Published when a session begins (e.g. /scribe start)."""
+
+    session_id: str
+    source: str  # "discord", "file", "web", etc.
+
+
+@dataclass(frozen=True)
+class SessionEndRequestEvent:
+    """Published when a session should be finalized (e.g. /scribe stop)."""
+
+    session_id: str
+    source: str  # "discord", "file", "web", etc.
+
+
+@dataclass(frozen=True)
 class SystemStatusEvent:
     """System status for visualization."""
 

@@ -102,7 +102,8 @@ class TestLoadCampaignToml:
 
 
 class TestLoadAppConfig:
-    def test_defaults(self) -> None:
+    def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
         config = load_app_config()
         assert isinstance(config, AppConfig)
         assert config.web_host == "127.0.0.1"
@@ -118,7 +119,8 @@ class TestLoadAppConfig:
         assert config.web_port == 9000
         assert config.discord_summary_channel_id == "12345"
 
-    def test_with_campaign_file(self, campaign_toml_file: Path) -> None:
+    def test_with_campaign_file(self, campaign_toml_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
         config = load_app_config(campaign_path=campaign_toml_file)
         assert config.campaign is not None
         assert config.campaign.name == "Test Campaign"
@@ -149,8 +151,13 @@ path = "custom.db"
 
 
 class TestDefaultTomlLoading:
-    def test_defaults_from_toml_override_dataclass_defaults(self, tmp_path: Path) -> None:
+    def test_defaults_from_toml_override_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Values from default.toml should override dataclass defaults."""
+        import os
+        for k in list(os.environ):
+            if k.startswith("RPG_SCRIBE_") or k == "DISCORD_BOT_TOKEN":
+                monkeypatch.delenv(k, raising=False)
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
         defaults_file = tmp_path / "default.toml"
         defaults_file.write_text(CUSTOM_DEFAULTS_TOML)
 
@@ -166,8 +173,9 @@ class TestDefaultTomlLoading:
         assert config.web_port == 9090
         assert config.database_path == "custom.db"
 
-    def test_unset_fields_keep_dataclass_defaults(self, tmp_path: Path) -> None:
+    def test_unset_fields_keep_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Fields not in default.toml should retain their dataclass defaults."""
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
         # Minimal TOML that only sets one field
         defaults_file = tmp_path / "default.toml"
         defaults_file.write_text("[listener]\nchunk_duration_s = 20.0\n")
@@ -195,8 +203,9 @@ class TestDefaultTomlLoading:
         assert config.web_host == "10.0.0.1"
         assert config.web_port == 5555
 
-    def test_without_default_toml_uses_dataclass_defaults(self, tmp_path: Path) -> None:
+    def test_without_default_toml_uses_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """If default.toml doesn't exist, dataclass defaults are used."""
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
         nonexistent = tmp_path / "nonexistent.toml"
 
         config = load_app_config(defaults_path=nonexistent)
@@ -291,7 +300,10 @@ class TestImportCampaignScript:
             npcs=[{"name": "NPC1", "description": ""}],
             custom_instructions="Be concise.",
         )
-        import tomllib
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
 
         data = tomllib.loads(result)
         assert data["campaign"]["name"] == "Parseable Campaign"

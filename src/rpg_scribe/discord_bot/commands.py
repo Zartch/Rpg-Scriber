@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
+from rpg_scribe.core.events import SessionEndRequestEvent, SessionStartRequestEvent
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.listeners.discord_listener import DiscordListener
 
@@ -110,6 +111,12 @@ class ScribeCog(commands.Cog):
                 session_id=self.session_id,
                 voice_channel=voice_channel,
             )
+            # Notify Application via EventBus so it starts summarizer + DB session
+            await self.event_bus.publish(
+                SessionStartRequestEvent(
+                    session_id=self.session_id, source="discord"
+                )
+            )
             await interaction.followup.send(
                 f"Recording started in **{voice_channel.name}**.\n"
                 f"Session: `{self.session_id}`"
@@ -143,8 +150,14 @@ class ScribeCog(commands.Cog):
         await self.listener.disconnect()
         self.listener = None
         self.session_id = None
+        # Notify Application via EventBus — finalization runs in background
+        await self.event_bus.publish(
+            SessionEndRequestEvent(session_id=sid, source="discord")
+        )
         logger.info("Sesión %s detenida correctamente", sid)
-        await interaction.followup.send(f"Recording stopped. Session `{sid}` ended.")
+        await interaction.followup.send(
+            f"Recording stopped. Session `{sid}` ended. Finalizing summary..."
+        )
 
     @scribe_group.command(
         name="status", description="Show current recording status"

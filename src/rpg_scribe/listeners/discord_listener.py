@@ -23,33 +23,7 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
-# ── Monkey-patch: Disable DAVE E2EE for voice_recv compatibility ────
-# discord.py 2.7+ supports DAVE (Discord Audio-Visual Experience) E2EE
-# which encrypts opus payloads with an additional layer on top of the
-# transport encryption (xsalsa20/aead).  discord-ext-voice-recv does NOT
-# support DAVE decryption, so if DAVE is negotiated the opus decoder
-# receives encrypted data and produces noise.
-#
-# Fix: force max_dave_protocol_version to 0 so Discord does not enable
-# DAVE for the bot's voice connection.
-def _patch_disable_dave() -> None:
-    try:
-        from discord.voice_state import VoiceConnectionState
-    except ImportError:
-        return
 
-    @property  # type: ignore[misc]
-    def _no_dave(self: VoiceConnectionState) -> int:  # type: ignore[type-arg]
-        return 0
-
-    VoiceConnectionState.max_dave_protocol_version = _no_dave  # type: ignore[assignment]
-    logger.info(
-        "Parcheado VoiceConnectionState.max_dave_protocol_version → 0 "
-        "(DAVE E2EE desactivado, incompatible con voice_recv)"
-    )
-
-
-_patch_disable_dave()
 
 
 # ── Monkey-patch: voice_recv PacketRouter resilience ───────────────
@@ -87,7 +61,97 @@ def _patch_packet_router() -> None:
     logger.info("Parcheado PacketRouter._do_run para tolerancia a OpusError")
 
 
+def _patch_dave_decryption() -> None:
+    """
+    Monkey-patch: voice_recv DAVE Decryption
+    discord-ext-voice-recv no soporta nativamente el descifrado DAVE (E2EE).
+    Parcheamos PacketDecoder._decode_packet para interceptar el payload, 
+    descifrarlo usando dave_session de discord.py, y enviarlo a Opus.
+    """
+    try:
+        from discord.ext.voice_recv.opus import PacketDecoder
+    except ImportError:
+        return
+
+    _original_decode_packet = getattr(PacketDecoder, "_original_decode_packet", PacketDecoder._decode_packet)
+
+    def _patched_decode_packet(self: Any, packet: Any) -> tuple[Any, bytes]:
+        assert self._decoder is not None
+
+        # Track whether we've already logged a DAVE failure for this SSRC
+        # to avoid spamming thousands of warning lines per second.
+        if not hasattr(self, '_dave_fail_logged'):
+            self._dave_fail_logged = False
+
+        def _decrypt_dave(data: bytes) -> Optional[bytes]:
+            """Attempt DAVE decryption. Returns decrypted bytes on success, None on failure."""
+            try:
+                vc = self.sink.voice_client
+                if hasattr(vc, '_connection') and getattr(vc._connection, 'dave_session', None) is not None:
+                    dave = vc._connection.dave_session
+                    user_id = None
+                    try:
+                        import davey
+                        user_id = self._cached_id
+                        if user_id is None:
+                            user_id = vc._get_id_from_ssrc(self.ssrc)
+                            self._cached_id = user_id
+
+                        if user_id is not None:
+                            result = dave.decrypt(user_id, davey.MediaType.audio, data)
+                            # Decryption succeeded — reset fail flag so future failures get logged
+                            if self._dave_fail_logged:
+                                logger.info("DAVE decryption recovered for ssrc %s (user %s)", self.ssrc, user_id)
+                                self._dave_fail_logged = False
+                            return result
+                        else:
+                            if not self._dave_fail_logged:
+                                logger.warning("DAVE: user_id could not be resolved from ssrc %s", self.ssrc)
+                                self._dave_fail_logged = True
+                    except Exception as e:
+                        if not self._dave_fail_logged:
+                            logger.warning("DAVE decrypt failed (user %s, ssrc %s): %s", user_id, self.ssrc, repr(e))
+                            self._dave_fail_logged = True
+                else:
+                    # No dave_session at all — passthrough (no E2EE on this connection)
+                    return data
+            except Exception as e:
+                if not self._dave_fail_logged:
+                    logger.warning("DAVE wrapper error: %s", repr(e))
+                    self._dave_fail_logged = True
+            return None  # Signal: decryption failed, do NOT pass to Opus
+
+        if packet:
+            decrypted = _decrypt_dave(packet.decrypted_data)
+            if decrypted is not None:
+                try:
+                    pcm = self._decoder.decode(decrypted, fec=False)
+                    return packet, pcm
+                except Exception as e:
+                    # Opus error even after successful DAVE decrypt — log but don't crash
+                    logger.warning("Opus decode error (post-DAVE) len %d: %s", len(decrypted), e)
+            # Decryption failed OR Opus failed → generate silence to keep router alive
+            pcm = self._decoder.decode(None, fec=False)
+            return packet, pcm
+
+        # No packet (jitter gap) — FEC or silence
+        next_packet = self._buffer.peek_next()
+        if next_packet is not None:
+            # Peek only — do NOT DAVE-decrypt here (would double-decrypt on next pop)
+            pcm = self._decoder.decode(None, fec=False)
+        else:
+            pcm = self._decoder.decode(None, fec=False)
+
+        return packet, pcm
+
+    if PacketDecoder._decode_packet.__name__ != "_patched_decode_packet":
+        PacketDecoder._original_decode_packet = _original_decode_packet # type: ignore[attr-defined]
+        PacketDecoder._decode_packet = _patched_decode_packet  # type: ignore[assignment]
+        logger.info("Parcheado PacketDecoder._decode_packet para soportar descifrado DAVE")
+
+
 _patch_packet_router()
+_patch_dave_decryption()
 
 # Discord sends 48 kHz 16-bit stereo; we convert to mono.
 DISCORD_SAMPLE_RATE = 48000
@@ -283,6 +347,24 @@ class DiscordListener(BaseListener):
             raise ValueError("Must provide either voice_channel or voice_client")
 
         self._connected = True
+
+        # Wait for the voice client to be fully ready after connection
+        # (after 4017 retries, the voice state may not be settled yet)
+        if hasattr(self._voice_client, "is_connected"):
+            for _ in range(20):  # up to ~5s
+                if self._voice_client is None or self._voice_client.is_connected():
+                    break
+                logger.debug("Esperando a que VoiceClient esté listo...")
+                await asyncio.sleep(0.25)
+            if self._voice_client is not None and not self._voice_client.is_connected():
+                logger.warning(
+                    "VoiceClient no confirmó conexión tras espera; intentando listen() de todas formas"
+                )
+
+        if self._voice_client is None:
+            logger.info("Bot desconectado o fallo en inicializar VoiceClient para la sesión %s", session_id)
+            return
+
         self._start_receiving()
         self._flush_task = asyncio.create_task(self._periodic_flush())
 
@@ -297,6 +379,9 @@ class DiscordListener(BaseListener):
 
     def _start_receiving(self) -> None:
         """Register the audio callback on the voice client."""
+        if self._voice_client is None:
+            return
+        
         try:
             from discord.ext import voice_recv  # type: ignore[import-untyped]
 

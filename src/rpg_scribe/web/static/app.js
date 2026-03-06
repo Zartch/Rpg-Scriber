@@ -27,6 +27,24 @@
   var editDescInput = document.getElementById("edit-campaign-desc");
   var editInstructionsInput = document.getElementById("edit-campaign-instructions");
 
+  // Player/NPC elements
+  var playersSection = document.getElementById("players-section");
+  var playersHeader = document.getElementById("players-header");
+  var playersBody = document.getElementById("players-body");
+  var playersList = document.getElementById("players-list");
+  var playersCount = document.getElementById("players-count");
+  var npcsSection = document.getElementById("npcs-section");
+  var npcsHeader = document.getElementById("npcs-header");
+  var npcsBody = document.getElementById("npcs-body");
+  var npcsList = document.getElementById("npcs-list");
+  var npcsCount = document.getElementById("npcs-count");
+  var addNpcBtn = document.getElementById("add-npc-btn");
+  var addNpcForm = document.getElementById("add-npc-form");
+  var addNpcCancel = document.getElementById("add-npc-cancel");
+
+  // Finalize button
+  var finalizeBtn = document.getElementById("finalize-btn");
+
   // ── State ─────────────────────────────────────────────────────
 
   var viewingHistorical = false;  // true when viewing a past session
@@ -175,8 +193,13 @@
 
   function escapeHtml(str) {
     var div = document.createElement("div");
-    div.appendChild(document.createTextNode(str));
+    div.appendChild(document.createTextNode(str || ""));
     return div.innerHTML;
+  }
+
+  function escapeAttr(str) {
+    return (str || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // ── Campaign info ───────────────────────────────────────────────
@@ -189,8 +212,16 @@
           currentCampaign = data.campaign;
           activeCampaignId = data.campaign.id;
           renderCampaignBar(data.campaign);
+          renderPlayers(data.campaign.players || []);
+          renderNpcs(data.campaign.npcs || []);
         } else {
-          campaignBar.classList.add("hidden");
+          // No campaign loaded — show "Resume mode"
+          campaignBar.classList.remove("hidden");
+          campaignNameEl.textContent = "No campaign \u2014 Resume mode";
+          campaignSystemEl.textContent = "";
+          campaignEditBtn.classList.add("hidden");
+          playersSection.classList.add("hidden");
+          npcsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
         }
@@ -205,14 +236,17 @@
     var systemText = "";
     if (campaign.game_system) systemText += campaign.game_system;
     if (campaign.language) {
-      systemText += (systemText ? " · " : "") + campaign.language.toUpperCase();
+      systemText += (systemText ? " \u00b7 " : "") + campaign.language.toUpperCase();
     }
     campaignSystemEl.textContent = systemText ? "(" + systemText + ")" : "";
 
     // Hide edit for generic campaigns
     if (campaign.is_generic) {
       campaignEditBtn.classList.add("hidden");
-      campaignNameEl.textContent = campaign.name + " (generic)";
+      campaignNameEl.textContent = "No campaign \u2014 Resume mode";
+      campaignSystemEl.textContent = "";
+      playersSection.classList.add("hidden");
+      npcsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
     }
@@ -278,6 +312,223 @@
   campaignEditCancel.addEventListener("click", closeCampaignEdit);
   campaignEditForm.addEventListener("submit", saveCampaignEdit);
 
+  // ── Players & NPCs ──────────────────────────────────────────────
+
+  function renderPlayers(players) {
+    if (!players || players.length === 0) {
+      playersSection.classList.add("hidden");
+      return;
+    }
+    playersSection.classList.remove("hidden");
+    playersCount.textContent = "(" + players.length + ")";
+    playersList.innerHTML = "";
+
+    players.forEach(function (p) {
+      var card = document.createElement("div");
+      card.className = "entity-card";
+      card.innerHTML =
+        '<div class="entity-display">' +
+          '<div class="entity-info">' +
+            '<strong class="entity-name">' + escapeHtml(p.character_name) + '</strong>' +
+            '<span class="entity-meta">' + escapeHtml(p.discord_name) + '</span>' +
+          '</div>' +
+          '<span class="entity-desc">' + escapeHtml(p.character_description) + '</span>' +
+          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden">' +
+          '<div class="edit-row"><label>Discord</label>' +
+            '<input type="text" class="edit-discord-name" value="' + escapeAttr(p.discord_name) + '" /></div>' +
+          '<div class="edit-row"><label>Character</label>' +
+            '<input type="text" class="edit-char-name" value="' + escapeAttr(p.character_name) + '" required /></div>' +
+          '<div class="edit-row"><label>Description</label>' +
+            '<textarea class="edit-char-desc" rows="2">' + escapeHtml(p.character_description) + '</textarea></div>' +
+          '<div class="edit-actions">' +
+            '<button type="submit" class="btn-small btn-save">Save</button>' +
+            '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
+          '</div>' +
+        '</form>';
+
+      // Toggle edit
+      var displayEl = card.querySelector(".entity-display");
+      var formEl = card.querySelector(".entity-edit-form");
+      card.querySelector(".btn-edit-entity").addEventListener("click", function () {
+        displayEl.classList.add("hidden");
+        formEl.classList.remove("hidden");
+      });
+      card.querySelector(".entity-edit-cancel").addEventListener("click", function () {
+        formEl.classList.add("hidden");
+        displayEl.classList.remove("hidden");
+      });
+
+      // Save player
+      formEl.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var reqBody = {
+          discord_id: p.discord_id,
+          discord_name: formEl.querySelector(".edit-discord-name").value.trim(),
+          character_name: formEl.querySelector(".edit-char-name").value.trim(),
+          character_description: formEl.querySelector(".edit-char-desc").value.trim(),
+        };
+        var saveBtn = formEl.querySelector(".btn-save");
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+
+        fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to save player."); })
+          .finally(function () {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save";
+          });
+      });
+
+      playersList.appendChild(card);
+    });
+  }
+
+  function renderNpcs(npcs) {
+    if (!npcs || npcs.length === 0) {
+      npcsSection.classList.remove("hidden");
+      npcsCount.textContent = "(0)";
+      npcsList.innerHTML = '<p class="placeholder">No NPCs yet.</p>';
+      return;
+    }
+    npcsSection.classList.remove("hidden");
+    npcsCount.textContent = "(" + npcs.length + ")";
+    npcsList.innerHTML = "";
+
+    npcs.forEach(function (n) {
+      var card = document.createElement("div");
+      card.className = "entity-card";
+      card.innerHTML =
+        '<div class="entity-display">' +
+          '<div class="entity-info">' +
+            '<strong class="entity-name">' + escapeHtml(n.name) + '</strong>' +
+          '</div>' +
+          '<span class="entity-desc">' + escapeHtml(n.description) + '</span>' +
+          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden">' +
+          '<div class="edit-row"><label>Name</label>' +
+            '<input type="text" class="edit-npc-name" value="' + escapeAttr(n.name) + '" required /></div>' +
+          '<div class="edit-row"><label>Description</label>' +
+            '<textarea class="edit-npc-desc" rows="2">' + escapeHtml(n.description) + '</textarea></div>' +
+          '<div class="edit-actions">' +
+            '<button type="submit" class="btn-small btn-save">Save</button>' +
+            '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
+          '</div>' +
+        '</form>';
+
+      var displayEl = card.querySelector(".entity-display");
+      var formEl = card.querySelector(".entity-edit-form");
+      card.querySelector(".btn-edit-entity").addEventListener("click", function () {
+        displayEl.classList.add("hidden");
+        formEl.classList.remove("hidden");
+      });
+      card.querySelector(".entity-edit-cancel").addEventListener("click", function () {
+        formEl.classList.add("hidden");
+        displayEl.classList.remove("hidden");
+      });
+
+      // Save NPC
+      formEl.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var reqBody = {
+          old_name: n.name,
+          name: formEl.querySelector(".edit-npc-name").value.trim(),
+          description: formEl.querySelector(".edit-npc-desc").value.trim(),
+        };
+        var saveBtn = formEl.querySelector(".btn-save");
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+
+        fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) { fetchCampaignInfo(); }
+            else { alert("Error: " + (data.error || "Unknown error")); }
+          })
+          .catch(function () { alert("Failed to save NPC."); })
+          .finally(function () {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save";
+          });
+      });
+
+      npcsList.appendChild(card);
+    });
+  }
+
+  // Collapse toggles
+  playersHeader.addEventListener("click", function () {
+    playersBody.classList.toggle("collapsed");
+    playersHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+  });
+  npcsHeader.addEventListener("click", function () {
+    npcsBody.classList.toggle("collapsed");
+    npcsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+  });
+
+  // Add NPC form
+  addNpcBtn.addEventListener("click", function () {
+    addNpcBtn.classList.add("hidden");
+    addNpcForm.classList.remove("hidden");
+    document.getElementById("new-npc-name").focus();
+  });
+  addNpcCancel.addEventListener("click", function () {
+    addNpcForm.classList.add("hidden");
+    addNpcBtn.classList.remove("hidden");
+  });
+  addNpcForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var reqBody = {
+      name: document.getElementById("new-npc-name").value.trim(),
+      description: document.getElementById("new-npc-desc").value.trim(),
+    };
+    if (!reqBody.name) return;
+    var saveBtn = addNpcForm.querySelector(".btn-save");
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+
+    fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reqBody),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          document.getElementById("new-npc-name").value = "";
+          document.getElementById("new-npc-desc").value = "";
+          addNpcForm.classList.add("hidden");
+          addNpcBtn.classList.remove("hidden");
+          fetchCampaignInfo();
+        } else {
+          alert("Error: " + (data.error || "Unknown error"));
+        }
+      })
+      .catch(function () { alert("Failed to add NPC."); })
+      .finally(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+      });
+  });
+
   // ── Questions polling ─────────────────────────────────────────
 
   function pollQuestions() {
@@ -298,10 +549,8 @@
     if (count > 0) {
       questionsBadge.textContent = count;
       questionsBadge.classList.remove("hidden");
-      // Pulse animation when new questions arrive
       if (count > previousQuestionCount) {
         questionsBadge.classList.remove("pulse");
-        // Force reflow to restart animation
         void questionsBadge.offsetWidth;
         questionsBadge.classList.add("pulse");
       }
@@ -372,15 +621,14 @@
   // ── Session history ───────────────────────────────────────────
 
   function fetchSessionList() {
-    // First get the active status to know session id
     fetch("/api/status")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         activeSessionId = data.active_session_id;
+        updateFinalizeButton();
       })
       .catch(function () {});
 
-    // Then fetch sessions — use campaign-specific or all
     var sessionsUrl;
     if (activeCampaignId) {
       sessionsUrl = "/api/campaigns/" + activeCampaignId + "/sessions";
@@ -424,7 +672,6 @@
         metaLine += '</div>';
       }
 
-      // Icons for summary / transcription availability
       var indicators = '';
       if (s.has_summary) {
         indicators += '<span class="session-indicator" title="Has summary">S</span>';
@@ -471,7 +718,6 @@
     viewingHistorical = true;
     backToLiveBtn.classList.remove("hidden");
 
-    // Fetch transcriptions and summary for the historical session
     Promise.all([
       fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
       fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
@@ -480,7 +726,6 @@
         var transData = results[0];
         var summData = results[1];
 
-        // Clear and render transcriptions
         transcriptionFeed.innerHTML = "";
         var transcriptions = transData.transcriptions || [];
         if (transcriptions.length === 0) {
@@ -489,7 +734,6 @@
           transcriptions.forEach(function (t) { addTranscription(t); });
         }
 
-        // Render summary
         sessionSummaryEl.textContent = summData.session_summary || "(no summary)";
         campaignSummaryEl.textContent = summData.campaign_summary || "(no campaign summary)";
       })
@@ -502,19 +746,62 @@
     viewingHistorical = false;
     backToLiveBtn.classList.add("hidden");
 
-    // Remove selected highlighting
     var items = sessionListEl.querySelectorAll(".session-item");
     for (var i = 0; i < items.length; i++) {
       items[i].classList.remove("selected");
     }
 
-    // Restore live view — clear and let WebSocket repopulate
     transcriptionFeed.innerHTML = "";
     sessionSummaryEl.innerHTML = '<p class="placeholder">Waiting for summary updates&hellip;</p>';
     campaignSummaryEl.innerHTML = '<p class="placeholder">No campaign summary yet.</p>';
   }
 
   backToLiveBtn.addEventListener("click", switchToLive);
+
+  // ── Finalize session ───────────────────────────────────────────
+
+  function updateFinalizeButton() {
+    if (finalizeBtn) {
+      if (activeSessionId && !viewingHistorical) {
+        finalizeBtn.classList.remove("hidden");
+      } else {
+        finalizeBtn.classList.add("hidden");
+      }
+    }
+  }
+
+  if (finalizeBtn) {
+    finalizeBtn.addEventListener("click", function () {
+      if (!activeSessionId) return;
+      if (!confirm("Finalize the current session? This will generate the final summary and end the session.")) {
+        return;
+      }
+      finalizeBtn.disabled = true;
+      finalizeBtn.textContent = "Finalizing...";
+
+      fetch("/api/sessions/" + activeSessionId + "/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            activeSessionId = null;
+            updateFinalizeButton();
+            setTimeout(fetchSessionList, 2000);
+          } else {
+            alert("Error: " + (data.error || "Failed to finalize"));
+          }
+        })
+        .catch(function () {
+          alert("Failed to finalize session.");
+        })
+        .finally(function () {
+          finalizeBtn.disabled = false;
+          finalizeBtn.textContent = "Finalize Session";
+        });
+    });
+  }
 
   // ── Init ──────────────────────────────────────────────────────
 
@@ -523,10 +810,8 @@
   pollQuestions();
   setInterval(pollQuestions, 5000);
 
-  // Delay session list fetch slightly so campaign info is available
   setTimeout(function () {
     fetchSessionList();
-    // Refresh session list periodically
     setInterval(fetchSessionList, 30000);
   }, 500);
 })();

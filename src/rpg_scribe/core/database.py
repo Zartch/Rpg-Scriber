@@ -280,6 +280,77 @@ class Database:
         )
         return await cursor.fetchone() is not None
 
+    async def update_npc(self, npc_id: str, **fields: Any) -> None:
+        """Update specific fields of an NPC record.
+
+        Accepted fields: name, description.
+        """
+        allowed = {"name", "description"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [npc_id]
+        await self.conn.execute(
+            f"UPDATE npcs SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    # ── Players ─────────────────────────────────────────────────────
+
+    async def save_player(
+        self,
+        campaign_id: str,
+        discord_id: str,
+        discord_name: str,
+        character_name: str,
+        character_description: str = "",
+    ) -> str:
+        """Insert a new player record and return its ID."""
+        import uuid
+
+        player_id = str(uuid.uuid4())
+        await self.conn.execute(
+            "INSERT INTO players (id, campaign_id, discord_id, discord_name, "
+            "character_name, character_description) VALUES (?, ?, ?, ?, ?, ?)",
+            (player_id, campaign_id, discord_id, discord_name,
+             character_name, character_description),
+        )
+        await self.conn.commit()
+        return player_id
+
+    async def get_players(self, campaign_id: str) -> list[dict[str, Any]]:
+        """Get all players for a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM players WHERE campaign_id = ? ORDER BY discord_name",
+            (campaign_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def player_exists(self, campaign_id: str, discord_id: str) -> bool:
+        """Check if a player with the given discord_id already exists."""
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM players WHERE campaign_id = ? AND discord_id = ? LIMIT 1",
+            (campaign_id, discord_id),
+        )
+        return await cursor.fetchone() is not None
+
+    async def update_player(self, player_id: str, **fields: Any) -> None:
+        """Update specific fields of a player record.
+
+        Accepted fields: discord_name, character_name, character_description.
+        """
+        allowed = {"discord_name", "character_name", "character_description"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [player_id]
+        await self.conn.execute(
+            f"UPDATE players SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
     # ── Questions ──────────────────────────────────────────────────
 
     async def save_question(
