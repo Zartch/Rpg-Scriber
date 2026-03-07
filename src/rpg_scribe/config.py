@@ -1,4 +1,4 @@
-"""Campaign configuration loader from TOML files."""
+﻿"""Campaign configuration loader from TOML files."""
 
 from __future__ import annotations
 
@@ -19,10 +19,12 @@ else:
     import tomli as tomllib
 
 from rpg_scribe.core.models import (
+    CharacterRelationshipInfo,
     CampaignContext,
     ListenerConfig,
     NPCInfo,
     PlayerInfo,
+    RelationshipTypeInfo,
     SummarizerConfig,
     TranscriberConfig,
 )
@@ -55,6 +57,7 @@ class AppConfig:
 
     # Campaign
     campaign: CampaignContext | None = None
+    campaign_path: str = ""
 
     # Database
     database_path: str = "rpg_scribe.db"
@@ -140,6 +143,44 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
     for n in campaign_data.get("npcs", []):
         npcs.append(NPCInfo(name=n["name"], description=n.get("description", "")))
 
+    # Relationship types (thesaurus)
+    relation_types: list[RelationshipTypeInfo] = []
+    for rt in campaign_data.get("relationship_types", []):
+        label = str(rt.get("label", rt.get("key", ""))).strip()
+        key = str(rt.get("key", "")).strip()
+        if not label and not key:
+            continue
+        if not key:
+            key = label
+        relation_types.append(
+            RelationshipTypeInfo(
+                key=key,
+                label=label or key,
+                category=str(rt.get("category", "general") or "general"),
+            )
+        )
+
+    # Character relationships
+    relationships: list[CharacterRelationshipInfo] = []
+    for rel in campaign_data.get("relationships", []):
+        source_key = str(rel.get("source_key", "")).strip()
+        target_key = str(rel.get("target_key", "")).strip()
+        relation_type_key = str(rel.get("relation_type_key", "")).strip()
+        relation_type_label = str(rel.get("relation_type_label", "")).strip()
+        if not source_key or not target_key:
+            continue
+        if not relation_type_key and not relation_type_label:
+            continue
+        relationships.append(
+            CharacterRelationshipInfo(
+                source_key=source_key,
+                target_key=target_key,
+                relation_type_key=relation_type_key or relation_type_label,
+                relation_type_label=relation_type_label or relation_type_key,
+                notes=str(rel.get("notes", "")).strip(),
+            )
+        )
+
     # DM
     dm_data = campaign_data.get("dm", {})
     dm_speaker_id = str(dm_data.get("discord_id", ""))
@@ -156,6 +197,8 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
         description=campaign_data.get("description", "").strip(),
         players=players,
         known_npcs=npcs,
+        relation_types=relation_types,
+        relationships=relationships,
         locations=campaign_data.get("locations", []),
         campaign_summary=campaign_data.get("campaign_summary", ""),
         speaker_map=speaker_map,
@@ -228,10 +271,104 @@ def load_app_config(
     # 3. Campaign file
     if campaign_path is not None:
         config.campaign = load_campaign_toml(campaign_path)
+        config.campaign_path = str(Path(campaign_path).resolve())
         # Propagate language to transcriber
         if config.campaign:
             config.transcriber.language = config.campaign.language
 
     return config
+
+
+def _escape_toml_string(value: str) -> str:
+    """Escape a string for use as a TOML basic string."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _render_toml_text_field(key: str, value: str) -> str:
+    """Render a text field, using multiline TOML for long values."""
+    text = value.strip()
+    if not text:
+        return f'{key} = ""'
+    if "\n" in text:
+        return f'{key} = """\n{text}\n"""'
+    return f'{key} = "{_escape_toml_string(text)}"'
+
+
+def campaign_to_toml(campaign: CampaignContext) -> str:
+    """Serialize CampaignContext to campaign TOML format."""
+    lines: list[str] = []
+    lines.append("[campaign]")
+    lines.append(f'id = "{_escape_toml_string(campaign.campaign_id)}"')
+    lines.append(f'name = "{_escape_toml_string(campaign.name)}"')
+    lines.append(f'game_system = "{_escape_toml_string(campaign.game_system)}"')
+    lines.append(f'language = "{_escape_toml_string(campaign.language)}"')
+    lines.append(_render_toml_text_field("description", campaign.description))
+    lines.append(_render_toml_text_field("campaign_summary", campaign.campaign_summary))
+
+    locations = [
+        f'"{_escape_toml_string(str(loc))}"'
+        for loc in campaign.locations
+        if str(loc).strip()
+    ]
+    lines.append(f'locations = [{", ".join(locations)}]')
+
+    if campaign.dm_speaker_id:
+        lines.append("")
+        lines.append("[campaign.dm]")
+        lines.append(f'discord_id = "{_escape_toml_string(campaign.dm_speaker_id)}"')
+
+    for player in campaign.players:
+        lines.append("")
+        lines.append("[[campaign.players]]")
+        lines.append(f'discord_id = "{_escape_toml_string(player.discord_id)}"')
+        lines.append(f'discord_name = "{_escape_toml_string(player.discord_name)}"')
+        lines.append(f'character_name = "{_escape_toml_string(player.character_name)}"')
+        if player.character_description.strip():
+            lines.append(
+                f'character_description = "{_escape_toml_string(player.character_description)}"'
+            )
+
+    for npc in campaign.known_npcs:
+        lines.append("")
+        lines.append("[[campaign.npcs]]")
+        lines.append(f'name = "{_escape_toml_string(npc.name)}"')
+        if npc.description.strip():
+            lines.append(f'description = "{_escape_toml_string(npc.description)}"')
+
+    for relation_type in campaign.relation_types:
+        lines.append("")
+        lines.append("[[campaign.relationship_types]]")
+        lines.append(f'key = "{_escape_toml_string(relation_type.key)}"')
+        lines.append(f'label = "{_escape_toml_string(relation_type.label)}"')
+        if relation_type.category.strip():
+            lines.append(f'category = "{_escape_toml_string(relation_type.category)}"')
+
+    for relation in campaign.relationships:
+        lines.append("")
+        lines.append("[[campaign.relationships]]")
+        lines.append(f'source_key = "{_escape_toml_string(relation.source_key)}"')
+        lines.append(f'target_key = "{_escape_toml_string(relation.target_key)}"')
+        lines.append(f'relation_type_key = "{_escape_toml_string(relation.relation_type_key)}"')
+        lines.append(f'relation_type_label = "{_escape_toml_string(relation.relation_type_label)}"')
+        if relation.notes.strip():
+            lines.append(_render_toml_text_field("notes", relation.notes))
+
+    if campaign.custom_instructions.strip():
+        lines.append("")
+        lines.append("[campaign.custom_instructions]")
+        lines.append(_render_toml_text_field("text", campaign.custom_instructions))
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def save_campaign_toml(campaign: CampaignContext, path: str | Path) -> None:
+    """Persist CampaignContext to a TOML file path."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(campaign_to_toml(campaign), encoding="utf-8")
+
+
+
 
 

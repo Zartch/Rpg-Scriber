@@ -1,6 +1,3 @@
-# RPG Scribe campaign configuration
-# Sesion de pruebas: decision de personaje para Cyberpunk
-
 [campaign]
 id = "cyberpunk-build-lab"
 name = "Cyberpunk Build Lab"
@@ -20,30 +17,56 @@ discord_id = "432635509899001877"
 [[campaign.players]]
 discord_id = "301071912292057088"
 discord_name = "@Zartch"
-character_name = "Fixer de la mesa"
-character_description = "Coordina ideas, pone orden y aterriza decisiones."
-
-[[campaign.players]]
-discord_id = "321011002856701972"
-discord_name = "Miquel"
-character_name = "Por definir"
-character_description = "Jugador en foco: esta eligiendo concepto y rol para la siguiente partida."
+character_name = "Zartch"
+character_description = "esta buscando su personaje"
 
 [[campaign.players]]
 discord_id = "341205872615096321"
 discord_name = "Bateman"
-character_name = "Consultor de caos"
+character_name = "Bateman"
 character_description = "Lanza propuestas agresivas o raras para testear limites del personaje."
 
 [[campaign.players]]
 discord_id = "432635509899001877"
 discord_name = "Escalopo"
-character_name = "Afinador tactico"
-character_description = "Aporta equilibrio de grupo, sinergias y contras de cada build."
+character_name = "Escalopo"
+character_description = "Es el master, Aporta equilibrio de grupo, sinergias y contras de cada build."
+
+[[campaign.players]]
+discord_id = "321011002856701972"
+discord_name = "Miquel"
+character_name = "Miquel"
+character_description = "Jugador en foco: esta eligiendo concepto y rol para la siguiente partida."
+
+[[campaign.npcs]]
+name = "Ejecutiva poliooperada"
+description = "Ejecutiva corporativa de 160 años que aparenta 20, mencionada como ejemplo de concepto de personaje"
 
 [[campaign.npcs]]
 name = "Ripperdoc de confianza"
 description = "Figura recurrente para imaginar implantes, costes y consecuencias narrativas."
+
+[[campaign.relationship_types]]
+key = "companero trabajo"
+label = "compañero trabajo"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "primos"
+label = "primos"
+category = "general"
+
+[[campaign.relationships]]
+source_key = "player:432635509899001877"
+target_key = "player:301071912292057088"
+relation_type_key = "primos"
+relation_type_label = "primos"
+
+[[campaign.relationships]]
+source_key = "player:301071912292057088"
+target_key = "player:321011002856701972"
+relation_type_key = "companero trabajo"
+relation_type_label = "compañero trabajo"
 
 [campaign.custom_instructions]
 text = """
@@ -52,4 +75,5 @@ text = """
 - Separa claramente propuestas serias de bromas internas.
 - Si hay consenso o decision final, dejalo explicito con pros y contras.
 - Mantener tono informal y natural del grupo sin perder informacion clave.
+- El transcriptor trascribe cosas sin sentido a veces, si algo no tiene sentido simplemente descarta
 """

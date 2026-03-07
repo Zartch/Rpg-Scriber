@@ -1,4 +1,4 @@
-"""Entry point that orchestrates all RPG Scribe components.
+﻿"""Entry point that orchestrates all RPG Scribe components.
 
 Usage:
     python -m rpg_scribe --campaign config/campaigns/my-campaign.toml
@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-from rpg_scribe.config import AppConfig, load_app_config
+from rpg_scribe.config import AppConfig, load_app_config, save_campaign_toml
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
@@ -73,7 +73,7 @@ class TranscriptionFileWriter:
             self._file_index += 1
             self._path = self._next_path()
             logger.info(
-                "ðŸ“„ Transcription file rotated to %s", self._path.name,
+                "📄 Transcription file rotated to %s", self._path.name,
             )
 
         ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
@@ -121,13 +121,13 @@ class AudioDiagnosticSaver:
             filepath.write_bytes(buf.getvalue())
             self._counts[uid] = count + 1
             logger.info(
-                "ðŸ” Audio diagnÃ³stico: %s (%.1fKB, %.1fs)",
+                "🔍 Audio diagnóstico: %s (%.1fKB, %.1fs)",
                 filepath.name,
                 len(event.audio_data) / 1024,
                 event.duration_ms / 1000,
             )
         except Exception as exc:
-            logger.error("Error guardando audio diagnÃ³stico: %s", exc)
+            logger.error("Error guardando audio diagnóstico: %s", exc)
 
 
 class Application:
@@ -168,7 +168,7 @@ class Application:
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
 
-    # â”€â”€ Database persistence handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Database persistence handlers ──────────────────────────────
 
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database."""
@@ -212,6 +212,9 @@ class Application:
                     self.config.campaign.campaign_id,
                     event.campaign_summary,
                 )
+                self.config.campaign.campaign_summary = event.campaign_summary
+                if self.config.campaign_path:
+                    save_campaign_toml(self.config.campaign, self.config.campaign_path)
         except Exception as exc:
             logger.error("Failed to persist summary: %s", exc)
     async def _write_summary_snapshot_to_file(self, event: SummaryUpdateEvent) -> None:
@@ -226,7 +229,7 @@ class Application:
         except Exception as exc:
             logger.error("Failed to write on-demand summary snapshot: %s", exc)
 
-    # â”€â”€ Component setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Component setup ────────────────────────────────────────────
 
     async def _setup_transcriber(self) -> None:
         """Create and start the transcriber."""
@@ -248,7 +251,7 @@ class Application:
                 language=self.config.transcriber.language,
             )
             logger.info(
-                "No campaign configured â€” using generic summarization mode"
+                "No campaign configured — using generic summarization mode"
             )
 
         self._summarizer = ClaudeSummarizer(
@@ -281,7 +284,7 @@ class Application:
         if self._web_task.done():
             exc = self._web_task.exception()
             if exc:
-                logger.error("âŒ Web UI failed to start: %s", exc)
+                logger.error("❌ Web UI failed to start: %s", exc)
             else:
                 logger.warning("Web UI task finished unexpectedly")
         else:
@@ -294,7 +297,7 @@ class Application:
     async def _start_discord_bot(self) -> None:
         """Start the Discord bot as a background task."""
         if not self.config.discord_bot_token:
-            logger.warning("DISCORD_BOT_TOKEN not set â€” Discord bot not started")
+            logger.warning("DISCORD_BOT_TOKEN not set — Discord bot not started")
             return
 
         from rpg_scribe.discord_bot.bot import create_bot
@@ -326,12 +329,12 @@ class Application:
 
         self._bot_task = asyncio.create_task(_run_bot(), name="discord-bot")
 
-    # â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Lifecycle ──────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Start all components."""
-        # NOTA: NO llamar a setup_logging() aquÃ­ â€” ya se configurÃ³ en async_main
-        # incluyendo el FileHandler. Llamarlo otra vez borrarÃ­a los handlers.
+        # NOTA: NO llamar a setup_logging() aquí — ya se configuró en async_main
+        # incluyendo el FileHandler. Llamarlo otra vez borraría los handlers.
         logger.info("RPG Scribe starting up")
 
         # Database
@@ -339,19 +342,91 @@ class Application:
 
         # Persist campaign to DB if provided
         if self.config.campaign:
-            c = self.config.campaign
-            await self.db.upsert_campaign(
-                campaign_id=c.campaign_id,
-                name=c.name,
-                game_system=c.game_system,
-                language=c.language,
-                description=c.description,
-                campaign_summary=c.campaign_summary,
-                speaker_map=c.speaker_map,
-                dm_speaker_id=c.dm_speaker_id,
-                custom_instructions=c.custom_instructions,
+            from rpg_scribe.core.models import (
+                CharacterRelationshipInfo,
+                NPCInfo,
+                PlayerInfo,
+                RelationshipTypeInfo,
             )
-            # Persist players from TOML to DB (idempotent)
+
+            c = self.config.campaign
+            existing = await self.db.get_campaign(c.campaign_id)
+
+            if existing:
+                # Campaign exists in DB: DB values are the source of truth for runtime.
+                c.name = existing.get("name", c.name)
+                c.game_system = existing.get("game_system", c.game_system)
+                c.language = existing.get("language", c.language)
+                c.description = existing.get("description", c.description)
+                c.custom_instructions = existing.get("custom_instructions", c.custom_instructions)
+                c.campaign_summary = existing.get("campaign_summary", c.campaign_summary)
+                c.dm_speaker_id = existing.get("dm_speaker_id", c.dm_speaker_id)
+
+                db_players = await self.db.get_players(c.campaign_id)
+                if db_players:
+                    c.players = [
+                        PlayerInfo(
+                            discord_id=str(p.get("discord_id", "")),
+                            discord_name=p.get("discord_name", ""),
+                            character_name=p.get("character_name", ""),
+                            character_description=p.get("character_description", ""),
+                        )
+                        for p in db_players
+                    ]
+
+                # Keep speaker_map aligned with loaded players.
+                c.speaker_map = {p.discord_id: p.character_name for p in c.players if p.discord_id}
+
+                db_npcs = await self.db.get_npcs(c.campaign_id)
+                if db_npcs:
+                    c.known_npcs = [
+                        NPCInfo(
+                            name=n.get("name", ""),
+                            description=n.get("description", ""),
+                        )
+                        for n in db_npcs
+                        if n.get("name")
+                    ]
+
+                db_relationship_types = await self.db.get_relationship_types(c.campaign_id)
+                if db_relationship_types:
+                    c.relation_types = [
+                        RelationshipTypeInfo(
+                            key=str(t.get("canonical_key", "")),
+                            label=str(t.get("label", "")),
+                            category=str(t.get("category", "general") or "general"),
+                        )
+                        for t in db_relationship_types
+                        if t.get("canonical_key")
+                    ]
+
+                db_relationships = await self.db.get_character_relationships(c.campaign_id)
+                if db_relationships:
+                    c.relationships = [
+                        CharacterRelationshipInfo(
+                            source_key=str(r.get("source_key", "")),
+                            target_key=str(r.get("target_key", "")),
+                            relation_type_key=str(r.get("type_key", "")),
+                            relation_type_label=str(r.get("type_label", "")),
+                            notes=str(r.get("notes", "") or ""),
+                        )
+                        for r in db_relationships
+                        if r.get("source_key") and r.get("target_key") and r.get("type_key")
+                    ]
+            else:
+                await self.db.upsert_campaign(
+                    campaign_id=c.campaign_id,
+                    name=c.name,
+                    game_system=c.game_system,
+                    language=c.language,
+                    description=c.description,
+                    campaign_summary=c.campaign_summary,
+                    speaker_map=c.speaker_map,
+                    dm_speaker_id=c.dm_speaker_id,
+                    custom_instructions=c.custom_instructions,
+                )
+
+            # Persist players from campaign config to DB (idempotent)
             for player in c.players:
                 if not await self.db.player_exists(c.campaign_id, player.discord_id):
                     await self.db.save_player(
@@ -361,12 +436,34 @@ class Application:
                         character_name=player.character_name,
                         character_description=player.character_description,
                     )
-            # Persist NPCs from TOML to DB (idempotent)
+
+            # Persist NPCs from campaign config to DB (idempotent)
             for npc in c.known_npcs:
                 if not await self.db.npc_exists(c.campaign_id, npc.name):
                     await self.db.save_npc(
                         c.campaign_id, npc.name, npc.description,
                     )
+
+            # Seed relationship thesaurus and relationships from campaign config.
+            for relation_type in c.relation_types:
+                await self.db.resolve_relationship_type(
+                    c.campaign_id,
+                    relation_type.label or relation_type.key,
+                    category=relation_type.category or "general",
+                )
+
+            for relation in c.relationships:
+                if not relation.source_key or not relation.target_key:
+                    continue
+                if not relation.relation_type_label and not relation.relation_type_key:
+                    continue
+                await self.db.save_character_relationship(
+                    c.campaign_id,
+                    relation.source_key,
+                    relation.target_key,
+                    relation.relation_type_label or relation.relation_type_key,
+                    notes=relation.notes,
+                )
 
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)
@@ -391,7 +488,7 @@ class Application:
                 TranscriptionEvent, self._write_transcription_to_file
             )
             logger.info(
-                "ðŸ“„ Transcripciones se guardarÃ¡n en: %s", self._log_dir,
+                "📄 Transcripciones se guardarán en: %s", self._log_dir,
             )
 
             # Audio diagnostic: save first chunks per user as WAV for inspection
@@ -418,7 +515,7 @@ class Application:
                 message="RPG Scribe is ready",
             )
         )
-        logger.info("RPG Scribe is ready â€” waiting for session to begin")
+        logger.info("RPG Scribe is ready — waiting for session to begin")
 
     async def on_session_start(self, session_id: str) -> None:
         """Called when a new recording session begins."""
@@ -488,7 +585,7 @@ class Application:
         with open(summary_path, "a", encoding="utf-8") as f:
             f.write(content)
 
-    # â”€â”€ EventBus session lifecycle handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── EventBus session lifecycle handlers ────────────────────────
 
     async def _on_session_start_request(
         self, event: SessionStartRequestEvent
@@ -620,14 +717,14 @@ class Application:
             try:
                 await asyncio.wait_for(self.shutdown(), timeout=8.0)
             except (asyncio.TimeoutError, Exception):
-                logger.warning("Shutdown timed out â€” forzando salida")
+                logger.warning("Shutdown timed out — forzando salida")
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="rpg-scribe",
-        description="RPG Scribe â€” live RPG session transcriber and summarizer",
+        description="RPG Scribe — live RPG session transcriber and summarizer",
     )
     parser.add_argument(
         "--campaign", "-c",
@@ -707,7 +804,7 @@ def cli_main() -> None:
         # GetQueuedCompletionStatusEx), the Python handler never executes.
         #
         # SetConsoleCtrlHandler registers a native Windows callback that runs
-        # in a *separate OS thread* â€” independent of the GIL and the event
+        # in a *separate OS thread* — independent of the GIL and the event
         # loop.  os._exit() from that thread terminates the process instantly.
         import ctypes
 
@@ -734,11 +831,6 @@ def cli_main() -> None:
 
 if __name__ == "__main__":
     cli_main()
-
-
-
-
-
 
 
 

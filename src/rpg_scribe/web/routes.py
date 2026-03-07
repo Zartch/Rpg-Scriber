@@ -1,4 +1,4 @@
-"""REST API routes for RPG Scribe web interface."""
+﻿"""REST API routes for RPG Scribe web interface."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from rpg_scribe.core.events import (
     SystemStatusEvent,
     TranscriptionEvent,
 )
+from rpg_scribe.core.models import CharacterRelationshipInfo, RelationshipTypeInfo
+from rpg_scribe.config import save_campaign_toml
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 logger = logging.getLogger(__name__)
@@ -100,8 +102,51 @@ def _get_event_bus():
     return getattr(router, "event_bus", None)
 
 
-# â”€â”€ REST endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def _persist_campaign_toml(config: Any) -> None:
+    """Persist in-memory campaign config back to its TOML file if configured."""
+    if not config or not getattr(config, "campaign", None):
+        return
+    campaign_path = getattr(config, "campaign_path", "")
+    if not campaign_path:
+        return
+    save_campaign_toml(config.campaign, campaign_path)
 
+
+# ── REST endpoints ────────────────────────────────────────────────
+
+
+
+async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) -> None:
+    """Refresh relationship thesaurus + relations from DB into config.campaign."""
+    if not config or not getattr(config, "campaign", None) or db is None:
+        return
+    if config.campaign.campaign_id != campaign_id:
+        return
+
+    types = await db.get_relationship_types(campaign_id)
+    rels = await db.get_character_relationships(campaign_id)
+
+    config.campaign.relation_types = [
+        RelationshipTypeInfo(
+            key=str(t.get("canonical_key", "")),
+            label=str(t.get("label", "")),
+            category=str(t.get("category", "general") or "general"),
+        )
+        for t in types
+        if t.get("canonical_key")
+    ]
+
+    config.campaign.relationships = [
+        CharacterRelationshipInfo(
+            source_key=str(r.get("source_key", "")),
+            target_key=str(r.get("target_key", "")),
+            relation_type_key=str(r.get("type_key", "")),
+            relation_type_label=str(r.get("type_label", "")),
+            notes=str(r.get("notes", "") or ""),
+        )
+        for r in rels
+        if r.get("source_key") and r.get("target_key") and r.get("type_key")
+    ]
 
 @router.get("/api/status")
 async def get_status() -> dict[str, Any]:
@@ -265,10 +310,7 @@ async def answer_question(question_id: str, body: dict[str, str]) -> dict[str, A
 
 @router.get("/api/campaigns")
 async def get_campaigns() -> dict[str, Any]:
-    """Return active campaign info including players and NPCs.
-
-    Tries in-memory state first, then falls back to the database.
-    """
+    """Return active campaign info including players, NPCs and relationships."""
     state = _get_state()
     db = _get_database()
     config = _get_config()
@@ -287,6 +329,7 @@ async def get_campaigns() -> dict[str, Any]:
                     "language": row.get("language", "es"),
                     "description": row.get("description", ""),
                     "custom_instructions": row.get("custom_instructions", ""),
+                    "dm_speaker_id": row.get("dm_speaker_id", ""),
                     "is_generic": False,
                 }
                 state.active_campaign = campaign
@@ -296,7 +339,6 @@ async def get_campaigns() -> dict[str, Any]:
     if not campaign:
         return {"campaign": None}
 
-    # Attach players and NPCs from DB
     campaign_id = campaign.get("id", "")
     if db and campaign_id and not campaign.get("is_generic"):
         try:
@@ -309,12 +351,24 @@ async def get_campaigns() -> dict[str, Any]:
         except Exception as exc:
             logger.error("Error fetching NPCs: %s", exc)
             campaign.setdefault("npcs", [])
+        try:
+            campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching relationship types: %s", exc)
+            campaign.setdefault("relationship_types", [])
+        try:
+            campaign["relationships"] = await db.get_character_relationships(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching relationships: %s", exc)
+            campaign.setdefault("relationships", [])
     else:
         campaign.setdefault("players", [])
         campaign.setdefault("npcs", [])
+        campaign.setdefault("relationship_types", [])
+        campaign.setdefault("relationships", [])
 
+    campaign.setdefault("dm_speaker_id", "")
     return {"campaign": campaign}
-
 
 @router.patch("/api/campaigns/{campaign_id}")
 async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -333,7 +387,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
         return {"ok": False, "error": "Campaign not found"}
 
     # Fields that can be edited from the UI
-    editable = {"name", "game_system", "description", "language", "custom_instructions"}
+    editable = {"name", "game_system", "description", "language", "custom_instructions", "dm_speaker_id"}
     updates = {k: v for k, v in body.items() if k in editable and isinstance(v, str)}
 
     if not updates:
@@ -348,7 +402,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
         campaign_obj = config.campaign
         field_map = {"name": "name", "game_system": "game_system",
                      "description": "description", "language": "language",
-                     "custom_instructions": "custom_instructions"}
+                     "custom_instructions": "custom_instructions", "dm_speaker_id": "dm_speaker_id"}
         for k, v in updates.items():
             attr = field_map.get(k, k)
             if hasattr(campaign_obj, attr):
@@ -367,7 +421,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
                     description=updates.get("description", current.get("description", "")),
                     campaign_summary=current.get("campaign_summary", ""),
                     speaker_map=current.get("speaker_map"),
-                    dm_speaker_id=current.get("dm_speaker_id", ""),
+                    dm_speaker_id=updates.get("dm_speaker_id", current.get("dm_speaker_id", "")),
                     custom_instructions=updates.get(
                         "custom_instructions",
                         current.get("custom_instructions", ""),
@@ -378,10 +432,14 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
             return {"ok": False, "error": "Failed to save to database"}
 
     logger.info("Campaign %s updated: %s", campaign_id, list(updates.keys()))
+    try:
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
     return {"ok": True, "campaign": state.active_campaign}
 
 
-# â”€â”€ Player endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Player endpoints ──────────────────────────────────────────────
 
 
 @router.put("/api/campaigns/{campaign_id}/players/{player_id}")
@@ -446,10 +504,14 @@ async def update_player(
                 logger.error("Error persisting speaker_map: %s", exc)
 
     logger.info("Player %s updated: %s", player_id, list(updates.keys()))
+    try:
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
     return {"ok": True}
 
 
-# â”€â”€ NPC endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── NPC endpoints ─────────────────────────────────────────────────
 
 
 @router.post("/api/campaigns/{campaign_id}/npcs")
@@ -486,6 +548,10 @@ async def create_npc(
         config.campaign.known_npcs.append(NPCInfo(name=name, description=description))
 
     logger.info("NPC '%s' created in campaign %s", name, campaign_id)
+    try:
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
     return {"ok": True}
 
 
@@ -506,16 +572,24 @@ async def update_npc_endpoint(
     if not updates:
         return {"ok": False, "error": "No valid fields to update"}
 
+    old_name = str(body.get("old_name", "")).strip()
+
     if db is not None:
         try:
             await db.update_npc(npc_id, **updates)
+            new_name = str(updates.get("name", old_name)).strip()
+            if old_name and new_name and old_name != new_name:
+                await db.rename_relationship_entity_key(
+                    campaign_id,
+                    f"npc:{old_name}",
+                    f"npc:{new_name}",
+                )
         except Exception as exc:
             logger.error("Error updating NPC: %s", exc)
             return {"ok": False, "error": "Failed to save"}
 
     # Update in-memory config
     if config and hasattr(config, "campaign") and config.campaign:
-        old_name = body.get("old_name", "")
         for npc in config.campaign.known_npcs:
             if npc.name == old_name:
                 for k, v in updates.items():
@@ -523,8 +597,93 @@ async def update_npc_endpoint(
                 break
 
     logger.info("NPC %s updated: %s", npc_id, list(updates.keys()))
+    try:
+        if db is not None:
+            await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
     return {"ok": True}
 
+
+
+@router.get("/api/campaigns/{campaign_id}/relationships")
+async def list_relationships(campaign_id: str) -> dict[str, Any]:
+    """List relationship thesaurus + relationships for a campaign."""
+    db = _get_database()
+    if db is None:
+        return {"relationship_types": [], "relationships": []}
+
+    try:
+        relationship_types = await db.get_relationship_types(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+    except Exception as exc:
+        logger.error("Error listing relationships: %s", exc)
+        return {"relationship_types": [], "relationships": []}
+
+    return {
+        "relationship_types": relationship_types,
+        "relationships": relationships,
+    }
+
+
+@router.post("/api/campaigns/{campaign_id}/relationships")
+async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Create or update a typed relationship between two campaign entities."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_key = str(body.get("source_key", "")).strip()
+    target_key = str(body.get("target_key", "")).strip()
+    relation_type = str(body.get("relation_type", "")).strip()
+    notes = str(body.get("notes", "")).strip()
+    category = str(body.get("category", "general") or "general").strip()
+
+    if not source_key or not target_key:
+        return {"ok": False, "error": "source_key and target_key are required"}
+    if source_key == target_key:
+        return {"ok": False, "error": "Source and target cannot be the same"}
+    if not relation_type:
+        return {"ok": False, "error": "relation_type is required"}
+
+    try:
+        relationship = await db.save_character_relationship(
+            campaign_id,
+            source_key,
+            target_key,
+            relation_type,
+            notes=notes,
+            category=category,
+        )
+        relationship_types = await db.get_relationship_types(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error saving relationship: %s", exc)
+        return {"ok": False, "error": "Failed to save relationship"}
+
+    state.active_campaign["relationship_types"] = relationship_types
+    state.active_campaign["relationships"] = relationships
+
+    try:
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting relationship TOML sync: %s", exc)
+
+    return {
+        "ok": True,
+        "relationship": relationship,
+        "relationship_types": relationship_types,
+        "relationships": relationships,
+    }
 
 _SUMMARY_PREVIEW_LEN = 150
 
@@ -589,7 +748,7 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
     return result
 
 
-# â”€â”€ Session finalize endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Session finalize endpoint ─────────────────────────────────────
 
 
 @router.post("/api/sessions/{session_id}/finalize")
@@ -618,7 +777,7 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
     return {"ok": True, "status": "finalizing"}
 
 
-# â”€â”€ WebSocket endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── WebSocket endpoint ────────────────────────────────────────────
 
 
 

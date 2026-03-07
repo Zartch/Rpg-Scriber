@@ -1,4 +1,4 @@
-"""FastAPI application factory for RPG Scribe web UI."""
+﻿"""FastAPI application factory for RPG Scribe web UI."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def create_app(
     manager = ConnectionManager()
     bridge = WebSocketBridge(event_bus, manager)
 
-    # ── Event handlers that keep WebState in sync ────────────────
+    # â”€â”€ Event handlers that keep WebState in sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _on_transcription(event: TranscriptionEvent) -> None:
         state.add_transcription(asdict(event))
@@ -109,6 +109,9 @@ def create_app(
             "language": config.campaign.language,
             "description": config.campaign.description,
             "custom_instructions": config.campaign.custom_instructions,
+            "dm_speaker_id": config.campaign.dm_speaker_id,
+            "relationship_types": [asdict(rt) for rt in getattr(config.campaign, "relation_types", [])],
+            "relationships": [asdict(rel) for rel in getattr(config.campaign, "relationships", [])],
             "is_generic": getattr(config.campaign, "is_generic", False),
         }
 

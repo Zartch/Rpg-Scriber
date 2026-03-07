@@ -1,9 +1,9 @@
-/* RPG Scribe â€” frontend WebSocket client and DOM updates */
+﻿/* RPG Scribe - frontend WebSocket client and DOM updates */
 
 (function () {
   "use strict";
 
-  // â”€â”€ Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Elements
 
   var connectionBadge = document.getElementById("connection-badge");
   var transcriptionFeed = document.getElementById("transcription-feed");
@@ -20,6 +20,7 @@
   var campaignDisplay = document.getElementById("campaign-display");
   var campaignNameEl = document.getElementById("campaign-name");
   var campaignSystemEl = document.getElementById("campaign-system");
+  var campaignMasterEl = document.getElementById("campaign-master");
   var campaignEditBtn = document.getElementById("campaign-edit-btn");
   var campaignEditForm = document.getElementById("campaign-edit-form");
   var campaignEditCancel = document.getElementById("campaign-edit-cancel");
@@ -27,6 +28,7 @@
   var editSystemInput = document.getElementById("edit-campaign-system");
   var editDescInput = document.getElementById("edit-campaign-desc");
   var editInstructionsInput = document.getElementById("edit-campaign-instructions");
+  var editMasterSelect = document.getElementById("edit-campaign-master");
 
   // Player/NPC elements
   var playersSection = document.getElementById("players-section");
@@ -42,12 +44,25 @@
   var addNpcBtn = document.getElementById("add-npc-btn");
   var addNpcForm = document.getElementById("add-npc-form");
   var addNpcCancel = document.getElementById("add-npc-cancel");
+  var relationshipsSection = document.getElementById("relationships-section");
+  var relationshipsHeader = document.getElementById("relationships-header");
+  var relationshipsBody = document.getElementById("relationships-body");
+  var relationshipsList = document.getElementById("relationships-list");
+  var relationshipsCount = document.getElementById("relationships-count");
+  var addRelationshipBtn = document.getElementById("add-relationship-btn");
+  var addRelationshipForm = document.getElementById("add-relationship-form");
+  var addRelationshipCancel = document.getElementById("add-relationship-cancel");
+  var relSourceSelect = document.getElementById("new-rel-source");
+  var relTargetSelect = document.getElementById("new-rel-target");
+  var relTypeInput = document.getElementById("new-rel-type");
+  var relCategoryInput = document.getElementById("new-rel-category");
+  var relNotesInput = document.getElementById("new-rel-notes");
 
   // Summary control buttons
   var refreshSummaryBtn = document.getElementById("refresh-summary-btn");
   var finalizeBtn = document.getElementById("finalize-btn");
 
-  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // State
 
   var viewingHistorical = false;  // true when viewing a past session
   var activeSessionId = null;     // current live session id
@@ -60,7 +75,7 @@
   var loadedLiveSessionId = null; // latest session snapshot loaded into feed
   var currentHistoricalSessionId = null;
 
-  // â”€â”€ WebSocket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // WebSocket
 
   var ws = null;
   var reconnectDelay = 1000;
@@ -95,7 +110,7 @@
     };
   }
 
-  // â”€â”€ Message handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Message handlers
 
   function handleMessage(msg) {
     switch (msg.type) {
@@ -217,7 +232,7 @@
       .replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  // â”€â”€ Campaign info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Campaign info
 
   function fetchCampaignInfo() {
     fetch("/api/campaigns")
@@ -227,16 +242,25 @@
           currentCampaign = data.campaign;
           activeCampaignId = data.campaign.id;
           renderCampaignBar(data.campaign);
-          renderPlayers(data.campaign.players || []);
-          renderNpcs(data.campaign.npcs || []);
+          if (data.campaign.is_generic) {
+            playersSection.classList.add("hidden");
+            npcsSection.classList.add("hidden");
+            if (relationshipsSection) relationshipsSection.classList.add("hidden");
+          } else {
+            renderPlayers(data.campaign.players || []);
+            renderNpcs(data.campaign.npcs || []);
+            renderRelationships(data.campaign.relationships || [], data.campaign);
+          }
         } else {
-          // No campaign loaded â€” show "Resume mode"
+          // No campaign loaded - show "Resume mode"
           campaignBar.classList.remove("hidden");
           campaignNameEl.textContent = "No campaign \u2014 Resume mode";
           campaignSystemEl.textContent = "";
+          campaignMasterEl.textContent = "";
           campaignEditBtn.classList.add("hidden");
           playersSection.classList.add("hidden");
           npcsSection.classList.add("hidden");
+          if (relationshipsSection) relationshipsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
         }
@@ -254,17 +278,50 @@
       systemText += (systemText ? " \u00b7 " : "") + campaign.language.toUpperCase();
     }
     campaignSystemEl.textContent = systemText ? "(" + systemText + ")" : "";
+    campaignMasterEl.textContent = getMasterDisplayName(campaign);
 
     // Hide edit for generic campaigns
     if (campaign.is_generic) {
       campaignEditBtn.classList.add("hidden");
       campaignNameEl.textContent = "No campaign \u2014 Resume mode";
       campaignSystemEl.textContent = "";
+      campaignMasterEl.textContent = "";
       playersSection.classList.add("hidden");
       npcsSection.classList.add("hidden");
+      if (relationshipsSection) relationshipsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
     }
+  }
+
+  function getMasterDisplayName(campaign) {
+    var players = campaign.players || [];
+    var dmId = campaign.dm_speaker_id || "";
+    if (!dmId) return "";
+    for (var i = 0; i < players.length; i++) {
+      if (players[i].discord_id === dmId) {
+        return "Master: " + (players[i].discord_name || players[i].character_name || dmId);
+      }
+    }
+    return "Master: " + dmId;
+  }
+
+  function populateMasterSelect(players, selectedDmId) {
+    editMasterSelect.innerHTML = "";
+    var noneOpt = document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = "(No master selected)";
+    editMasterSelect.appendChild(noneOpt);
+
+    players.forEach(function (p) {
+      var opt = document.createElement("option");
+      opt.value = p.discord_id || "";
+      opt.textContent = (p.discord_name || "?") + " -> " + (p.character_name || "?");
+      editMasterSelect.appendChild(opt);
+    });
+
+    editMasterSelect.value = selectedDmId || "";
+    editMasterSelect.disabled = !players || players.length === 0;
   }
 
   function openCampaignEdit() {
@@ -273,6 +330,7 @@
     editSystemInput.value = currentCampaign.game_system || "";
     editDescInput.value = currentCampaign.description || "";
     editInstructionsInput.value = currentCampaign.custom_instructions || "";
+    populateMasterSelect(currentCampaign.players || [], currentCampaign.dm_speaker_id || "");
 
     campaignDisplay.classList.add("hidden");
     campaignEditForm.classList.remove("hidden");
@@ -293,6 +351,7 @@
       game_system: editSystemInput.value.trim(),
       description: editDescInput.value.trim(),
       custom_instructions: editInstructionsInput.value.trim(),
+      dm_speaker_id: editMasterSelect.value,
     };
 
     var saveBtn = campaignEditForm.querySelector(".btn-save");
@@ -327,7 +386,7 @@
   campaignEditCancel.addEventListener("click", closeCampaignEdit);
   campaignEditForm.addEventListener("submit", saveCampaignEdit);
 
-  // â”€â”€ Players & NPCs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Players and NPCs
 
   function renderPlayers(players) {
     if (!players || players.length === 0) {
@@ -339,13 +398,15 @@
     playersList.innerHTML = "";
 
     players.forEach(function (p) {
+      var isMaster = !!(currentCampaign && currentCampaign.dm_speaker_id && p.discord_id === currentCampaign.dm_speaker_id);
+      var masterSuffix = isMaster ? " · Master" : "";
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
         '<div class="entity-display">' +
           '<div class="entity-info">' +
             '<strong class="entity-name">' + escapeHtml(p.character_name) + '</strong>' +
-            '<span class="entity-meta">' + escapeHtml(p.discord_name) + '</span>' +
+            '<span class="entity-meta">' + escapeHtml((p.discord_name || "") + masterSuffix) + '</span>' +
           '</div>' +
           '<span class="entity-desc">' + escapeHtml(p.character_description) + '</span>' +
           '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
@@ -489,6 +550,95 @@
     });
   }
 
+
+  function buildRelationshipEntities(campaign) {
+    var entities = [];
+    var players = campaign.players || [];
+    var npcs = campaign.npcs || [];
+
+    players.forEach(function (p) {
+      entities.push({
+        key: "player:" + (p.discord_id || ""),
+        label: "Player: " + (p.character_name || p.discord_name || p.discord_id || "?"),
+      });
+    });
+
+    npcs.forEach(function (n) {
+      entities.push({
+        key: "npc:" + (n.name || ""),
+        label: "NPC: " + (n.name || "?"),
+      });
+    });
+
+    return entities.filter(function (e) { return !!e.key && !e.key.endsWith(":"); });
+  }
+
+  function entityLabelFromKey(campaign, key) {
+    var entities = buildRelationshipEntities(campaign);
+    for (var i = 0; i < entities.length; i++) {
+      if (entities[i].key === key) return entities[i].label;
+    }
+    return key;
+  }
+
+  function populateRelationshipSelects(campaign) {
+    if (!relSourceSelect || !relTargetSelect) return;
+    var entities = buildRelationshipEntities(campaign);
+
+    relSourceSelect.innerHTML = "";
+    relTargetSelect.innerHTML = "";
+
+    entities.forEach(function (e) {
+      var opt1 = document.createElement("option");
+      opt1.value = e.key;
+      opt1.textContent = e.label;
+      relSourceSelect.appendChild(opt1);
+
+      var opt2 = document.createElement("option");
+      opt2.value = e.key;
+      opt2.textContent = e.label;
+      relTargetSelect.appendChild(opt2);
+    });
+
+    relSourceSelect.disabled = entities.length < 2;
+    relTargetSelect.disabled = entities.length < 2;
+  }
+
+  function renderRelationships(relationships, campaign) {
+    if (!relationshipsSection) return;
+    relationshipsSection.classList.remove("hidden");
+
+    var items = relationships || [];
+    relationshipsCount.textContent = "(" + items.length + ")";
+
+    populateRelationshipSelects(campaign || {});
+
+    if (!items.length) {
+      relationshipsList.innerHTML = '<p class="placeholder">No relationships yet.</p>';
+      return;
+    }
+
+    relationshipsList.innerHTML = "";
+    items.forEach(function (rel) {
+      var source = entityLabelFromKey(campaign, rel.source_key || "");
+      var target = entityLabelFromKey(campaign, rel.target_key || "");
+      var typeLabel = rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "(unknown)";
+      var category = rel.type_category || "general";
+
+      var card = document.createElement("div");
+      card.className = "entity-card";
+      card.innerHTML =
+        '<div class="entity-display">' +
+          '<div class="entity-info">' +
+            '<strong class="entity-name">' + escapeHtml(source) + ' -> ' + escapeHtml(target) + '</strong>' +
+            '<span class="entity-meta">' + escapeHtml(typeLabel) + ' [' + escapeHtml(category) + ']</span>' +
+          '</div>' +
+          '<span class="entity-desc">' + escapeHtml(rel.notes || "") + '</span>' +
+        '</div>';
+      relationshipsList.appendChild(card);
+    });
+  }
+
   // Collapse toggles
   playersHeader.addEventListener("click", function () {
     playersBody.classList.toggle("collapsed");
@@ -498,6 +648,12 @@
     npcsBody.classList.toggle("collapsed");
     npcsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
   });
+  if (relationshipsHeader) {
+    relationshipsHeader.addEventListener("click", function () {
+      relationshipsBody.classList.toggle("collapsed");
+      relationshipsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+    });
+  }
 
   // Add NPC form
   addNpcBtn.addEventListener("click", function () {
@@ -544,7 +700,66 @@
       });
   });
 
-  // â”€â”€ Questions polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Questions polling
+
+
+  // Add Relationship form
+  if (addRelationshipBtn) {
+    addRelationshipBtn.addEventListener("click", function () {
+      addRelationshipBtn.classList.add("hidden");
+      addRelationshipForm.classList.remove("hidden");
+      if (relTypeInput) relTypeInput.focus();
+    });
+  }
+  if (addRelationshipCancel) {
+    addRelationshipCancel.addEventListener("click", function () {
+      addRelationshipForm.classList.add("hidden");
+      addRelationshipBtn.classList.remove("hidden");
+    });
+  }
+  if (addRelationshipForm) {
+    addRelationshipForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!activeCampaignId) return;
+
+      var reqBody = {
+        source_key: (relSourceSelect && relSourceSelect.value) || "",
+        target_key: (relTargetSelect && relTargetSelect.value) || "",
+        relation_type: (relTypeInput && relTypeInput.value.trim()) || "",
+        category: (relCategoryInput && relCategoryInput.value.trim()) || "general",
+        notes: (relNotesInput && relNotesInput.value.trim()) || "",
+      };
+
+      if (!reqBody.source_key || !reqBody.target_key || !reqBody.relation_type) return;
+
+      var saveBtn = addRelationshipForm.querySelector(".btn-save");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+
+      fetch("/api/campaigns/" + activeCampaignId + "/relationships", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            if (relTypeInput) relTypeInput.value = "";
+            if (relNotesInput) relNotesInput.value = "";
+            addRelationshipForm.classList.add("hidden");
+            addRelationshipBtn.classList.remove("hidden");
+            fetchCampaignInfo();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to save relationship."); })
+        .finally(function () {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        });
+    });
+  }
 
   function pollQuestions() {
     fetch("/api/questions")
@@ -633,7 +848,7 @@
       .catch(function () { callback(false); });
   }
 
-  // â”€â”€ Session history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Session history
 
   function fetchSessionList() {
     fetch("/api/status")
@@ -833,7 +1048,7 @@
     });
   }
 
-  // â”€â”€ Finalize session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Finalize session
 
   function updateFinalizeButton() {
     var show = !!(activeSessionId && !viewingHistorical);
@@ -915,7 +1130,7 @@
     });
   }
 
-  // â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Init
 
   connectWS();
   fetchCampaignInfo();
