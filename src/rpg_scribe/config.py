@@ -22,6 +22,7 @@ from rpg_scribe.core.models import (
     CharacterRelationshipInfo,
     CampaignContext,
     ListenerConfig,
+    LocationInfo,
     NPCInfo,
     PlayerInfo,
     RelationshipTypeInfo,
@@ -143,6 +144,16 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
     for n in campaign_data.get("npcs", []):
         npcs.append(NPCInfo(name=n["name"], description=n.get("description", "")))
 
+    # Locations — supports both legacy list[str] and new [[locations]] table format
+    locations: list[LocationInfo] = []
+    for loc in campaign_data.get("locations", []):
+        if isinstance(loc, str):
+            locations.append(LocationInfo(name=loc))
+        elif isinstance(loc, dict):
+            locations.append(
+                LocationInfo(name=loc["name"], description=loc.get("description", ""))
+            )
+
     # Relationship types (thesaurus)
     relation_types: list[RelationshipTypeInfo] = []
     for rt in campaign_data.get("relationship_types", []):
@@ -199,7 +210,7 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
         known_npcs=npcs,
         relation_types=relation_types,
         relationships=relationships,
-        locations=campaign_data.get("locations", []),
+        locations=locations,
         campaign_summary=campaign_data.get("campaign_summary", ""),
         speaker_map=speaker_map,
         dm_speaker_id=dm_speaker_id,
@@ -305,12 +316,14 @@ def campaign_to_toml(campaign: CampaignContext) -> str:
     lines.append(_render_toml_text_field("description", campaign.description))
     lines.append(_render_toml_text_field("campaign_summary", campaign.campaign_summary))
 
-    locations = [
-        f'"{_escape_toml_string(str(loc))}"'
-        for loc in campaign.locations
-        if str(loc).strip()
-    ]
-    lines.append(f'locations = [{", ".join(locations)}]')
+    for loc in campaign.locations:
+        if not loc.name.strip():
+            continue
+        lines.append("")
+        lines.append("[[campaign.locations]]")
+        lines.append(f'name = "{_escape_toml_string(loc.name)}"')
+        if loc.description.strip():
+            lines.append(f'description = "{_escape_toml_string(loc.description)}"')
 
     if campaign.dm_speaker_id:
         lines.append("")

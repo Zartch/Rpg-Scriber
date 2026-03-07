@@ -101,6 +101,14 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     is_ingame BOOLEAN
 );
 
+CREATE TABLE IF NOT EXISTS locations (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT REFERENCES campaigns(id),
+    name TEXT,
+    description TEXT,
+    first_seen_session TEXT
+);
+
 CREATE TABLE IF NOT EXISTS questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id),
@@ -380,7 +388,63 @@ class Database:
         )
         await self.conn.commit()
 
-    # -- Players -----------------------------------------------------
+    # ── Locations ────────────────────────────────────────────────────
+
+    async def save_location(
+        self,
+        campaign_id: str,
+        name: str,
+        description: str = "",
+        first_seen_session: str = "",
+    ) -> None:
+        """Insert a new location record."""
+        import uuid
+
+        loc_id = str(uuid.uuid4())
+        await self.conn.execute(
+            "INSERT INTO locations (id, campaign_id, name, description, first_seen_session) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (loc_id, campaign_id, name, description, first_seen_session),
+        )
+        await self.conn.commit()
+
+    async def get_locations(self, campaign_id: str) -> list[dict[str, Any]]:
+        """Get all locations for a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM locations WHERE campaign_id = ? ORDER BY name",
+            (campaign_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def location_exists(self, campaign_id: str, name: str) -> bool:
+        """Check if a location with the given name already exists in a campaign.
+
+        Uses case-insensitive comparison so "el bosque negro" and "El Bosque Negro"
+        are treated as the same location.
+        """
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM locations WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, name),
+        )
+        return await cursor.fetchone() is not None
+
+    async def update_location(self, location_id: str, **fields: Any) -> None:
+        """Update specific fields of a location record.
+
+        Accepted fields: name, description.
+        """
+        allowed = {"name", "description"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [location_id]
+        await self.conn.execute(
+            f"UPDATE locations SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    # ── Players ─────────────────────────────────────────────────────
 
     async def save_player(
         self,

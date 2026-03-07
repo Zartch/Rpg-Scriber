@@ -38,6 +38,14 @@ class NPCInfo:
 
 
 @dataclass
+class LocationInfo:
+    """A known location in the campaign world."""
+
+    name: str
+    description: str = ""
+
+
+@dataclass
 class RelationshipTypeInfo:
     """A canonical relationship type inside a campaign thesaurus."""
 
@@ -72,7 +80,7 @@ class CampaignContext:
     known_npcs: list[NPCInfo] = field(default_factory=list)
     relation_types: list[RelationshipTypeInfo] = field(default_factory=list)
     relationships: list[CharacterRelationshipInfo] = field(default_factory=list)
-    locations: list[str] = field(default_factory=list)
+    locations: list[LocationInfo] = field(default_factory=list)
     campaign_summary: str = ""
 
     # Mapping Discord User -> Character

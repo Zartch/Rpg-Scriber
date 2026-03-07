@@ -49,6 +49,9 @@ JUGADORES:
 PNJS CONOCIDOS:
 {npcs_block}
 
+LOCALIZACIONES CONOCIDAS:
+{locations_block}
+
 RELACIONES CONOCIDAS:
 {relationships_block}
 
@@ -112,6 +115,9 @@ RESUMEN DE LA SESIÓN:
 
 PNJS YA CONOCIDOS (NO los incluyas de nuevo):
 {known_npcs}
+
+LOCALIZACIONES YA CONOCIDAS (NO las incluyas de nuevo):
+{known_locations}
 
 Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
 texto adicional antes o después:
@@ -191,6 +197,11 @@ class ClaudeSummarizer(BaseSummarizer):
             "(ninguno conocido)"
         ]
 
+        locations_lines = [
+            f"- {loc.name}: {loc.description}" if loc.description else f"- {loc.name}"
+            for loc in c.locations
+        ] or ["(ninguna conocida)"]
+
         entity_name_map: dict[str, str] = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
             for p in c.players if p.discord_id
@@ -223,6 +234,7 @@ class ClaudeSummarizer(BaseSummarizer):
             players_block="\n".join(players_lines),
             dm_name=dm_name,
             npcs_block="\n".join(npcs_lines),
+            locations_block="\n".join(locations_lines),
             relationships_block="\n".join(relationships_lines),
             custom_instructions=custom,
         )
@@ -621,9 +633,15 @@ class ClaudeSummarizer(BaseSummarizer):
             f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
         ] or ["(ninguno)"]
 
+        known_locations_lines = [
+            f"- {loc.name}: {loc.description}" if loc.description else f"- {loc.name}"
+            for loc in self.campaign.locations
+        ] or ["(ninguna)"]
+
         user_msg = EXTRACTION_USER.format(
             session_summary=self._session_summary,
             known_npcs="\n".join(known_npcs_lines),
+            known_locations="\n".join(known_locations_lines),
         )
 
         try:
@@ -634,14 +652,13 @@ class ClaudeSummarizer(BaseSummarizer):
             )
             extracted = self._parse_extraction_response(result)
 
+            new_npcs = 0
             for npc in extracted["npcs"]:
                 name = npc.get("name", "").strip()
                 description = npc.get("description", "").strip()
                 if not name:
                     continue
-                if await self._database.npc_exists(
-                    self.campaign.campaign_id, name
-                ):
+                if await self._database.npc_exists(self.campaign.campaign_id, name):
                     continue
                 await self._database.save_npc(
                     campaign_id=self.campaign.campaign_id,
@@ -649,11 +666,28 @@ class ClaudeSummarizer(BaseSummarizer):
                     description=description,
                     first_seen_session=self._session_id,
                 )
+                new_npcs += 1
+
+            new_locations = 0
+            for loc in extracted["locations"]:
+                name = loc.get("name", "").strip()
+                description = loc.get("description", "").strip()
+                if not name:
+                    continue
+                if await self._database.location_exists(self.campaign.campaign_id, name):
+                    continue
+                await self._database.save_location(
+                    campaign_id=self.campaign.campaign_id,
+                    name=name,
+                    description=description,
+                    first_seen_session=self._session_id,
+                )
+                new_locations += 1
 
             logger.info(
-                "Extracted %d new NPC(s) and %d location(s)",
-                len(extracted["npcs"]),
-                len(extracted["locations"]),
+                "Extracted %d new NPC(s) and %d new location(s)",
+                new_npcs,
+                new_locations,
             )
         except Exception as exc:
             logger.error("NPC/location extraction failed: %s", exc)
