@@ -344,9 +344,11 @@ class Application:
         if self.config.campaign:
             from rpg_scribe.core.models import (
                 CharacterRelationshipInfo,
+                EntityInfo,
                 NPCInfo,
                 PlayerInfo,
                 RelationshipTypeInfo,
+                LocationInfo,
             )
 
             c = self.config.campaign
@@ -386,6 +388,29 @@ class Application:
                         )
                         for n in db_npcs
                         if n.get("name")
+                    ]
+
+                db_locations = await self.db.get_locations(c.campaign_id)
+                if db_locations:
+                    c.locations = [
+                        LocationInfo(
+                            name=l.get("name", ""),
+                            description=l.get("description", ""),
+                        )
+                        for l in db_locations
+                        if l.get("name")
+                    ]
+
+                db_entities = await self.db.get_entities(c.campaign_id)
+                if db_entities:
+                    c.entities = [
+                        EntityInfo(
+                            name=e.get("name", ""),
+                            entity_type=str(e.get("entity_type", "group") or "group"),
+                            description=e.get("description", ""),
+                        )
+                        for e in db_entities
+                        if e.get("name")
                     ]
 
                 db_relationship_types = await self.db.get_relationship_types(c.campaign_id)
@@ -442,6 +467,27 @@ class Application:
                 if not await self.db.npc_exists(c.campaign_id, npc.name):
                     await self.db.save_npc(
                         c.campaign_id, npc.name, npc.description,
+                    )
+
+            # Persist locations from campaign config to DB (idempotent)
+            for loc in c.locations:
+                if not loc.name:
+                    continue
+                if not await self.db.location_exists(c.campaign_id, loc.name):
+                    await self.db.save_location(
+                        c.campaign_id, loc.name, loc.description,
+                    )
+
+            # Persist entities from campaign config to DB (idempotent)
+            for entity in c.entities:
+                if not entity.name:
+                    continue
+                if not await self.db.entity_exists(c.campaign_id, entity.name):
+                    await self.db.save_entity(
+                        c.campaign_id,
+                        entity.name,
+                        entity.entity_type,
+                        entity.description,
                     )
 
             # Seed relationship thesaurus and relationships from campaign config.

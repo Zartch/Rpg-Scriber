@@ -52,6 +52,9 @@ PNJS CONOCIDOS:
 LOCALIZACIONES CONOCIDAS:
 {locations_block}
 
+ENTIDADES CONOCIDAS:
+{entities_block}
+
 RELACIONES CONOCIDAS:
 {relationships_block}
 
@@ -121,6 +124,9 @@ JUGADORES:
 PNJS CONOCIDOS:
 {npcs_block}
 
+ENTIDADES CONOCIDAS:
+{entities_block}
+
 RELACIONES CONOCIDAS:
 {relationships_block}
 
@@ -158,8 +164,11 @@ PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condens
 """
 
 EXTRACTION_USER = """\
-A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
-localizaciones nuevas que hayan aparecido.
+A partir del siguiente resumen de sesión, extrae:
+- PNJs nuevos
+- Localizaciones nuevas
+- Entidades nuevas (clanes, corporaciones, facciones, grupos...)
+- Relaciones nuevas entre entidades de campaña
 
 RESUMEN DE LA SESIÓN:
 {session_summary}
@@ -170,13 +179,21 @@ PNJS YA CONOCIDOS (NO los incluyas de nuevo):
 LOCALIZACIONES YA CONOCIDAS (NO las incluyas de nuevo):
 {known_locations}
 
+ENTIDADES YA CONOCIDAS (NO las incluyas de nuevo):
+{known_entities}
+
+RELACIONES YA CONOCIDAS (NO las repitas):
+{known_relationships}
+
 Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
 texto adicional antes o después:
 
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
-"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}]}}
+"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
+"entities": [{{"name": "Nombre de la entidad", "entity_type": "clan|corporacion|faccion|grupo", "description": "Breve descripción"}}], \
+"relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", "target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", "relation_type": "aliado de|enemigo de|miembro de...", "category": "general|politica|familiar|social", "notes": "opcional"}}]}}
 
-Si no hay PNJs o localizaciones nuevas, devuelve listas vacías.
+Si no hay nuevos elementos, devuelve listas vacías.
 """
 
 
@@ -253,6 +270,12 @@ class ClaudeSummarizer(BaseSummarizer):
             for loc in c.locations
         ] or ["(ninguna conocida)"]
 
+        entities_lines = [
+            f"- {ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            for ent in c.entities
+        ] or ["(ninguna conocida)"]
+
         entity_name_map: dict[str, str] = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
             for p in c.players if p.discord_id
@@ -260,6 +283,14 @@ class ClaudeSummarizer(BaseSummarizer):
         for n in c.known_npcs:
             if n.name:
                 entity_name_map[f"npc:{n.name}"] = n.name
+        for loc in c.locations:
+            if loc.name:
+                entity_name_map[f"loc:{loc.name}"] = loc.name
+                entity_name_map[f"location:{loc.name}"] = loc.name
+        for ent in c.entities:
+            if ent.name:
+                entity_name_map[f"ent:{ent.name}"] = ent.name
+                entity_name_map[f"entity:{ent.name}"] = ent.name
 
         relationships_lines: list[str] = []
         for rel in c.relationships:
@@ -286,6 +317,7 @@ class ClaudeSummarizer(BaseSummarizer):
             dm_name=dm_name,
             npcs_block="\n".join(npcs_lines),
             locations_block="\n".join(locations_lines),
+            entities_block="\n".join(entities_lines),
             relationships_block="\n".join(relationships_lines),
             custom_instructions=custom,
         )
@@ -639,8 +671,8 @@ class ClaudeSummarizer(BaseSummarizer):
 
         await self._publish_summary("final")
 
-        # Extract NPCs and locations from the final summary
-        await self._extract_npcs_and_locations()
+        # Extract structured entities/relationships from the final summary
+        await self._extract_entities_and_relationships()
 
         logger.info("Session finalized")
         return self._session_summary
@@ -728,6 +760,12 @@ class ClaudeSummarizer(BaseSummarizer):
             "(ninguno conocido)"
         ]
 
+        entities_lines = [
+            f"- {ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            for ent in c.entities
+        ] or ["(ninguna conocida)"]
+
         entity_name_map = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
             for p in c.players if p.discord_id
@@ -735,6 +773,14 @@ class ClaudeSummarizer(BaseSummarizer):
         for n in c.known_npcs:
             if n.name:
                 entity_name_map[f"npc:{n.name}"] = n.name
+        for loc in c.locations:
+            if loc.name:
+                entity_name_map[f"loc:{loc.name}"] = loc.name
+                entity_name_map[f"location:{loc.name}"] = loc.name
+        for ent in c.entities:
+            if ent.name:
+                entity_name_map[f"ent:{ent.name}"] = ent.name
+                entity_name_map[f"entity:{ent.name}"] = ent.name
 
         relationships_lines = []
         for rel in c.relationships:
@@ -756,6 +802,7 @@ class ClaudeSummarizer(BaseSummarizer):
             description=c.description,
             players_block="\n".join(players_lines),
             npcs_block="\n".join(npcs_lines),
+            entities_block="\n".join(entities_lines),
             relationships_block="\n".join(relationships_lines),
             custom_instructions=custom,
         )
@@ -871,37 +918,48 @@ class ClaudeSummarizer(BaseSummarizer):
         return result
 
     # ------------------------------------------------------------------
-    # NPC / location extraction
+    # Structured extraction
     # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_extraction_response(text: str) -> dict:
         """Parse the JSON extraction response from the LLM.
 
-        Returns a dict with 'npcs' and 'locations' lists, or empty lists
-        if parsing fails.
+        Returns a dict with 'npcs', 'locations', 'entities', 'relationships'
+        lists. Missing or invalid lists are normalized to empty lists.
         """
         # Try to find JSON in the response (the LLM may add surrounding text)
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
-            return {"npcs": [], "locations": []}
+            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
         try:
             data = json.loads(match.group())
         except (json.JSONDecodeError, ValueError):
-            return {"npcs": [], "locations": []}
+            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
 
         # Validate structure
         npcs = data.get("npcs", [])
         locations = data.get("locations", [])
+        entities = data.get("entities", [])
+        relationships = data.get("relationships", [])
         if not isinstance(npcs, list):
             npcs = []
         if not isinstance(locations, list):
             locations = []
+        if not isinstance(entities, list):
+            entities = []
+        if not isinstance(relationships, list):
+            relationships = []
 
-        return {"npcs": npcs, "locations": locations}
+        return {
+            "npcs": npcs,
+            "locations": locations,
+            "entities": entities,
+            "relationships": relationships,
+        }
 
-    async def _extract_npcs_and_locations(self) -> None:
-        """Make a second LLM call to extract new NPCs and locations, then save them."""
+    async def _extract_entities_and_relationships(self) -> None:
+        """Extract and save NPCs, locations, entities and relationships."""
         if not self._database or not self._session_summary:
             return
 
@@ -914,10 +972,23 @@ class ClaudeSummarizer(BaseSummarizer):
             for loc in self.campaign.locations
         ] or ["(ninguna)"]
 
+        known_entities_lines = [
+            f"- ent:{ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- ent:{ent.name} [{ent.entity_type}]"
+            for ent in self.campaign.entities
+        ] or ["(ninguna)"]
+
+        known_relationships_lines = [
+            f"- {rel.source_key} -> {rel.target_key}: {rel.relation_type_label or rel.relation_type_key}"
+            for rel in self.campaign.relationships
+        ] or ["(ninguna)"]
+
         user_msg = EXTRACTION_USER.format(
             session_summary=self._session_summary,
             known_npcs="\n".join(known_npcs_lines),
             known_locations="\n".join(known_locations_lines),
+            known_entities="\n".join(known_entities_lines),
+            known_relationships="\n".join(known_relationships_lines),
         )
 
         try:
@@ -960,10 +1031,95 @@ class ClaudeSummarizer(BaseSummarizer):
                 )
                 new_locations += 1
 
+            new_entities = 0
+            for entity in extracted["entities"]:
+                name = str(entity.get("name", "")).strip()
+                entity_type = str(entity.get("entity_type", "group") or "group").strip() or "group"
+                description = str(entity.get("description", "")).strip()
+                if not name:
+                    continue
+                if await self._database.entity_exists(self.campaign.campaign_id, name):
+                    continue
+                await self._database.save_entity(
+                    campaign_id=self.campaign.campaign_id,
+                    name=name,
+                    entity_type=entity_type,
+                    description=description,
+                    first_seen_session=self._session_id,
+                )
+                new_entities += 1
+
+            relation_seed_map: dict[str, str] = {}
+            for p in self.campaign.players:
+                if p.discord_id:
+                    relation_seed_map[p.character_name.strip().casefold()] = f"player:{p.discord_id}"
+            for n in self.campaign.known_npcs:
+                relation_seed_map[n.name.strip().casefold()] = f"npc:{n.name}"
+            for loc in self.campaign.locations:
+                relation_seed_map[loc.name.strip().casefold()] = f"loc:{loc.name}"
+            for ent in self.campaign.entities:
+                relation_seed_map[ent.name.strip().casefold()] = f"ent:{ent.name}"
+            for npc in extracted["npcs"]:
+                name = str(npc.get("name", "")).strip()
+                if name:
+                    relation_seed_map[name.casefold()] = f"npc:{name}"
+            for loc in extracted["locations"]:
+                name = str(loc.get("name", "")).strip()
+                if name:
+                    relation_seed_map[name.casefold()] = f"loc:{name}"
+            for ent in extracted["entities"]:
+                name = str(ent.get("name", "")).strip()
+                if name:
+                    relation_seed_map[name.casefold()] = f"ent:{name}"
+
+            def _resolve_relation_key(raw_key: str, fallback_name: str = "") -> str:
+                candidate = str(raw_key or "").strip()
+                if not candidate and fallback_name:
+                    candidate = relation_seed_map.get(fallback_name.casefold(), "")
+                if candidate.startswith("location:"):
+                    candidate = "loc:" + candidate[len("location:"):]
+                if candidate.startswith("entity:"):
+                    candidate = "ent:" + candidate[len("entity:"):]
+                if ":" in candidate:
+                    return candidate
+                if candidate:
+                    return relation_seed_map.get(candidate.casefold(), "")
+                return ""
+
+            new_relationships = 0
+            for rel in extracted["relationships"]:
+                source_key = _resolve_relation_key(
+                    str(rel.get("source_key", "")).strip(),
+                    str(rel.get("source", "")).strip(),
+                )
+                target_key = _resolve_relation_key(
+                    str(rel.get("target_key", "")).strip(),
+                    str(rel.get("target", "")).strip(),
+                )
+                relation_type = str(rel.get("relation_type", "")).strip()
+                category = str(rel.get("category", "general") or "general").strip() or "general"
+                notes = str(rel.get("notes", "")).strip()
+                if not source_key or not target_key or not relation_type:
+                    continue
+                try:
+                    await self._database.save_character_relationship(
+                        self.campaign.campaign_id,
+                        source_key,
+                        target_key,
+                        relation_type,
+                        notes=notes,
+                        category=category,
+                    )
+                    new_relationships += 1
+                except Exception:
+                    continue
+
             logger.info(
-                "Extracted %d new NPC(s) and %d new location(s)",
+                "Extracted %d new NPC(s), %d location(s), %d entity(s), %d relationship(s)",
                 new_npcs,
                 new_locations,
+                new_entities,
+                new_relationships,
             )
         except Exception as exc:
-            logger.error("NPC/location extraction failed: %s", exc)
+            logger.error("Structured extraction failed: %s", exc)

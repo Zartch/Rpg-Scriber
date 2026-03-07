@@ -232,6 +232,33 @@ class TestDatabasePlayers:
         assert len(await db.get_players("c2")) == 1
 
 
+class TestDatabaseEntities:
+    async def test_save_and_get_entities(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_entity("c1", "Hermandad", "clan", "Sociedad secreta", "s1")
+        entities = await db.get_entities("c1")
+        assert len(entities) == 1
+        assert entities[0]["name"] == "Hermandad"
+        assert entities[0]["entity_type"] == "clan"
+        assert entities[0]["description"] == "Sociedad secreta"
+
+    async def test_entity_exists(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_entity("c1", "Consorcio", "corporacion", "")
+        assert await db.entity_exists("c1", "consorcio") is True
+        assert await db.entity_exists("c1", "otra") is False
+
+    async def test_update_entity(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_entity("c1", "Viejo", "grupo", "desc")
+        entities = await db.get_entities("c1")
+        entity_id = entities[0]["id"]
+        await db.update_entity(entity_id, name="Nuevo", entity_type="faccion")
+        entities = await db.get_entities("c1")
+        assert entities[0]["name"] == "Nuevo"
+        assert entities[0]["entity_type"] == "faccion"
+
+
 class TestDatabaseQuestions:
     async def test_save_and_get_questions(self, db: Database) -> None:
         await db.upsert_campaign(campaign_id="c1", name="Test")

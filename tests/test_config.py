@@ -40,6 +40,11 @@ character_name = "Brom"
 name = "Gandalf"
 description = "A mysterious wizard"
 
+[[campaign.entities]]
+name = "Hermandad de la Niebla"
+entity_type = "clan"
+description = "Una sociedad secreta"
+
 [campaign.custom_instructions]
 text = "Keep it serious."
 """
@@ -87,7 +92,13 @@ class TestLoadCampaignToml:
 
     def test_locations(self, campaign_toml_file: Path) -> None:
         ctx = load_campaign_toml(campaign_toml_file)
-        assert ctx.locations == ["Tavern", "Dungeon"]
+        assert [loc.name for loc in ctx.locations] == ["Tavern", "Dungeon"]
+
+    def test_entities(self, campaign_toml_file: Path) -> None:
+        ctx = load_campaign_toml(campaign_toml_file)
+        assert len(ctx.entities) == 1
+        assert ctx.entities[0].name == "Hermandad de la Niebla"
+        assert ctx.entities[0].entity_type == "clan"
 
     def test_campaign_summary_preserved(self, campaign_toml_file: Path) -> None:
         ctx = load_campaign_toml(campaign_toml_file)
@@ -104,6 +115,10 @@ class TestLoadCampaignToml:
 class TestLoadAppConfig:
     def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
+        monkeypatch.delenv("RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS", raising=False)
+        monkeypatch.delenv("RPG_SCRIBE_WEB_FEED_MAX_ITEMS", raising=False)
+        monkeypatch.delenv("RPG_SCRIBE_PORT", raising=False)
+        monkeypatch.delenv("RPG_SCRIBE_HOST", raising=False)
         config = load_app_config()
         assert isinstance(config, AppConfig)
         assert config.web_host == "127.0.0.1"

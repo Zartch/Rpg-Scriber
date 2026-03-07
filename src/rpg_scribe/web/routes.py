@@ -1,4 +1,4 @@
-"""REST API routes for RPG Scribe web interface."""
+﻿"""REST API routes for RPG Scribe web interface."""
 
 from __future__ import annotations
 
@@ -20,7 +20,12 @@ from rpg_scribe.core.events import (
     SystemStatusEvent,
     TranscriptionEvent,
 )
-from rpg_scribe.core.models import CharacterRelationshipInfo, LocationInfo, RelationshipTypeInfo
+from rpg_scribe.core.models import (
+    CharacterRelationshipInfo,
+    EntityInfo,
+    LocationInfo,
+    RelationshipTypeInfo,
+)
 from rpg_scribe.config import save_campaign_toml
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
@@ -179,6 +184,57 @@ def _normalize_locations(values: list[Any] | None) -> list[dict[str, str]]:
             "name": name,
             "description": _extract_location_description(raw),
         })
+    return normalized
+
+
+def _extract_entity_name(value: Any) -> str:
+    """Extract entity name from dict/dataclass-like value."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return str(value.get("name", "")).strip()
+    if hasattr(value, "name"):
+        return str(getattr(value, "name", "")).strip()
+    return ""
+
+
+def _extract_entity_type(value: Any) -> str:
+    """Extract entity type from dict/dataclass-like value."""
+    if isinstance(value, dict):
+        return str(value.get("entity_type", "group") or "group").strip() or "group"
+    if hasattr(value, "entity_type"):
+        return str(getattr(value, "entity_type", "group") or "group").strip() or "group"
+    return "group"
+
+
+def _extract_entity_description(value: Any) -> str:
+    """Extract entity description from dict/dataclass-like value."""
+    if isinstance(value, dict):
+        return str(value.get("description", "")).strip()
+    if hasattr(value, "description"):
+        return str(getattr(value, "description", "")).strip()
+    return ""
+
+
+def _normalize_entities(values: list[Any] | None) -> list[dict[str, str]]:
+    """Normalize entities into a list of {name, entity_type, description} objects."""
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        name = _extract_entity_name(raw)
+        if not name:
+            continue
+        folded = name.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        normalized.append(
+            {
+                "name": name,
+                "entity_type": _extract_entity_type(raw),
+                "description": _extract_entity_description(raw),
+            }
+        )
     return normalized
 # -- REST endpoints ------------------------------------------------
 
@@ -420,6 +476,16 @@ async def get_campaigns() -> dict[str, Any]:
             logger.error("Error fetching NPCs: %s", exc)
             campaign.setdefault("npcs", [])
         try:
+            campaign["locations"] = await db.get_locations(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching locations: %s", exc)
+            campaign.setdefault("locations", [])
+        try:
+            campaign["entities"] = await db.get_entities(campaign_id)
+        except Exception as exc:
+            logger.error("Error fetching entities: %s", exc)
+            campaign.setdefault("entities", [])
+        try:
             campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
         except Exception as exc:
             logger.error("Error fetching relationship types: %s", exc)
@@ -432,11 +498,13 @@ async def get_campaigns() -> dict[str, Any]:
     else:
         campaign.setdefault("players", [])
         campaign.setdefault("npcs", [])
+        campaign.setdefault("entities", [])
         campaign.setdefault("relationship_types", [])
         campaign.setdefault("relationships", [])
         campaign.setdefault("locations", [])
 
     campaign.setdefault("locations", [])
+    campaign.setdefault("entities", [])
 
     campaign.setdefault("dm_speaker_id", "")
     return {"campaign": campaign}
@@ -484,9 +552,10 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
                 campaign = _flatten_campaign_row(row)
                 campaign["players"] = await db.get_players(campaign_id)
                 campaign["npcs"] = await db.get_npcs(campaign_id)
+                campaign["locations"] = await db.get_locations(campaign_id)
+                campaign["entities"] = await db.get_entities(campaign_id)
                 campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
                 campaign["relationships"] = await db.get_character_relationships(campaign_id)
-                campaign.setdefault("locations", [])
         except Exception as exc:
             logger.error("Error loading browse campaign %s: %s", campaign_id, exc)
             return {"campaign": None}
@@ -496,10 +565,12 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
         campaign.setdefault("campaign_summary", "")
         campaign.setdefault("players", [])
         campaign.setdefault("npcs", [])
+        campaign.setdefault("entities", [])
         campaign.setdefault("relationship_types", [])
         campaign.setdefault("relationships", [])
 
         campaign.setdefault("locations", [])
+        campaign.setdefault("entities", [])
     return {"campaign": campaign}
 
 @router.patch("/api/campaigns/{campaign_id}")
@@ -744,6 +815,7 @@ async def update_npc_endpoint(
 async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Add a location name to the active campaign context."""
     state = _get_state()
+    db = _get_database()
     config = _get_config()
 
     if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
@@ -757,6 +829,20 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     existing_keys = {loc["name"].casefold() for loc in current}
     if name.casefold() in existing_keys:
         return {"ok": False, "error": "Location already exists"}
+
+    if db is not None:
+        try:
+            if await db.location_exists(campaign_id, name):
+                return {"ok": False, "error": "Location already exists"}
+            await db.save_location(
+                campaign_id=campaign_id,
+                name=name,
+                description="",
+                first_seen_session=state.active_session_id or "",
+            )
+        except Exception as exc:
+            logger.error("Error saving location: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
 
     current.append({"name": name, "description": ""})
     state.active_campaign["locations"] = current
@@ -818,6 +904,14 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
 
     if db is not None:
         try:
+            db_locations = await db.get_locations(campaign_id)
+            for row in db_locations:
+                if str(row.get("name", "")).casefold() == old_name.casefold():
+                    await db.update_location(
+                        str(row.get("id", "")),
+                        name=new_name,
+                    )
+                    break
             await db.rename_relationship_entity_key(campaign_id, f"loc:{old_name}", f"loc:{new_name}")
             await db.rename_relationship_entity_key(campaign_id, f"location:{old_name}", f"loc:{new_name}")
         except Exception as exc:
@@ -843,6 +937,146 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
         logger.error("Error persisting campaign TOML: %s", exc)
 
     return {"ok": True, "locations": updated_locations}
+
+
+@router.post("/api/campaigns/{campaign_id}/entities")
+async def create_entity_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Create a new campaign entity (clan, corporation, faction, group...)."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    name = str(body.get("name", "")).strip()
+    entity_type = str(body.get("entity_type", "group") or "group").strip() or "group"
+    description = str(body.get("description", "")).strip()
+    if not name:
+        return {"ok": False, "error": "Entity name is required"}
+
+    entities = _normalize_entities(state.active_campaign.get("entities", []))
+    if any(e["name"].casefold() == name.casefold() for e in entities):
+        return {"ok": False, "error": "Entity already exists"}
+    if db is not None:
+        try:
+            if await db.entity_exists(campaign_id, name):
+                return {"ok": False, "error": "Entity already exists"}
+            await db.save_entity(
+                campaign_id=campaign_id,
+                name=name,
+                entity_type=entity_type,
+                description=description,
+                first_seen_session=state.active_session_id or "",
+            )
+        except Exception as exc:
+            logger.error("Error saving entity: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
+
+    entities.append(
+        {
+            "name": name,
+            "entity_type": entity_type,
+            "description": description,
+        }
+    )
+    state.active_campaign["entities"] = entities
+
+    if config and hasattr(config, "campaign") and config.campaign:
+        config.campaign.entities = [
+            EntityInfo(
+                name=e["name"],
+                entity_type=e.get("entity_type", "group"),
+                description=e.get("description", ""),
+            )
+            for e in entities
+        ]
+
+    try:
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
+
+    return {"ok": True, "entities": entities}
+
+
+@router.put("/api/campaigns/{campaign_id}/entities/{entity_id}")
+async def update_entity_endpoint(
+    campaign_id: str, entity_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Update a campaign entity (name, entity_type, description)."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    editable = {"name", "entity_type", "description"}
+    updates = {k: v for k, v in body.items() if k in editable and isinstance(v, str)}
+    if not updates:
+        return {"ok": False, "error": "No valid fields to update"}
+
+    old_name = str(body.get("old_name", "")).strip()
+    new_name = str(updates.get("name", old_name)).strip()
+    if not new_name:
+        return {"ok": False, "error": "Entity name is required"}
+
+    if db is not None:
+        try:
+            await db.update_entity(entity_id, **updates)
+            if old_name and new_name and old_name != new_name:
+                await db.rename_relationship_entity_key(
+                    campaign_id,
+                    f"ent:{old_name}",
+                    f"ent:{new_name}",
+                )
+                await db.rename_relationship_entity_key(
+                    campaign_id,
+                    f"entity:{old_name}",
+                    f"ent:{new_name}",
+                )
+        except Exception as exc:
+            logger.error("Error updating entity: %s", exc)
+            return {"ok": False, "error": "Failed to save"}
+
+    state_entities = _normalize_entities(state.active_campaign.get("entities", []))
+    for entity in state_entities:
+        if entity["name"] == old_name:
+            entity.update({k: v for k, v in updates.items() if isinstance(v, str)})
+            if "entity_type" not in entity or not entity["entity_type"]:
+                entity["entity_type"] = "group"
+            break
+    state.active_campaign["entities"] = state_entities
+    for rel in state.active_campaign.get("relationships", []) or []:
+        source_key = str(rel.get("source_key", ""))
+        target_key = str(rel.get("target_key", ""))
+        if source_key in {f"ent:{old_name}", f"entity:{old_name}"}:
+            rel["source_key"] = f"ent:{new_name}"
+        if target_key in {f"ent:{old_name}", f"entity:{old_name}"}:
+            rel["target_key"] = f"ent:{new_name}"
+
+    if config and hasattr(config, "campaign") and config.campaign:
+        for entity in config.campaign.entities:
+            if entity.name == old_name:
+                for k, v in updates.items():
+                    object.__setattr__(entity, k, v)
+                break
+        for rel in config.campaign.relationships:
+            if rel.source_key in {f"ent:{old_name}", f"entity:{old_name}"}:
+                object.__setattr__(rel, "source_key", f"ent:{new_name}")
+            if rel.target_key in {f"ent:{old_name}", f"entity:{old_name}"}:
+                object.__setattr__(rel, "target_key", f"ent:{new_name}")
+
+    try:
+        if db is not None:
+            await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
+    return {"ok": True}
+
+
 @router.get("/api/campaigns/{campaign_id}/relationships")
 async def list_relationships(campaign_id: str) -> dict[str, Any]:
     """List relationship thesaurus + relationships for a campaign."""
@@ -923,7 +1157,7 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
 
 _SUMMARY_PREVIEW_LEN = 150
 
-# ── Campaign summary history endpoints ────────────────────────────
+# â”€â”€ Campaign summary history endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 _CAMPAIGN_SUMMARY_PREVIEW_LEN = 200
 
@@ -1292,4 +1526,5 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
+
 
