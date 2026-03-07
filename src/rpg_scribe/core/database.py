@@ -1,4 +1,4 @@
-﻿"""SQLite async database wrapper for RPG Scribe.
+"""SQLite async database wrapper for RPG Scribe.
 
 Implements the schema defined in architecture section 8.
 """
@@ -166,7 +166,7 @@ class Database:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self._conn
 
-    # ── Campaigns ──────────────────────────────────────────────────
+    # -- Campaigns --------------------------------------------------
 
     async def upsert_campaign(
         self,
@@ -217,6 +217,21 @@ class Database:
             result["speaker_map"] = json.loads(result["speaker_map"])
         return result
 
+
+    async def list_campaigns(self) -> list[dict[str, Any]]:
+        """List all campaigns ordered by most recently updated."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaigns ORDER BY updated_at DESC, created_at DESC"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+        for row in rows:
+            if row.get("speaker_map"):
+                try:
+                    row["speaker_map"] = json.loads(row["speaker_map"])
+                except Exception:
+                    row["speaker_map"] = {}
+        return rows
+
     async def update_campaign_summary(
         self, campaign_id: str, summary: str
     ) -> None:
@@ -227,7 +242,7 @@ class Database:
         )
         await self.conn.commit()
 
-    # ── Sessions ───────────────────────────────────────────────────
+    # -- Sessions ---------------------------------------------------
 
     async def create_session(
         self, session_id: str, campaign_id: str
@@ -272,7 +287,16 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    # ── Transcriptions ─────────────────────────────────────────────
+    async def list_uncategorized_sessions(self) -> list[dict[str, Any]]:
+        """List sessions without campaign assignment."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM sessions "
+            "WHERE campaign_id IS NULL OR campaign_id = '' "
+            "ORDER BY started_at DESC",
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    # -- Transcriptions ---------------------------------------------
 
     async def save_transcription(
         self,
@@ -304,7 +328,7 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    # ── NPCs ────────────────────────────────────────────────────────
+    # -- NPCs --------------------------------------------------------
 
     async def save_npc(
         self,
@@ -356,7 +380,7 @@ class Database:
         )
         await self.conn.commit()
 
-    # ── Players ─────────────────────────────────────────────────────
+    # -- Players -----------------------------------------------------
 
     async def save_player(
         self,
@@ -411,7 +435,7 @@ class Database:
         )
         await self.conn.commit()
 
-    # ── Questions ──────────────────────────────────────────────────
+    # -- Questions --------------------------------------------------
 
     async def get_relationship_types(self, campaign_id: str) -> list[dict[str, Any]]:
         """List known relationship types for a campaign thesaurus."""
@@ -660,3 +684,6 @@ class Database:
             question_ids,
         )
         await self.conn.commit()
+
+
+

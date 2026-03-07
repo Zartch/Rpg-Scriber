@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
@@ -9,7 +9,13 @@
 <body>
   <header>
     <h1>RPG Scribe</h1>
-    <span id="connection-badge" class="badge badge-idle">Disconnected</span>
+    <div class="top-controls">
+      <nav class="mode-switch" aria-label="Display mode">
+        <button id="mode-live-btn" class="mode-btn active" type="button">Live</button>
+        <button id="mode-browse-btn" class="mode-btn" type="button">Browse</button>
+      </nav>
+      <span id="connection-badge" class="badge badge-idle">Disconnected</span>
+    </div>
   </header>
 
   <!-- Campaign info bar -->
@@ -136,13 +142,18 @@
   <main class="main-layout">
     <!-- Session sidebar -->
     <aside id="session-sidebar" class="panel sidebar">
-      <h2>Sessions</h2>
+      <section id="browse-campaigns-panel" class="browse-campaigns hidden">
+        <h2>Campaigns</h2>
+        <div id="browse-campaign-list" class="session-list">
+          <p class="placeholder">No campaigns loaded.</p>
+        </div>
+      </section>
+      <h2 id="sessions-title">Sessions</h2>
       <button id="back-to-live" class="btn-live hidden">Back to Live</button>
       <div id="session-list" class="session-list">
         <p class="placeholder">No sessions loaded.</p>
       </div>
     </aside>
-
     <div class="main-content">
       <!-- Status panel -->
       <section id="status-panel" class="panel">
@@ -185,6 +196,7 @@
             <button id="refresh-summary-btn" class="btn-small hidden" title="Generate an on-going summary snapshot">Update Summary</button>
             <button id="finalize-btn" class="btn-small btn-finalize hidden" title="Finalize and stop the current session">Finalize Session</button>
           </div>
+          <div id="session-log-link" class="session-log-link hidden"></div>
           <div id="session-summary" class="summary-content">
             <p class="placeholder">Waiting for summary updates&hellip;</p>
           </div>
@@ -208,6 +220,7 @@
   <script src="/app.js"></script>
 </body>
 </html>
+
 
 
 
