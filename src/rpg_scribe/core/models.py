@@ -1,4 +1,4 @@
-"""Domain models and configuration dataclasses."""
+﻿"""Domain models and configuration dataclasses."""
 
 from __future__ import annotations
 
@@ -38,6 +38,27 @@ class NPCInfo:
 
 
 @dataclass
+class RelationshipTypeInfo:
+    """A canonical relationship type inside a campaign thesaurus."""
+
+    key: str
+    label: str
+    category: str = "general"
+
+
+@dataclass
+class CharacterRelationshipInfo:
+    """A typed relationship between two entities in the campaign."""
+
+    source_key: str
+    target_key: str
+    relation_type_key: str
+    relation_type_label: str
+    notes: str = ""
+
+
+
+@dataclass
 class CampaignContext:
     """Full campaign context used by the summarizer."""
 
@@ -49,10 +70,12 @@ class CampaignContext:
 
     players: list[PlayerInfo] = field(default_factory=list)
     known_npcs: list[NPCInfo] = field(default_factory=list)
+    relation_types: list[RelationshipTypeInfo] = field(default_factory=list)
+    relationships: list[CharacterRelationshipInfo] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
     campaign_summary: str = ""
 
-    # Mapping Discord User → Character
+    # Mapping Discord User -> Character
     speaker_map: dict[str, str] = field(default_factory=dict)
     dm_speaker_id: str = ""
 
@@ -105,6 +128,9 @@ class TranscriberConfig:
     post_filter_enabled: bool = True
     post_filter_max_words_per_second: float = 6.0  # Max plausible speech rate
 
+    # Debug: save discarded chunks as WAV files for analysis (dev)
+    audio_debug_log_dir: str = ""  # "" = disabled; e.g. "logs/audio"
+
 
 @dataclass
 class SessionInfo:
@@ -133,5 +159,7 @@ class SummarizerConfig:
     max_retries: int = 3
     retry_base_delay_s: float = 1.0
 
-    # Batch finalization — max chars per API call (~4 chars/token)
+    # Batch finalization - max chars per API call (~4 chars/token)
     max_input_chars: int = 600_000  # ~150K tokens, safe for Sonnet 200K
+
+

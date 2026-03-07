@@ -689,3 +689,104 @@ class TestPostTranscriptionFilter:
         assert len(received) == 1  # Passes through
 
         await transcriber.stop()
+
+
+# ---------------------------------------------------------------------------
+# TestAudioDebugLogging
+# ---------------------------------------------------------------------------
+
+class TestAudioDebugLogging:
+    """Tests for audio_debug_log_dir: saving discarded chunks as WAV files."""
+
+    @pytest.fixture
+    def bus(self) -> EventBus:
+        return EventBus()
+
+    @pytest.mark.asyncio
+    async def test_audio_filter_discard_saves_wav(self, bus: EventBus, tmp_path) -> None:
+        """Chunks discarded by the audio filter are saved as WAV when dir is set."""
+        log_dir = tmp_path / "audio"
+        config = TranscriberConfig(
+            audio_filter_enabled=True,
+            audio_filter_rms_threshold=10_000.0,  # Very high: forces discard
+            audio_debug_log_dir=str(log_dir),
+        )
+        transcriber = MockTranscriber(bus, config)
+        await transcriber.start()
+
+        # Publish a quiet chunk (will be discarded by audio filter)
+        await bus.publish(_make_audio_event(duration_s=0.5))
+
+        await transcriber.stop()
+
+        saved = list(log_dir.glob("*.wav"))
+        assert len(saved) == 1, f"Expected 1 WAV file, got {saved}"
+        assert "_AUDIO_" in saved[0].name
+        assert saved[0].stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_hallucination_discard_saves_wav(self, bus: EventBus, tmp_path) -> None:
+        """Chunks discarded by the hallucination filter are saved as WAV when dir is set."""
+        log_dir = tmp_path / "audio"
+        config = TranscriberConfig(
+            audio_filter_enabled=False,
+            post_filter_enabled=True,
+            audio_debug_log_dir=str(log_dir),
+        )
+        transcriber = MockTranscriber(
+            bus, config,
+            response_text="Gracias por ver este vídeo",  # known hallucination pattern
+        )
+        await transcriber.start()
+
+        await bus.publish(_make_audio_event())
+
+        await transcriber.stop()
+
+        saved = list(log_dir.glob("*.wav"))
+        assert len(saved) == 1, f"Expected 1 WAV file, got {saved}"
+        assert "_HALLU_" in saved[0].name
+        assert saved[0].stat().st_size > 0
+
+    @pytest.mark.asyncio
+    async def test_no_dir_skips_saving(self, bus: EventBus, tmp_path) -> None:
+        """When audio_debug_log_dir is empty, no WAV files are written."""
+        config = TranscriberConfig(
+            audio_filter_enabled=True,
+            audio_filter_rms_threshold=10_000.0,  # Forces discard
+            audio_debug_log_dir="",  # Disabled
+        )
+        transcriber = MockTranscriber(bus, config)
+        await transcriber.start()
+
+        await bus.publish(_make_audio_event(duration_s=0.5))
+
+        await transcriber.stop()
+
+        # No directory should have been created
+        assert not (tmp_path / "audio").exists()
+
+    @pytest.mark.asyncio
+    async def test_wav_filename_contains_speaker_and_type(
+        self, bus: EventBus, tmp_path
+    ) -> None:
+        """WAV filename encodes speaker name, duration and filter type."""
+        log_dir = tmp_path / "audio"
+        config = TranscriberConfig(
+            audio_filter_enabled=True,
+            audio_filter_rms_threshold=10_000.0,
+            audio_debug_log_dir=str(log_dir),
+        )
+        transcriber = MockTranscriber(bus, config)
+        await transcriber.start()
+
+        await bus.publish(_make_audio_event(speaker_name="Gandalf", duration_s=0.5))
+
+        await transcriber.stop()
+
+        saved = list(log_dir.glob("*.wav"))
+        assert len(saved) == 1
+        name = saved[0].name
+        assert "Gandalf" in name
+        assert "500ms" in name
+        assert "_AUDIO_" in name
