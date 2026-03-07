@@ -31,7 +31,9 @@ audio_filter_vad_aggressiveness = 3
 post_filter_enabled = true
 post_filter_max_words_per_second = 6.0
 # Save discarded audio chunks as WAV files for analysis (dev only, "" = disabled)
-audio_debug_log_dir = ""
+audio_debug_log_dir = "logs/audio/discarded"
+# Verbose per-chunk logs (INFO level); false → per-chunk logs go to DEBUG
+verbose_logging = false
 
 [summarizer]
 update_interval_s = 120.0

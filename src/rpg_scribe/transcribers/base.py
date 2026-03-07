@@ -87,7 +87,7 @@ class BaseTranscriber(ABC):
             filter_type: "AUDIO" for pre-transcription filter, "HALLU" for hallucination filter.
             reason: Human-readable discard reason (used in filename).
         """
-        log_dir = Path(self.config.audio_debug_log_dir)
+        log_dir = Path(self.config.audio_debug_log_dir) / event.session_id
         log_dir.mkdir(parents=True, exist_ok=True)
 
         dt = datetime.fromtimestamp(event.timestamp).strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -128,7 +128,8 @@ class BaseTranscriber(ABC):
                 )
             return
 
-        logger.info(
+        chunk_log = logger.info if self.config.verbose_logging else logger.debug
+        chunk_log(
             "📨 Chunk de '%s' (id=%s) | %.1fs | sesión=%s | "
             "RMS=%.0f speech=%.0f%% → transcribiendo...",
             event.speaker_name,
@@ -170,7 +171,7 @@ class BaseTranscriber(ABC):
                     return
 
             preview = result.text[:100] + ("…" if len(result.text) > 100 else "")
-            logger.info(
+            chunk_log(
                 "✅ Transcripción de '%s': \"%s\" → publicando al EventBus",
                 result.speaker_name,
                 preview,
