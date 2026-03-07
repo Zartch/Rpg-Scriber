@@ -98,7 +98,7 @@ class BaseTranscriber(ABC):
 
             # Post-transcription hallucination filter
             if self.config.post_filter_enabled:
-                from src.rpg_scribe.transcribers.audio_filter import is_hallucination
+                from rpg_scribe.transcribers.audio_filter import is_hallucination
 
                 is_hallu, reason = is_hallucination(
                     result.text,
