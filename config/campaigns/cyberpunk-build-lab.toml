@@ -8,8 +8,62 @@ Sesion de charla casual para ayudar a Miquel a decidir que personaje crear
 para la proxima partida de Cyberpunk. El tono es de colegas: bromas, propuestas
 de builds y comparaciones de roles.
 """
-campaign_summary = ""
-locations = ["Afterlife", "Taller de Ripperdoc", "Mesa de teoria de builds"]
+campaign_summary = """
+# CRÓNICA DE CAMPAÑA: CYBERPUNK BUILD LAB
+
+## Estado General de la Campaña
+
+La campaña **Cyberpunk Build Lab** se encuentra en su fase inicial de pre-juego, desarrollándose como una serie de sesiones de construcción colaborativa de personajes antes del inicio oficial de la aventura. El grupo se ha reunido específicamente para ayudar a Miquel en la decisión de su concepto de personaje para la próxima partida de Cyberpunk RED.
+
+## Contexto del Mundo de Juego
+
+El Afinador táctico (Escalopo) ha establecido **Santiago** como la ciudad principal de la campaña, caracterizada por conflictos sociales evidentes entre elementos tradicionales y modernos. La estructura política se define por **cuatro facciones claramente diferenciadas**, aunque los personajes pueden operar en zonas grises entre ellas según sus preferencias narrativas.
+
+La ciudad presenta un entorno corporativo complejo, con **Zigurat** como corporación establecida prominente, junto a empresas más pequeñas y startups emergentes que aprovechan contactos corporativos para desarrollarse.
+
+## Los Tres Conceptos de Personaje de Miquel
+
+### El Ejecutivo Corporativo
+Un tiburón empresarial cínico situado entre ejecutivo y fixer de altos vuelos. Su filosofía central es "ser el más listo de la clase", inspirado en referencias de American Psycho (sin elementos psicopáticos extremos). Se presenta como un guerrero vestido de traje, muy leal a sus aliados pero aprovechado con quienes no forman parte de su círculo íntimo. Su ascenso profesional se basa en conseguir nuevos contratos y oportunidades corporativas.
+
+### El Netrunner Antisistema  
+El polo opuesto ideológico, representa el espíritu punk auténtico con una filosofía completamente anárquica. Se opone activamente a cualquier forma de poder opresivo, comprendiendo que el exceso de poder inevitablemente lleva a la opresión. Opera en zonas grises legales, reconociendo que muchas cosas "legales" son fundamentalmente injustas.
+
+### El Ronin Corporativo
+Un ex-samurai corporativo sin señor, antiguamente al servicio de una megacorporación. Poseía alta humanidad que le permitía implantes considerables hasta que presenció atrocidades durante operaciones de seguridad corporativa. Este trauma lo volvió introvertido y sensible, manteniéndose alejado del mundo digital. Busca justicia contra corporaciones corruptas sin un objetivo específico de venganza.
+
+## Desarrollo y Sinergias del Grupo
+
+El Fixer de la mesa (Zartch) propuso fusionar conceptos, sugiriendo girar el netrunner hacia algo más corporativo que combine aspiraciones ejecutivas con habilidades técnicas. Se exploró una composición alternativa de grupo: netrunner (Miquel), técnico (otro jugador), soldado, o un project manager actuando como coordinador-arreglador.
+
+El Afinador confirmó que Pater ya tiene preparados tres conceptos de personaje, incluyendo un Ejecutivo, asegurando que cualquier elección similar de Miquel sería compatible sin crear solapamientos problemáticos.
+
+## Figuras y Referencias Conocidas
+
+- **Ejecutiva poliooperada**: Una figura corporativa de 160 años que aparenta 20, mencionada como ejemplo de concepto extremo más adecuado para startups que aprovechan contactos corporativos.
+- **Ripperdoc de confianza**: Referencia recurrente para imaginar implantes, costes y consecuencias narrativas de las modificaciones corporales.
+
+## Desafíos Técnicos y Estado Actual
+
+Las sesiones han estado marcadas por severos problemas técnicos que han fragmentado significativamente la comunicación. Los sistemas de transcripción y reconocimiento de voz han fallado críticamente, registrando intervenciones como palabras inconexas e irrelevantes. Miquel ha experimentado múltiples fallos simultáneos de interface y conectividad, complicando la evaluación de sus preferencias reales sobre los conceptos desarrollados.
+
+A pesar de estos inconvenientes tecnológicos, el grupo mantiene su dinámica característica de apoyo mutuo y paciencia, con Zartch demostrando familiaridad técnica con los sistemas defectuosos y el resto del grupo adaptándose a las limitaciones comunicativas.
+
+## Decisiones Pendientes
+
+La campaña permanece en fase de definición, esperando que Miquel tome una decisión final entre sus tres conceptos principales. Se ha establecido que un ejecutivo de nivel medio operaría dentro de una estructura corporativa mayor (posiblemente una sección o división), mientras que conceptos más independientes requerirían justificación específica para encajar en el marco faccional de Santiago.
+
+La construcción colaborativa continúa pendiente de resolver los problemas técnicos para permitir una discusión fluida sobre roles, builds y sinergias de grupo antes del inicio oficial de la aventura.
+"""
+
+[[campaign.locations]]
+name = "Afterlife"
+
+[[campaign.locations]]
+name = "Taller de Ripperdoc"
+
+[[campaign.locations]]
+name = "Mesa de teoria de builds"
 
 [campaign.dm]
 discord_id = "432635509899001877"
