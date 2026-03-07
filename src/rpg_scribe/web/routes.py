@@ -20,7 +20,7 @@ from rpg_scribe.core.events import (
     SystemStatusEvent,
     TranscriptionEvent,
 )
-from rpg_scribe.core.models import CharacterRelationshipInfo, RelationshipTypeInfo
+from rpg_scribe.core.models import CharacterRelationshipInfo, LocationInfo, RelationshipTypeInfo
 from rpg_scribe.config import save_campaign_toml
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
@@ -143,6 +143,43 @@ def _flatten_campaign_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _extract_location_name(value: Any) -> str:
+    """Extract location name from str/dict/dataclass-like value."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return str(value.get("name", "")).strip()
+    if hasattr(value, "name"):
+        return str(getattr(value, "name", "")).strip()
+    return ""
+
+
+def _extract_location_description(value: Any) -> str:
+    """Extract location description from dict/dataclass-like value."""
+    if isinstance(value, dict):
+        return str(value.get("description", "")).strip()
+    if hasattr(value, "description"):
+        return str(getattr(value, "description", "")).strip()
+    return ""
+
+
+def _normalize_locations(values: list[Any] | None) -> list[dict[str, str]]:
+    """Normalize locations into a list of {name, description} objects."""
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        name = _extract_location_name(raw)
+        if not name:
+            continue
+        folded = name.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        normalized.append({
+            "name": name,
+            "description": _extract_location_description(raw),
+        })
+    return normalized
 # -- REST endpoints ------------------------------------------------
 
 
@@ -716,16 +753,19 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     if not name:
         return {"ok": False, "error": "Location name is required"}
 
-    current = [str(v).strip() for v in state.active_campaign.get("locations", []) if str(v).strip()]
-    existing_keys = {v.casefold() for v in current}
+    current = _normalize_locations(state.active_campaign.get("locations", []))
+    existing_keys = {loc["name"].casefold() for loc in current}
     if name.casefold() in existing_keys:
         return {"ok": False, "error": "Location already exists"}
 
-    current.append(name)
+    current.append({"name": name, "description": ""})
     state.active_campaign["locations"] = current
 
     if config and hasattr(config, "campaign") and config.campaign:
-        config.campaign.locations = list(current)
+        config.campaign.locations = [
+            LocationInfo(name=loc["name"], description=loc.get("description", ""))
+            for loc in current
+        ]
 
     try:
         _persist_campaign_toml(config)
@@ -733,7 +773,6 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
         logger.error("Error persisting campaign TOML: %s", exc)
 
     return {"ok": True, "locations": current}
-
 
 @router.put("/api/campaigns/{campaign_id}/locations")
 async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -750,15 +789,22 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     if not old_name or not new_name:
         return {"ok": False, "error": "old_name and name are required"}
 
-    locations = [str(v).strip() for v in state.active_campaign.get("locations", []) if str(v).strip()]
-    if old_name not in locations:
+    locations = _normalize_locations(state.active_campaign.get("locations", []))
+    location_names = [loc["name"] for loc in locations]
+    if old_name not in location_names:
         return {"ok": False, "error": "Location not found"}
 
-    for loc in locations:
+    for loc in location_names:
         if loc.casefold() == new_name.casefold() and loc != old_name:
             return {"ok": False, "error": "Location already exists"}
 
-    updated_locations = [new_name if loc == old_name else loc for loc in locations]
+    updated_locations = [
+        {
+            "name": new_name if loc["name"] == old_name else loc["name"],
+            "description": loc.get("description", ""),
+        }
+        for loc in locations
+    ]
     state.active_campaign["locations"] = updated_locations
 
     # Keep in-memory relationship keys aligned when a location is renamed.
@@ -779,7 +825,10 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
             return {"ok": False, "error": "Failed to update relationship links"}
 
     if config and hasattr(config, "campaign") and config.campaign:
-        config.campaign.locations = list(updated_locations)
+        config.campaign.locations = [
+            LocationInfo(name=loc["name"], description=loc.get("description", ""))
+            for loc in updated_locations
+        ]
         for rel in config.campaign.relationships:
             if rel.source_key in {f"loc:{old_name}", f"location:{old_name}"}:
                 object.__setattr__(rel, "source_key", f"loc:{new_name}")
@@ -794,7 +843,6 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
         logger.error("Error persisting campaign TOML: %s", exc)
 
     return {"ok": True, "locations": updated_locations}
-
 @router.get("/api/campaigns/{campaign_id}/relationships")
 async def list_relationships(campaign_id: str) -> dict[str, Any]:
     """List relationship thesaurus + relationships for a campaign."""
@@ -1244,10 +1292,4 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
-
-
-
-
-
-
 

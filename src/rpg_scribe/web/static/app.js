@@ -268,6 +268,18 @@
       .replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
+  function locationName(loc) {
+    if (!loc) return "";
+    if (typeof loc === "string") return loc.trim();
+    if (typeof loc === "object") return String(loc.name || "").trim();
+    return String(loc).trim();
+  }
+
+  function locationDescription(loc) {
+    if (loc && typeof loc === "object") return String(loc.description || "").trim();
+    return "";
+  }
+
   // Campaign info
 
   function fetchCampaignInfo() {
@@ -618,8 +630,8 @@
   function renderLocations(locations) {
     if (!locationsSection) return;
 
-    var items = (locations || []).map(function (name) {
-      return String(name || "").trim();
+    var items = (locations || []).map(function (loc) {
+      return locationName(loc);
     }).filter(function (name) { return !!name; });
 
     locationsSection.classList.remove("hidden");
@@ -739,13 +751,13 @@
     });
 
     locations.forEach(function (loc) {
-      if (!loc) return;
-      var name = String(loc);
+      var name = locationName(loc);
+      if (!name) return;
       entities.push({
         key: "loc:" + name,
         label: "Location: " + name,
         kind: "location",
-        description: "",
+        description: locationDescription(loc),
       });
     });
 
@@ -1985,14 +1997,4 @@
 
   setMode("live");
 })();
-
-
-
-
-
-
-
-
-
-
 

@@ -112,7 +112,7 @@ def create_app(
             "dm_speaker_id": config.campaign.dm_speaker_id,
             "relationship_types": [asdict(rt) for rt in getattr(config.campaign, "relation_types", [])],
             "relationships": [asdict(rel) for rel in getattr(config.campaign, "relationships", [])],
-            "locations": list(getattr(config.campaign, "locations", [])),
+            "locations": [asdict(loc) for loc in getattr(config.campaign, "locations", [])],
             "is_generic": getattr(config.campaign, "is_generic", False),
         }
 
@@ -124,3 +124,4 @@ def create_app(
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
     return app
+
