@@ -131,6 +131,9 @@ class TranscriberConfig:
     # Debug: save discarded chunks as WAV files for analysis (dev)
     audio_debug_log_dir: str = ""  # "" = disabled; e.g. "logs/audio"
 
+    # Verbose per-chunk logging (INFO); False → per-chunk logs go to DEBUG
+    verbose_logging: bool = False
+
 
 @dataclass
 class SessionInfo:
