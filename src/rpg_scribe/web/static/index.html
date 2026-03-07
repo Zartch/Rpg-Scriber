@@ -99,6 +99,29 @@
   </section>
 
 
+  <!-- Locations section (collapsible) -->
+  <section id="locations-section" class="panel entity-section hidden">
+    <div class="entity-header" id="locations-header">
+      <h2>Locations <span class="entity-count" id="locations-count"></span></h2>
+      <span class="collapse-arrow">&#9660;</span>
+    </div>
+    <div id="locations-body" class="entity-body">
+      <div id="locations-list" class="entity-list">
+        <p class="placeholder">No locations loaded.</p>
+      </div>
+      <button id="add-location-btn" class="btn-small btn-add">+ Add Location</button>
+      <form id="add-location-form" class="entity-edit-form hidden">
+        <div class="edit-row">
+          <label>Name</label>
+          <input type="text" id="new-location-name" required />
+        </div>
+        <div class="edit-actions">
+          <button type="submit" class="btn-small btn-save">Save</button>
+          <button type="button" id="add-location-cancel" class="btn-small btn-cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </section>
   <!-- Relationships section (collapsible) -->
   <section id="relationships-section" class="panel entity-section hidden">
     <div class="entity-header" id="relationships-header">
@@ -109,14 +132,33 @@
       <div id="relationships-list" class="entity-list">
         <p class="placeholder">No relationships loaded.</p>
       </div>
+      <div class="relationship-tools">
+        <button id="toggle-relationship-graph-btn" class="btn-small">Graph</button>
+      </div>
+      <section id="relationship-graph-panel" class="relationship-graph hidden">
+        <div class="relationship-graph-header">
+          <strong>Relationship Graph</strong>
+          <span id="relationship-graph-hint" class="relationship-graph-hint">Drag nodes to reorder the layout.</span>
+        </div>
+        <div class="relationship-graph-filters">
+          <label><input id="graph-filter-players" type="checkbox" checked /> Players</label>
+          <label><input id="graph-filter-npcs" type="checkbox" checked /> NPCs</label>
+          <label><input id="graph-filter-locations" type="checkbox" checked /> Locations</label>
+        </div>
+        <svg id="relationship-graph-svg" class="relationship-graph-canvas" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet"></svg>
+        <div id="relationship-node-tooltip" class="relationship-node-tooltip hidden"></div>
+        <div id="relationship-legend" class="relationship-legend"></div>
+      </section>
       <button id="add-relationship-btn" class="btn-small btn-add">+ Add Relationship</button>
       <form id="add-relationship-form" class="entity-edit-form hidden">
         <div class="edit-row">
           <label>Source</label>
+          <input type="text" id="new-rel-source-search" class="entity-select-search" placeholder="Search source..." />
           <select id="new-rel-source" required></select>
         </div>
         <div class="edit-row">
           <label>Target</label>
+          <input type="text" id="new-rel-target-search" class="entity-select-search" placeholder="Search target..." />
           <select id="new-rel-target" required></select>
         </div>
         <div class="edit-row">

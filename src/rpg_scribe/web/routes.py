@@ -397,6 +397,9 @@ async def get_campaigns() -> dict[str, Any]:
         campaign.setdefault("npcs", [])
         campaign.setdefault("relationship_types", [])
         campaign.setdefault("relationships", [])
+        campaign.setdefault("locations", [])
+
+    campaign.setdefault("locations", [])
 
     campaign.setdefault("dm_speaker_id", "")
     return {"campaign": campaign}
@@ -446,6 +449,7 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
                 campaign["npcs"] = await db.get_npcs(campaign_id)
                 campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
                 campaign["relationships"] = await db.get_character_relationships(campaign_id)
+                campaign.setdefault("locations", [])
         except Exception as exc:
             logger.error("Error loading browse campaign %s: %s", campaign_id, exc)
             return {"campaign": None}
@@ -458,6 +462,7 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
         campaign.setdefault("relationship_types", [])
         campaign.setdefault("relationships", [])
 
+        campaign.setdefault("locations", [])
     return {"campaign": campaign}
 
 @router.patch("/api/campaigns/{campaign_id}")
@@ -696,6 +701,99 @@ async def update_npc_endpoint(
     return {"ok": True}
 
 
+
+
+@router.post("/api/campaigns/{campaign_id}/locations")
+async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Add a location name to the active campaign context."""
+    state = _get_state()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    name = str(body.get("name", "")).strip()
+    if not name:
+        return {"ok": False, "error": "Location name is required"}
+
+    current = [str(v).strip() for v in state.active_campaign.get("locations", []) if str(v).strip()]
+    existing_keys = {v.casefold() for v in current}
+    if name.casefold() in existing_keys:
+        return {"ok": False, "error": "Location already exists"}
+
+    current.append(name)
+    state.active_campaign["locations"] = current
+
+    if config and hasattr(config, "campaign") and config.campaign:
+        config.campaign.locations = list(current)
+
+    try:
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
+
+    return {"ok": True, "locations": current}
+
+
+@router.put("/api/campaigns/{campaign_id}/locations")
+async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Rename a location in the active campaign context."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+
+    old_name = str(body.get("old_name", "")).strip()
+    new_name = str(body.get("name", "")).strip()
+    if not old_name or not new_name:
+        return {"ok": False, "error": "old_name and name are required"}
+
+    locations = [str(v).strip() for v in state.active_campaign.get("locations", []) if str(v).strip()]
+    if old_name not in locations:
+        return {"ok": False, "error": "Location not found"}
+
+    for loc in locations:
+        if loc.casefold() == new_name.casefold() and loc != old_name:
+            return {"ok": False, "error": "Location already exists"}
+
+    updated_locations = [new_name if loc == old_name else loc for loc in locations]
+    state.active_campaign["locations"] = updated_locations
+
+    # Keep in-memory relationship keys aligned when a location is renamed.
+    for rel in state.active_campaign.get("relationships", []) or []:
+        source_key = str(rel.get("source_key", ""))
+        target_key = str(rel.get("target_key", ""))
+        if source_key in {f"loc:{old_name}", f"location:{old_name}"}:
+            rel["source_key"] = f"loc:{new_name}"
+        if target_key in {f"loc:{old_name}", f"location:{old_name}"}:
+            rel["target_key"] = f"loc:{new_name}"
+
+    if db is not None:
+        try:
+            await db.rename_relationship_entity_key(campaign_id, f"loc:{old_name}", f"loc:{new_name}")
+            await db.rename_relationship_entity_key(campaign_id, f"location:{old_name}", f"loc:{new_name}")
+        except Exception as exc:
+            logger.error("Error renaming location relationship keys: %s", exc)
+            return {"ok": False, "error": "Failed to update relationship links"}
+
+    if config and hasattr(config, "campaign") and config.campaign:
+        config.campaign.locations = list(updated_locations)
+        for rel in config.campaign.relationships:
+            if rel.source_key in {f"loc:{old_name}", f"location:{old_name}"}:
+                object.__setattr__(rel, "source_key", f"loc:{new_name}")
+            if rel.target_key in {f"loc:{old_name}", f"location:{old_name}"}:
+                object.__setattr__(rel, "target_key", f"loc:{new_name}")
+
+    try:
+        if db is not None:
+            await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting campaign TOML: %s", exc)
+
+    return {"ok": True, "locations": updated_locations}
 
 @router.get("/api/campaigns/{campaign_id}/relationships")
 async def list_relationships(campaign_id: str) -> dict[str, Any]:
