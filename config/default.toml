@@ -24,6 +24,12 @@ prompt_hint = ""
 local_model_size = "medium"
 device = "auto"
 compute_type = "float16"
+audio_filter_enabled = true
+audio_filter_rms_threshold = 200.0
+audio_filter_speech_ratio_threshold = 0.15
+audio_filter_vad_aggressiveness = 3
+post_filter_enabled = true
+post_filter_max_words_per_second = 6.0
 
 [summarizer]
 update_interval_s = 120.0

@@ -96,7 +96,7 @@ class TestBaseTranscriber:
 
     @pytest.fixture
     def config(self) -> TranscriberConfig:
-        return TranscriberConfig()
+        return TranscriberConfig(audio_filter_enabled=False)
 
     @pytest.mark.asyncio
     async def test_start_subscribes_to_audio_events(
@@ -452,7 +452,7 @@ class TestTranscriberEventBusIntegration:
     async def test_end_to_end_audio_to_transcription(self) -> None:
         """Audio event → transcriber → transcription event via event bus."""
         bus = EventBus()
-        config = TranscriberConfig()
+        config = TranscriberConfig(audio_filter_enabled=False)
         transcriber = MockTranscriber(bus, config, response_text="Aelar desenvaina su espada.")
         await transcriber.start()
 
@@ -486,7 +486,7 @@ class TestTranscriberEventBusIntegration:
     async def test_openai_via_event_bus(self) -> None:
         """OpenAITranscriber receives audio via bus and publishes transcription."""
         bus = EventBus()
-        config = TranscriberConfig()
+        config = TranscriberConfig(audio_filter_enabled=False)
         transcriber = OpenAITranscriber(bus, config)
 
         mock_response = MagicMock()
@@ -509,5 +509,183 @@ class TestTranscriberEventBusIntegration:
 
         assert len(transcriptions) == 1
         assert transcriptions[0].text == "Fray Bernardo reza en silencio."
+
+        await transcriber.stop()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Audio filter integration with BaseTranscriber
+# ---------------------------------------------------------------------------
+
+class TestAudioFilterIntegration:
+    @pytest.fixture
+    def bus(self) -> EventBus:
+        return EventBus()
+
+    @pytest.mark.asyncio
+    async def test_silence_chunk_not_forwarded_to_transcribe(
+        self, bus: EventBus
+    ) -> None:
+        """Audio filter prevents silence from reaching transcribe()."""
+        config = TranscriberConfig(audio_filter_enabled=True)
+        transcriber = MockTranscriber(bus, config)
+        await transcriber.start()
+
+        silence_event = AudioChunkEvent(
+            session_id="test",
+            speaker_id="u1",
+            speaker_name="Test",
+            audio_data=b"\x00" * 96000,  # 0.5s silence
+            timestamp=time.time(),
+            duration_ms=500,
+            source="test",
+        )
+        await bus.publish(silence_event)
+
+        assert len(transcriber.transcribe_calls) == 0
+        await transcriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_filter_disabled_forwards_silence(
+        self, bus: EventBus
+    ) -> None:
+        """With filter disabled, silence reaches transcribe()."""
+        config = TranscriberConfig(audio_filter_enabled=False)
+        transcriber = MockTranscriber(bus, config)
+        await transcriber.start()
+
+        silence_event = AudioChunkEvent(
+            session_id="test",
+            speaker_id="u1",
+            speaker_name="Test",
+            audio_data=b"\x00" * 96000,
+            timestamp=time.time(),
+            duration_ms=500,
+            source="test",
+        )
+        await bus.publish(silence_event)
+
+        assert len(transcriber.transcribe_calls) == 1
+        await transcriber.stop()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Post-transcription hallucination filter
+# ---------------------------------------------------------------------------
+
+class TestPostTranscriptionFilter:
+    @pytest.fixture
+    def bus(self) -> EventBus:
+        return EventBus()
+
+    @pytest.mark.asyncio
+    async def test_hallucination_text_not_published(
+        self, bus: EventBus
+    ) -> None:
+        """Known hallucination pattern is caught post-transcription."""
+        config = TranscriberConfig(
+            audio_filter_enabled=False,
+            post_filter_enabled=True,
+        )
+        transcriber = MockTranscriber(
+            bus, config,
+            response_text="Subtítulos realizados por la comunidad de Amara.org",
+        )
+        await transcriber.start()
+
+        received: list[TranscriptionEvent] = []
+
+        async def handler(event: TranscriptionEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(TranscriptionEvent, handler)
+
+        await bus.publish(_make_audio_event())
+
+        # Hallucination should be filtered out
+        assert len(received) == 0
+        # But transcribe() was still called
+        assert len(transcriber.transcribe_calls) == 1
+
+        await transcriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_implausible_wps_not_published(
+        self, bus: EventBus
+    ) -> None:
+        """Too many words for short audio = hallucination."""
+        config = TranscriberConfig(
+            audio_filter_enabled=False,
+            post_filter_enabled=True,
+            post_filter_max_words_per_second=6.0,
+        )
+        # 20 words in a 500ms chunk = 40 wps
+        transcriber = MockTranscriber(
+            bus, config,
+            response_text=" ".join(["palabra"] * 20),
+        )
+        await transcriber.start()
+
+        received: list[TranscriptionEvent] = []
+
+        async def handler(event: TranscriptionEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(TranscriptionEvent, handler)
+
+        await bus.publish(_make_audio_event(duration_s=0.5))
+        assert len(received) == 0
+
+        await transcriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_normal_text_passes_post_filter(
+        self, bus: EventBus
+    ) -> None:
+        """Normal transcription should pass through."""
+        config = TranscriberConfig(
+            audio_filter_enabled=False,
+            post_filter_enabled=True,
+        )
+        transcriber = MockTranscriber(bus, config, response_text="Sí, vamos al norte")
+        await transcriber.start()
+
+        received: list[TranscriptionEvent] = []
+
+        async def handler(event: TranscriptionEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(TranscriptionEvent, handler)
+
+        await bus.publish(_make_audio_event())
+        assert len(received) == 1
+        assert received[0].text == "Sí, vamos al norte"
+
+        await transcriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_post_filter_disabled_allows_hallucination(
+        self, bus: EventBus
+    ) -> None:
+        """With post_filter_enabled=False, hallucinations pass through."""
+        config = TranscriberConfig(
+            audio_filter_enabled=False,
+            post_filter_enabled=False,
+        )
+        transcriber = MockTranscriber(
+            bus, config,
+            response_text="Gracias por ver este vídeo",
+        )
+        await transcriber.start()
+
+        received: list[TranscriptionEvent] = []
+
+        async def handler(event: TranscriptionEvent) -> None:
+            received.append(event)
+
+        bus.subscribe(TranscriptionEvent, handler)
+
+        await bus.publish(_make_audio_event())
+        assert len(received) == 1  # Passes through
 
         await transcriber.stop()

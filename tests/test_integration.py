@@ -131,7 +131,9 @@ class TestFullPipelineIntegration:
         event_bus.subscribe(SystemStatusEvent, capture_status)
 
         # Set up transcriber
-        transcriber_config = TranscriberConfig()
+        transcriber_config = TranscriberConfig(
+            audio_filter_enabled=False, post_filter_enabled=False
+        )
         transcriber = FakeTranscriber(event_bus, transcriber_config)
         await transcriber.start()
 

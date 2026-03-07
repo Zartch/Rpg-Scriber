@@ -95,6 +95,16 @@ class TranscriberConfig:
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # float16, int8, etc.
 
+    # Pre-transcription audio filter
+    audio_filter_enabled: bool = True
+    audio_filter_rms_threshold: float = 200.0  # Min RMS energy (0-32768 scale)
+    audio_filter_speech_ratio_threshold: float = 0.15  # Base min speech ratio (>2s chunks)
+    audio_filter_vad_aggressiveness: int = 3  # webrtcvad aggressiveness 0-3
+
+    # Post-transcription hallucination filter
+    post_filter_enabled: bool = True
+    post_filter_max_words_per_second: float = 6.0  # Max plausible speech rate
+
 
 @dataclass
 class SessionInfo:
