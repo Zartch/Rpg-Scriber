@@ -1,4 +1,4 @@
-﻿/* RPG Scribe - frontend WebSocket client and DOM updates */
+/* RPG Scribe - frontend WebSocket client and DOM updates */
 
 (function () {
   "use strict";
@@ -14,6 +14,14 @@
   var sessionListEl = document.getElementById("session-list");
   var backToLiveBtn = document.getElementById("back-to-live");
   var openTranscriptBtn = document.getElementById("open-transcript-btn");
+  var modeLiveBtn = document.getElementById("mode-live-btn");
+  var modeBrowseBtn = document.getElementById("mode-browse-btn");
+  var browseCampaignsPanel = document.getElementById("browse-campaigns-panel");
+  var browseCampaignListEl = document.getElementById("browse-campaign-list");
+  var sessionsTitleEl = document.getElementById("sessions-title");
+  var statusPanel = document.getElementById("status-panel");
+  var questionsPanel = document.getElementById("questions-panel");
+  var sessionLogLinkEl = document.getElementById("session-log-link");
 
   // Campaign bar elements
   var campaignBar = document.getElementById("campaign-bar");
@@ -74,6 +82,10 @@
   var maxFeedItems = 1000;        // max rows kept in DOM for live feed
   var loadedLiveSessionId = null; // latest session snapshot loaded into feed
   var currentHistoricalSessionId = null;
+  var appMode = "live";         // live | browse
+  var browseCampaignId = null;
+  var UNCATEGORIZED_BROWSE_ID = "__uncategorized__";
+  var browseCampaignsCache = [];
 
   // WebSocket
 
@@ -103,7 +115,7 @@
     };
 
     ws.onmessage = function (evt) {
-      if (viewingHistorical) return; // ignore live updates when viewing history
+      if (appMode !== "live" || viewingHistorical) return; // ignore live updates outside live mode
       var msg;
       try { msg = JSON.parse(evt.data); } catch (_) { return; }
       handleMessage(msg);
@@ -325,6 +337,7 @@
   }
 
   function openCampaignEdit() {
+    if (appMode !== "live") return;
     if (!currentCampaign) return;
     editNameInput.value = currentCampaign.name || "";
     editSystemInput.value = currentCampaign.game_system || "";
@@ -344,6 +357,7 @@
 
   function saveCampaignEdit(e) {
     e.preventDefault();
+    if (appMode !== "live") return;
     if (!currentCampaign || !activeCampaignId) return;
 
     var body = {
@@ -399,7 +413,7 @@
 
     players.forEach(function (p) {
       var isMaster = !!(currentCampaign && currentCampaign.dm_speaker_id && p.discord_id === currentCampaign.dm_speaker_id);
-      var masterSuffix = isMaster ? " · Master" : "";
+      var masterSuffix = isMaster ? " � Master" : "";
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -449,6 +463,7 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
 
+        if (appMode !== "live") return;
         fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -469,6 +484,10 @@
           });
       });
 
+      if (appMode !== "live") {
+        var editBtn = card.querySelector(".btn-edit-entity");
+        if (editBtn) editBtn.classList.add("hidden");
+      }
       playersList.appendChild(card);
     });
   }
@@ -529,6 +548,7 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
 
+        if (appMode !== "live") return;
         fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -546,6 +566,10 @@
           });
       });
 
+      if (appMode !== "live") {
+        var editBtnNpc = card.querySelector(".btn-edit-entity");
+        if (editBtnNpc) editBtnNpc.classList.add("hidden");
+      }
       npcsList.appendChild(card);
     });
   }
@@ -676,6 +700,7 @@
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving...";
 
+    if (appMode !== "live") return;
     fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -736,6 +761,7 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving...";
 
+      if (appMode !== "live") return;
       fetch("/api/campaigns/" + activeCampaignId + "/relationships", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -848,6 +874,164 @@
       .catch(function () { callback(false); });
   }
 
+
+  function setMode(mode) {
+    appMode = mode === "browse" ? "browse" : "live";
+    if (modeLiveBtn) modeLiveBtn.classList.toggle("active", appMode === "live");
+    if (modeBrowseBtn) modeBrowseBtn.classList.toggle("active", appMode === "browse");
+
+    if (browseCampaignsPanel) {
+      if (appMode === "browse") browseCampaignsPanel.classList.remove("hidden");
+      else browseCampaignsPanel.classList.add("hidden");
+    }
+
+    if (statusPanel) statusPanel.classList.toggle("hidden", appMode !== "live");
+    if (questionsPanel) questionsPanel.classList.toggle("hidden", appMode !== "live");
+    if (sessionsTitleEl) sessionsTitleEl.textContent = appMode === "browse" ? "Campaign Sessions" : "Sessions";
+
+    if (appMode === "browse") {
+      viewingHistorical = true;
+      loadedLiveSessionId = null;
+      backToLiveBtn.classList.add("hidden");
+      currentHistoricalSessionId = null;
+      if (sessionLogLinkEl) { sessionLogLinkEl.classList.add("hidden"); sessionLogLinkEl.innerHTML = ""; }
+      transcriptionFeed.innerHTML = '<p class="placeholder">Select a session to view transcriptions.</p>';
+      sessionSummaryEl.innerHTML = '<p class="placeholder">Select a session to view summary.</p>';
+      campaignSummaryEl.innerHTML = '<p class="placeholder">Select a session to view campaign summary.</p>';
+      if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
+      if (addNpcBtn) addNpcBtn.classList.add("hidden");
+      if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
+      if (addNpcForm) addNpcForm.classList.add("hidden");
+      if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
+      fetchBrowseCampaigns();
+    } else {
+      viewingHistorical = false;
+      currentHistoricalSessionId = null;
+      browseCampaignId = null;
+      if (sessionLogLinkEl) sessionLogLinkEl.classList.add("hidden");
+      fetchCampaignInfo();
+      if (addNpcBtn) addNpcBtn.classList.remove("hidden");
+      if (addRelationshipBtn) addRelationshipBtn.classList.remove("hidden");
+      fetchSessionList();
+      pollQuestions();
+    }
+
+    updateFinalizeButton();
+  }
+
+  function fetchBrowseCampaigns() {
+    fetch("/api/browse/campaigns")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var campaigns = [{
+          id: UNCATEGORIZED_BROWSE_ID,
+          name: "Sin campana",
+          game_system: "",
+          is_active: false
+        }].concat(data.campaigns || []);
+        browseCampaignsCache = campaigns.slice();
+        renderBrowseCampaignList(campaigns);
+
+        var preferred = browseCampaignId || data.active_campaign_id || UNCATEGORIZED_BROWSE_ID;
+        if (preferred) {
+          selectBrowseCampaign(preferred);
+        } else {
+          sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
+        }
+      })
+      .catch(function () {
+        if (browseCampaignListEl) browseCampaignListEl.innerHTML = '<p class="placeholder">Failed to load campaigns.</p>';
+      });
+  }
+
+  function renderBrowseCampaignList(campaigns) {
+    if (!browseCampaignListEl) return;
+    if (!campaigns.length) {
+      browseCampaignListEl.innerHTML = '<p class="placeholder">No campaigns in database.</p>';
+      return;
+    }
+
+    browseCampaignListEl.innerHTML = "";
+    campaigns.forEach(function (campaign) {
+      var item = document.createElement("div");
+      item.className = "campaign-item" + (campaign.id === browseCampaignId ? " active" : "");
+      item.dataset.campaignId = campaign.id;
+
+      var meta = [];
+      if (campaign.game_system) meta.push(campaign.game_system);
+      if (campaign.is_active) meta.push("active");
+      item.innerHTML =
+        '<div class="campaign-item-name">' + escapeHtml(campaign.name || campaign.id) + "</div>" +
+        '<div class="campaign-item-meta">' + escapeHtml(meta.join(" | ")) + "</div>";
+
+      item.addEventListener("click", function () {
+        selectBrowseCampaign(campaign.id);
+      });
+      browseCampaignListEl.appendChild(item);
+    });
+  }
+
+  function selectBrowseCampaign(campaignId) {
+    browseCampaignId = campaignId;
+
+    if (campaignId === UNCATEGORIZED_BROWSE_ID) {
+      currentCampaign = null;
+      activeCampaignId = null;
+      campaignBar.classList.remove("hidden");
+      campaignNameEl.textContent = "Sin campana";
+      campaignSystemEl.textContent = "";
+      campaignMasterEl.textContent = "";
+      if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
+      playersSection.classList.add("hidden");
+      npcsSection.classList.add("hidden");
+      if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      renderBrowseCampaignList(browseCampaignsCache);
+      fetchSessionList();
+      return;
+    }
+
+    fetch("/api/browse/campaigns/" + encodeURIComponent(campaignId))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var campaign = data.campaign;
+        if (!campaign) {
+          return;
+        }
+        currentCampaign = campaign;
+        activeCampaignId = campaign.id;
+        renderCampaignBar(campaign);
+        campaignEditBtn.classList.add("hidden");
+        renderPlayers(campaign.players || []);
+        renderNpcs(campaign.npcs || []);
+        renderRelationships(campaign.relationships || [], campaign);
+        addNpcBtn.classList.add("hidden");
+        addRelationshipBtn.classList.add("hidden");
+        addNpcForm.classList.add("hidden");
+        addRelationshipForm.classList.add("hidden");
+        renderBrowseCampaignList(browseCampaignsCache);
+        fetchSessionList();
+      })
+      .catch(function () {});
+  }
+
+  function renderSessionLogLink(sessionId) {
+    if (!sessionLogLinkEl || !sessionId) return;
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/logs")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.exists || !data.explorer_url) {
+          sessionLogLinkEl.classList.add("hidden");
+          sessionLogLinkEl.innerHTML = "";
+          return;
+        }
+        sessionLogLinkEl.classList.remove("hidden");
+        sessionLogLinkEl.innerHTML = '<a href="' + escapeAttr(data.explorer_url) + '" target="_blank" rel="noopener">Open session logs</a>';
+      })
+      .catch(function () {
+        sessionLogLinkEl.classList.add("hidden");
+      });
+  }
+
   // Session history
 
   function fetchSessionList() {
@@ -861,14 +1045,22 @@
         }
         updateFinalizeButton();
 
-        if (!viewingHistorical && activeSessionId && loadedLiveSessionId !== activeSessionId) {
+        if (appMode === "live" && !viewingHistorical && activeSessionId && loadedLiveSessionId !== activeSessionId) {
           loadLiveSessionSnapshot(activeSessionId);
         }
       })
       .catch(function () {});
 
     var sessionsUrl;
-    if (activeCampaignId) {
+    if (appMode === "browse") {
+      if (browseCampaignId === UNCATEGORIZED_BROWSE_ID) {
+        sessionsUrl = "/api/browse/sessions/uncategorized";
+      } else if (browseCampaignId) {
+        sessionsUrl = "/api/campaigns/" + browseCampaignId + "/sessions";
+      } else {
+        sessionsUrl = "/api/sessions";
+      }
+    } else if (activeCampaignId) {
       sessionsUrl = "/api/campaigns/" + activeCampaignId + "/sessions";
     } else {
       sessionsUrl = "/api/sessions";
@@ -907,17 +1099,17 @@
         if (duration) {
           metaLine += ' <span class="session-duration">(' + escapeHtml(duration) + ')</span>';
         }
-        metaLine += '</div>';
+        metaLine += "</div>";
       }
 
-      var indicators = '';
+      var indicators = "";
       if (s.has_summary) {
         indicators += '<span class="session-indicator" title="Has summary">S</span>';
       }
 
       item.innerHTML =
         '<div class="session-header">' +
-        '<span class="session-id">' + escapeHtml(s.id.substring(0, 8)) + '</span>' +
+        '<span class="session-id">' + escapeHtml(s.id.substring(0, 8)) + "</span>" +
         '<div class="session-header-right">' +
         indicators +
         '<span class="session-badge ' + (isActive ? 'live' : s.status) + '">' +
@@ -925,9 +1117,14 @@
         '</div>' +
         '</div>' +
         metaLine +
-        (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : '');
+        (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : "");
 
-      if (!isActive) {
+      if (appMode === "browse") {
+        item.addEventListener("click", function () {
+          loadHistoricalSession(s.id);
+          highlightSession(s.id);
+        });
+      } else if (!isActive) {
         item.addEventListener("click", function () {
           loadHistoricalSession(s.id);
           highlightSession(s.id);
@@ -972,6 +1169,7 @@
         sessionSummaryEl.textContent = summData.session_summary || "";
         campaignSummaryEl.textContent = summData.campaign_summary || "";
         loadedLiveSessionId = sessionId;
+        renderSessionLogLink(sessionId);
       })
       .catch(function () {});
   }
@@ -979,7 +1177,8 @@
   function loadHistoricalSession(sessionId) {
     viewingHistorical = true;
     currentHistoricalSessionId = sessionId;
-    backToLiveBtn.classList.remove("hidden");
+    if (appMode === "live") backToLiveBtn.classList.remove("hidden");
+    renderSessionLogLink(sessionId);
 
     Promise.all([
       fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
@@ -1006,10 +1205,16 @@
   }
 
   function switchToLive() {
+    if (appMode !== "live") return;
     viewingHistorical = false;
     currentHistoricalSessionId = null;
     loadedLiveSessionId = null;
     backToLiveBtn.classList.add("hidden");
+
+    if (sessionLogLinkEl) {
+      sessionLogLinkEl.classList.add("hidden");
+      sessionLogLinkEl.innerHTML = "";
+    }
 
     var items = sessionListEl.querySelectorAll(".session-item");
     for (var i = 0; i < items.length; i++) {
@@ -1027,10 +1232,10 @@
   backToLiveBtn.addEventListener("click", switchToLive);
 
   function getSessionIdForTranscriptView() {
-    if (viewingHistorical && currentHistoricalSessionId) {
+    if (currentHistoricalSessionId) {
       return currentHistoricalSessionId;
     }
-    if (activeSessionId) {
+    if (appMode === "live" && activeSessionId) {
       return activeSessionId;
     }
     return null;
@@ -1051,7 +1256,7 @@
   // Finalize session
 
   function updateFinalizeButton() {
-    var show = !!(activeSessionId && !viewingHistorical);
+    var show = !!(appMode === "live" && activeSessionId && !viewingHistorical);
 
     if (finalizeBtn) {
       if (show) {
@@ -1132,17 +1337,32 @@
 
   // Init
 
+  if (modeLiveBtn) {
+    modeLiveBtn.addEventListener("click", function () {
+      setMode("live");
+    });
+  }
+
+  if (modeBrowseBtn) {
+    modeBrowseBtn.addEventListener("click", function () {
+      setMode("browse");
+    });
+  }
+
   connectWS();
   fetchCampaignInfo();
   pollQuestions();
-  setInterval(pollQuestions, 5000);
+  setInterval(function () {
+    if (appMode === "live") pollQuestions();
+  }, 5000);
 
   setTimeout(function () {
     fetchSessionList();
     setInterval(fetchSessionList, 30000);
   }, 500);
-})();
 
+  setMode("live");
+})();
 
 
 

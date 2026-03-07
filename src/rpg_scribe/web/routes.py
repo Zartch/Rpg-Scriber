@@ -1,13 +1,17 @@
-﻿"""REST API routes for RPG Scribe web interface."""
+"""REST API routes for RPG Scribe web interface."""
 
 from __future__ import annotations
 
+import html
 import logging
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
@@ -112,7 +116,34 @@ def _persist_campaign_toml(config: Any) -> None:
     save_campaign_toml(config.campaign, campaign_path)
 
 
-# ── REST endpoints ────────────────────────────────────────────────
+
+def _logs_root() -> Path:
+    """Return the base logs directory."""
+    return Path("logs").resolve()
+
+
+def _session_logs_dir(session_id: str) -> Path:
+    """Return the logs directory for a session."""
+    return (_logs_root() / session_id).resolve()
+
+
+def _flatten_campaign_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a DB campaign row for API responses."""
+    return {
+        "id": row.get("id", ""),
+        "name": row.get("name", ""),
+        "game_system": row.get("game_system", ""),
+        "language": row.get("language", "es"),
+        "description": row.get("description", ""),
+        "campaign_summary": row.get("campaign_summary", ""),
+        "dm_speaker_id": row.get("dm_speaker_id", ""),
+        "custom_instructions": row.get("custom_instructions", ""),
+        "created_at": row.get("created_at", 0),
+        "updated_at": row.get("updated_at", 0),
+    }
+
+
+# -- REST endpoints ------------------------------------------------
 
 
 
@@ -370,6 +401,65 @@ async def get_campaigns() -> dict[str, Any]:
     campaign.setdefault("dm_speaker_id", "")
     return {"campaign": campaign}
 
+
+@router.get("/api/browse/campaigns")
+async def list_browse_campaigns() -> dict[str, Any]:
+    """Return all campaigns for Browse mode."""
+    state = _get_state()
+    db = _get_database()
+    active_campaign_id = ""
+    if state.active_campaign:
+        active_campaign_id = str(state.active_campaign.get("id", ""))
+
+    campaigns: list[dict[str, Any]] = []
+    if db is not None:
+        try:
+            rows = await db.list_campaigns()
+            campaigns = [_flatten_campaign_row(r) for r in rows]
+        except Exception as exc:
+            logger.error("Error listing campaigns for browse: %s", exc)
+
+    if not campaigns and state.active_campaign:
+        fallback = dict(state.active_campaign)
+        fallback.setdefault("campaign_summary", "")
+        campaigns = [_flatten_campaign_row(fallback)]
+
+    for c in campaigns:
+        c["is_active"] = c.get("id") == active_campaign_id
+
+    return {"campaigns": campaigns, "active_campaign_id": active_campaign_id or None}
+
+
+@router.get("/api/browse/campaigns/{campaign_id}")
+async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
+    """Return a campaign with entities for Browse mode (read-only)."""
+    state = _get_state()
+    db = _get_database()
+
+    campaign: dict[str, Any] | None = None
+    if db is not None:
+        try:
+            row = await db.get_campaign(campaign_id)
+            if row:
+                campaign = _flatten_campaign_row(row)
+                campaign["players"] = await db.get_players(campaign_id)
+                campaign["npcs"] = await db.get_npcs(campaign_id)
+                campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
+                campaign["relationships"] = await db.get_character_relationships(campaign_id)
+        except Exception as exc:
+            logger.error("Error loading browse campaign %s: %s", campaign_id, exc)
+            return {"campaign": None}
+
+    if campaign is None and state.active_campaign and state.active_campaign.get("id") == campaign_id:
+        campaign = dict(state.active_campaign)
+        campaign.setdefault("campaign_summary", "")
+        campaign.setdefault("players", [])
+        campaign.setdefault("npcs", [])
+        campaign.setdefault("relationship_types", [])
+        campaign.setdefault("relationships", [])
+
+    return {"campaign": campaign}
+
 @router.patch("/api/campaigns/{campaign_id}")
 async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update editable fields of a campaign.
@@ -439,7 +529,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     return {"ok": True, "campaign": state.active_campaign}
 
 
-# ── Player endpoints ──────────────────────────────────────────────
+# -- Player endpoints ----------------------------------------------
 
 
 @router.put("/api/campaigns/{campaign_id}/players/{player_id}")
@@ -511,7 +601,7 @@ async def update_player(
     return {"ok": True}
 
 
-# ── NPC endpoints ─────────────────────────────────────────────────
+# -- NPC endpoints -------------------------------------------------
 
 
 @router.post("/api/campaigns/{campaign_id}/npcs")
@@ -702,6 +792,20 @@ async def list_all_sessions() -> dict[str, Any]:
     return {"sessions": _format_session_list(sessions)}
 
 
+
+@router.get("/api/browse/sessions/uncategorized")
+async def list_uncategorized_sessions() -> dict[str, Any]:
+    """Return sessions not linked to any campaign."""
+    db = _get_database()
+    if db is None:
+        return {"sessions": []}
+    try:
+        sessions = await db.list_uncategorized_sessions()
+    except Exception as exc:
+        logger.error("Error listing uncategorized sessions: %s", exc)
+        return {"sessions": []}
+    return {"sessions": _format_session_list(sessions)}
+
 @router.get("/api/campaigns/{campaign_id}/sessions")
 async def list_campaign_sessions(campaign_id: str) -> dict[str, Any]:
     """Return all sessions for a campaign, ordered by date descending."""
@@ -748,7 +852,89 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
     return result
 
 
-# ── Session finalize endpoint ─────────────────────────────────────
+
+@router.get("/api/sessions/{session_id}/logs")
+async def get_session_logs(session_id: str) -> dict[str, Any]:
+    """Return log artifacts available for a session."""
+    session_dir = _session_logs_dir(session_id)
+    if not session_dir.is_dir():
+        return {
+            "session_id": session_id,
+            "exists": False,
+            "explorer_url": None,
+            "files": [],
+        }
+
+    files: list[dict[str, Any]] = []
+    for path in sorted(session_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(session_dir).as_posix()
+        files.append({
+            "name": rel,
+            "size": path.stat().st_size,
+            "url": f"/api/sessions/{session_id}/logs/file/{quote(rel)}",
+        })
+
+    return {
+        "session_id": session_id,
+        "exists": True,
+        "explorer_url": f"/api/sessions/{session_id}/logs/explorer",
+        "files": files,
+    }
+
+
+@router.get("/api/sessions/{session_id}/logs/file/{file_path:path}")
+async def get_session_log_file(session_id: str, file_path: str) -> FileResponse:
+    """Serve one log artifact file for a session."""
+    session_dir = _session_logs_dir(session_id)
+    if not session_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Session logs not found")
+
+    target = (session_dir / file_path).resolve()
+    if session_dir not in target.parents or not target.is_file():
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    return FileResponse(path=target, filename=target.name)
+
+
+@router.get("/api/sessions/{session_id}/logs/explorer")
+async def get_session_logs_explorer(session_id: str) -> HTMLResponse:
+    """Render a simple file explorer page for session logs."""
+    session_dir = _session_logs_dir(session_id)
+    if not session_dir.is_dir():
+        return HTMLResponse(
+            "<h1>Logs not found</h1><p>No log folder for this session.</p>",
+            status_code=404,
+        )
+
+    items: list[str] = []
+    for path in sorted(session_dir.rglob("*")):
+        rel = path.relative_to(session_dir).as_posix()
+        safe_rel = html.escape(rel)
+        if path.is_dir():
+            items.append(f"<li><strong>{safe_rel}/</strong></li>")
+            continue
+        file_url = f"/api/sessions/{session_id}/logs/file/{quote(rel)}"
+        size = path.stat().st_size
+        items.append(
+            f"<li><a href=\"{file_url}\" target=\"_blank\" rel=\"noopener\">{safe_rel}</a> "
+            f"<span>({size} bytes)</span></li>"
+        )
+
+    title = html.escape(f"Session {session_id} logs")
+    body = "\n".join(items) if items else "<li>No files found.</li>"
+    page = (
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\" />"
+        f"<title>{title}</title>"
+        "<style>body{font-family:Segoe UI,Arial,sans-serif;padding:1rem;}"
+        "ul{line-height:1.6;}span{color:#666;}</style></head><body>"
+        f"<h1>{title}</h1><p>Directory: {html.escape(str(session_dir))}</p>"
+        f"<ul>{body}</ul></body></html>"
+    )
+    return HTMLResponse(page)
+
+# -- Session finalize endpoint -------------------------------------
 
 
 @router.post("/api/sessions/{session_id}/finalize")
@@ -777,7 +963,7 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
     return {"ok": True, "status": "finalizing"}
 
 
-# ── WebSocket endpoint ────────────────────────────────────────────
+# -- WebSocket endpoint --------------------------------------------
 
 
 
@@ -814,6 +1000,7 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
+
 
 
 
