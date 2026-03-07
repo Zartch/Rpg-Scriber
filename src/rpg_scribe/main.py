@@ -529,22 +529,79 @@ class Application:
     async def on_session_end(self, session_id: str) -> None:
         """Called when a recording session ends."""
         summary = ""
-        campaign_summary = ""
         if self._summarizer is not None:
             try:
                 summary = await self._summarizer.finalize_session()  # type: ignore[union-attr]
-                campaign_summary = await self._summarizer.get_campaign_summary()  # type: ignore[union-attr]
                 await self._summarizer.stop()  # type: ignore[union-attr]
             except Exception as exc:
                 logger.error("Failed to finalize session: %s", exc)
+
         await self.db.end_session(session_id, summary)
         self._active_session_id = None
+
+        # Generate and persist campaign summary from all session summaries
+        campaign_summary = ""
+        if self.config.campaign and summary:
+            campaign_summary = await self._generate_and_save_campaign_summary(session_id)
 
         # Save summary to log file
         if summary:
             self._save_summary_to_file(session_id, summary, campaign_summary)
 
         logger.info("Session %s ended", session_id)
+
+    async def _generate_and_save_campaign_summary(self, trigger_session_id: str) -> str:
+        """Generate a campaign summary from all completed session summaries and persist it."""
+        campaign = self.config.campaign
+        if campaign is None:
+            return ""
+
+        try:
+            sessions = await self.db.list_sessions(campaign.campaign_id)
+            # Only completed sessions with a non-empty summary, oldest first
+            completed = sorted(
+                [s for s in sessions if s.get("session_summary") and s.get("status") == "completed"],
+                key=lambda s: s.get("started_at") or 0,
+            )
+            if not completed:
+                return ""
+
+            from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+
+            # Reuse the existing summarizer client if available, else create a fresh one
+            summarizer = self._summarizer
+            if summarizer is None or not isinstance(summarizer, ClaudeSummarizer):
+                from rpg_scribe.core.models import SummarizerConfig
+                summarizer = ClaudeSummarizer(
+                    self.event_bus,
+                    self.config.summarizer,
+                    campaign,
+                    database=self.db,
+                )
+
+            campaign_summary = await summarizer.generate_campaign_summary(  # type: ignore[union-attr]
+                completed, trigger_session_id=trigger_session_id
+            )
+
+            if campaign_summary:
+                await self.db.save_campaign_summary(
+                    campaign_id=campaign.campaign_id,
+                    content=campaign_summary,
+                    trigger_session_id=trigger_session_id,
+                    session_count=len(completed),
+                )
+                campaign.campaign_summary = campaign_summary
+                if self.config.campaign_path:
+                    from rpg_scribe.config import save_campaign_toml
+                    save_campaign_toml(campaign, self.config.campaign_path)
+                logger.info(
+                    "Campaign summary generated from %d session(s) and saved",
+                    len(completed),
+                )
+            return campaign_summary
+        except Exception as exc:
+            logger.error("Failed to generate campaign summary: %s", exc)
+            return ""
 
     def _save_summary_to_file(
         self, session_id: str, session_summary: str, campaign_summary: str

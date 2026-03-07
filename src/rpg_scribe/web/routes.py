@@ -875,6 +875,152 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
 
 _SUMMARY_PREVIEW_LEN = 150
 
+# ── Campaign summary history endpoints ────────────────────────────
+
+_CAMPAIGN_SUMMARY_PREVIEW_LEN = 200
+
+
+@router.post("/api/campaigns/{campaign_id}/campaign-summaries/generate")
+async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any]:
+    """Generate a campaign summary on demand.
+
+    Before generating the campaign summary, also generates and persists
+    session summaries for any completed sessions that are missing one.
+    """
+    db = _get_database()
+    config = _get_config()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if config is None or not getattr(config, "campaign", None):
+        raise HTTPException(status_code=503, detail="Campaign config not available")
+
+    campaign = config.campaign
+    if campaign.campaign_id != campaign_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+
+    summarizer = ClaudeSummarizer(
+        _get_event_bus(),
+        config.summarizer,
+        campaign,
+        database=db,
+    )
+
+    # Step 1: Generate missing session summaries
+    all_sessions = await db.list_sessions(campaign_id)
+    missing = [
+        s for s in all_sessions
+        if s.get("status") == "completed" and not (s.get("session_summary") or "").strip()
+    ]
+    sessions_processed = 0
+    for session in missing:
+        session_id = session["id"]
+        try:
+            rows = await db.get_transcriptions(session_id)
+            if not rows:
+                continue
+            summary = await summarizer.generate_session_summary_from_transcriptions(rows)
+            if summary:
+                await db.end_session(session_id, summary)
+                sessions_processed += 1
+                logger.info("Generated missing summary for session %s", session_id)
+        except Exception as exc:
+            logger.error("Failed to generate summary for session %s: %s", session_id, exc)
+
+    # Step 2: Generate campaign summary from all sessions that now have one
+    all_sessions = await db.list_sessions(campaign_id)
+    completed = sorted(
+        [s for s in all_sessions if (s.get("session_summary") or "").strip() and s.get("status") == "completed"],
+        key=lambda s: s.get("started_at") or 0,
+    )
+    if not completed:
+        raise HTTPException(status_code=422, detail="No completed sessions with summaries found")
+
+    try:
+        campaign_summary = await summarizer.generate_campaign_summary(
+            completed, trigger_session_id=""
+        )
+    except Exception as exc:
+        logger.error("Failed to generate campaign summary on demand: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if campaign_summary:
+        await db.save_campaign_summary(
+            campaign_id=campaign_id,
+            content=campaign_summary,
+            trigger_session_id="",
+            session_count=len(completed),
+        )
+        campaign.campaign_summary = campaign_summary
+        _persist_campaign_toml(config)
+
+    return {
+        "status": "ok",
+        "sessions_processed": sessions_processed,
+        "session_count": len(completed),
+        "campaign_summary": campaign_summary,
+    }
+
+
+@router.get("/api/campaigns/{campaign_id}/campaign-summaries")
+async def list_campaign_summaries(campaign_id: str) -> dict[str, Any]:
+    """Return all campaign summaries for a campaign, newest first."""
+    db = _get_database()
+    if db is None:
+        return {"campaign_summaries": []}
+    try:
+        rows = await db.list_campaign_summaries(campaign_id)
+    except Exception as exc:
+        logger.error("Error listing campaign summaries: %s", exc)
+        return {"campaign_summaries": []}
+
+    result = []
+    for r in rows:
+        content = r.get("content", "")
+        preview = content[:_CAMPAIGN_SUMMARY_PREVIEW_LEN]
+        if len(content) > _CAMPAIGN_SUMMARY_PREVIEW_LEN:
+            preview += "..."
+        result.append({
+            "id": r["id"],
+            "campaign_id": r.get("campaign_id", ""),
+            "generated_at": r.get("generated_at"),
+            "trigger_session_id": r.get("trigger_session_id", ""),
+            "session_count": r.get("session_count", 0),
+            "preview": preview,
+        })
+    return {"campaign_summaries": result}
+
+
+@router.get("/api/campaigns/{campaign_id}/campaign-summaries/latest")
+async def get_latest_campaign_summary(campaign_id: str) -> dict[str, Any]:
+    """Return the most recently generated campaign summary."""
+    db = _get_database()
+    if db is None:
+        return {"campaign_summary": None}
+    try:
+        row = await db.get_latest_campaign_summary(campaign_id)
+    except Exception as exc:
+        logger.error("Error fetching latest campaign summary: %s", exc)
+        return {"campaign_summary": None}
+    return {"campaign_summary": dict(row) if row else None}
+
+
+@router.get("/api/campaigns/{campaign_id}/campaign-summaries/{summary_id}")
+async def get_campaign_summary(campaign_id: str, summary_id: str) -> dict[str, Any]:
+    """Return a specific campaign summary by ID."""
+    db = _get_database()
+    if db is None:
+        return {"campaign_summary": None}
+    try:
+        row = await db.get_campaign_summary_by_id(summary_id)
+    except Exception as exc:
+        logger.error("Error fetching campaign summary %s: %s", summary_id, exc)
+        return {"campaign_summary": None}
+    if row and row.get("campaign_id") != campaign_id:
+        return {"campaign_summary": None}
+    return {"campaign_summary": dict(row) if row else None}
+
 
 @router.get("/api/sessions")
 async def list_all_sessions() -> dict[str, Any]:

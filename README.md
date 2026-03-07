@@ -8,10 +8,11 @@ RPG Scribe distingue entre diálogo in-game (lo que dicen los personajes) y meta
 
 - **Transcripción en tiempo real** — Captura audio de Discord con separación automática por usuario (sin necesidad de diarización externa)
 - **Resumen narrativo con IA** — Claude genera resúmenes incrementales cada ~2 minutos, distinguiendo in-game vs meta-rol
-- **Doble resumen** — Resumen de sesión (detallado, en vivo) + resumen de campaña (acumulativo)
-- **Dashboard web** — Interfaz FastAPI con WebSocket para ver transcripciones y resúmenes en tiempo real
+- **Historial de resúmenes de campaña** — Resumen de sesión (detallado) + resúmenes de campaña acumulativos que se preservan en historial; generación automática al cerrar sesión o bajo demanda
+- **Dashboard web** — Interfaz FastAPI con WebSocket para ver transcripciones y resúmenes en tiempo real; modo Browse para consultar sesiones y campañas históricas
 - **Integración Discord** — Comandos slash (`/scribe start/stop/status`) y publicación de resúmenes como embeds
-- **Multi-campaña** — Configuración TOML por campaña con jugadores, personajes, PNJs y sistema de juego
+- **Multi-campaña** — Configuración TOML por campaña con jugadores, personajes, PNJs, localizaciones y sistema de juego
+- **Grafo de relaciones** — Visualización de relaciones entre personajes dentro de cada campaña
 - **Resiliencia** — Retry con backoff exponencial, circuit breaker y reconexión automática
 
 ## Arquitectura
@@ -175,19 +176,21 @@ Una vez que el bot está conectado, usar estos comandos slash en Discord:
 
 ### Dashboard Web
 
-Al iniciar RPG Scribe, el dashboard web estará disponible en `http://127.0.0.1:8000` (por defecto). Muestra:
+Al iniciar RPG Scribe, el dashboard web estará disponible en `http://127.0.0.1:8000` (por defecto). Funcionalidades:
 
 - Estado de los componentes del sistema
-- Transcripciones en vivo
+- Transcripciones en vivo con feed configurable
 - Resumen de sesión actualizado incrementalmente
-- Resumen acumulado de campaña
+- Resumen de campaña con botón **Generate** (genera bajo demanda; también rellena resúmenes de sesión faltantes) y enlace **View all** al historial completo (`/campaign-summaries.html`)
+- **Modo Browse**: navegar el historial de cualquier campaña y sesión sin necesidad de tener una sesión activa
+- Gestión inline de jugadores, NPCs, localizaciones y relaciones entre personajes
 
 ### Limites de transcripcion en la UI
 
 - `RPG_SCRIBE_WEB_TRANSCRIPTIONS_MAX_ITEMS` limita cuantas transcripciones recientes mantiene el backend en memoria para la vista live (FIFO: se descartan las mas antiguas).
 - `RPG_SCRIBE_WEB_FEED_MAX_ITEMS` limita cuantas filas renderiza el navegador en "Live Transcription".
 
-Referencia rapida de memoria (aproximada, depende del tama�o real de texto):
+Referencia rapida de memoria (aproximada, depende del tama�o real de texto):
 - 1.000 transcripciones cortas (~300-500 bytes cada una en memoria Python): ~0.3-0.5 MB
 - 5.000 transcripciones: ~1.5-2.5 MB
 - 20.000 transcripciones: ~6-10 MB

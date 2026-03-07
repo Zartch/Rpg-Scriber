@@ -289,6 +289,17 @@
             renderLocations(data.campaign.locations || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
           }
+          // Show "View all" link and "Generate" button for campaign summaries
+          var summariesLink = document.getElementById("campaign-summaries-link");
+          var generateBtn = document.getElementById("btn-generate-campaign-summary");
+          if (summariesLink && data.campaign.id) {
+            summariesLink.href = "/campaign-summaries.html?campaign=" + encodeURIComponent(data.campaign.id);
+            summariesLink.classList.remove("hidden");
+          }
+          if (generateBtn && data.campaign.id) {
+            generateBtn.classList.remove("hidden");
+            generateBtn.dataset.campaignId = data.campaign.id;
+          }
         } else {
           // No campaign loaded - show "Resume mode"
           campaignBar.classList.remove("hidden");
@@ -1922,6 +1933,41 @@
   if (modeBrowseBtn) {
     modeBrowseBtn.addEventListener("click", function () {
       setMode("browse");
+    });
+  }
+
+  // Generate Campaign Summary button
+  var generateCampaignSummaryBtn = document.getElementById("btn-generate-campaign-summary");
+  if (generateCampaignSummaryBtn) {
+    generateCampaignSummaryBtn.addEventListener("click", function () {
+      var campaignId = generateCampaignSummaryBtn.dataset.campaignId;
+      if (!campaignId) return;
+      var originalText = generateCampaignSummaryBtn.textContent;
+      generateCampaignSummaryBtn.disabled = true;
+      generateCampaignSummaryBtn.textContent = "Generating…";
+      fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
+        method: "POST",
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.status === "ok") {
+            if (data.campaign_summary && campaignSummaryEl) {
+              campaignSummaryEl.innerHTML = "<p>" + escapeHtml(data.campaign_summary) + "</p>";
+            }
+            var msg = "Campaign summary generated from " + data.session_count + " session(s).";
+            if (data.sessions_processed > 0) {
+              msg += " Also generated " + data.sessions_processed + " missing session summary(s).";
+            }
+            alert(msg);
+          } else {
+            alert("Error: " + (data.detail || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to generate campaign summary."); })
+        .finally(function () {
+          generateCampaignSummaryBtn.disabled = false;
+          generateCampaignSummaryBtn.textContent = originalText;
+        });
     });
   }
 
