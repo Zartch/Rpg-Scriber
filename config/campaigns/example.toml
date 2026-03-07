@@ -12,7 +12,6 @@ enfrentando peligros en mazmorras antiguas y protegiendose de las amenazas
 que acechan en la oscuridad.
 """
 campaign_summary = ""
-locations = ["Castillo de Dorado", "Bosque Negro", "Minas de Hierro"]
 
 [campaign.dm]
 discord_id = "123456789012345678"
@@ -42,6 +41,18 @@ description = "Gobernante del Castillo de Dorado, patron de los aventureros"
 [[campaign.npcs]]
 name = "Moira la Sabia"
 description = "Herbolaria y sanadora del pueblo, fuente de rumores"
+
+[[campaign.locations]]
+name = "Castillo de Dorado"
+description = "Sede del Barón von Hagen, punto de partida de los aventureros"
+
+[[campaign.locations]]
+name = "Bosque Negro"
+description = "Bosque oscuro y peligroso al este del castillo"
+
+[[campaign.locations]]
+name = "Minas de Hierro"
+description = "Antiguas minas al norte, ahora infestadas de criaturas"
 
 [campaign.custom_instructions]
 text = """
