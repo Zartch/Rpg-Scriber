@@ -52,6 +52,14 @@
   var addNpcBtn = document.getElementById("add-npc-btn");
   var addNpcForm = document.getElementById("add-npc-form");
   var addNpcCancel = document.getElementById("add-npc-cancel");
+  var locationsSection = document.getElementById("locations-section");
+  var locationsHeader = document.getElementById("locations-header");
+  var locationsBody = document.getElementById("locations-body");
+  var locationsList = document.getElementById("locations-list");
+  var locationsCount = document.getElementById("locations-count");
+  var addLocationBtn = document.getElementById("add-location-btn");
+  var addLocationForm = document.getElementById("add-location-form");
+  var addLocationCancel = document.getElementById("add-location-cancel");
   var relationshipsSection = document.getElementById("relationships-section");
   var relationshipsHeader = document.getElementById("relationships-header");
   var relationshipsBody = document.getElementById("relationships-body");
@@ -62,9 +70,19 @@
   var addRelationshipCancel = document.getElementById("add-relationship-cancel");
   var relSourceSelect = document.getElementById("new-rel-source");
   var relTargetSelect = document.getElementById("new-rel-target");
+  var relSourceSearch = document.getElementById("new-rel-source-search");
+  var relTargetSearch = document.getElementById("new-rel-target-search");
   var relTypeInput = document.getElementById("new-rel-type");
   var relCategoryInput = document.getElementById("new-rel-category");
   var relNotesInput = document.getElementById("new-rel-notes");
+  var toggleRelationshipGraphBtn = document.getElementById("toggle-relationship-graph-btn");
+  var relationshipGraphPanel = document.getElementById("relationship-graph-panel");
+  var relationshipGraphSvg = document.getElementById("relationship-graph-svg");
+  var relationshipLegend = document.getElementById("relationship-legend");
+  var graphFilterPlayers = document.getElementById("graph-filter-players");
+  var graphFilterNpcs = document.getElementById("graph-filter-npcs");
+  var graphFilterLocations = document.getElementById("graph-filter-locations");
+  var relationshipNodeTooltip = document.getElementById("relationship-node-tooltip");
 
   // Summary control buttons
   var refreshSummaryBtn = document.getElementById("refresh-summary-btn");
@@ -86,6 +104,12 @@
   var browseCampaignId = null;
   var UNCATEGORIZED_BROWSE_ID = "__uncategorized__";
   var browseCampaignsCache = [];
+  var relationshipGraphVisible = false;
+  var relationshipNodePositions = {};
+  var relationshipGraphFilters = { players: true, npcs: true, locations: true };
+  var pinnedNodeTooltipKey = null;
+  var lastRelationshipItems = [];
+  var lastRelationshipCampaign = null;
 
   // WebSocket
 
@@ -257,10 +281,12 @@
           if (data.campaign.is_generic) {
             playersSection.classList.add("hidden");
             npcsSection.classList.add("hidden");
+            if (locationsSection) locationsSection.classList.add("hidden");
             if (relationshipsSection) relationshipsSection.classList.add("hidden");
           } else {
             renderPlayers(data.campaign.players || []);
             renderNpcs(data.campaign.npcs || []);
+            renderLocations(data.campaign.locations || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
           }
         } else {
@@ -272,6 +298,7 @@
           campaignEditBtn.classList.add("hidden");
           playersSection.classList.add("hidden");
           npcsSection.classList.add("hidden");
+          if (locationsSection) locationsSection.classList.add("hidden");
           if (relationshipsSection) relationshipsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
@@ -300,6 +327,7 @@
       campaignMasterEl.textContent = "";
       playersSection.classList.add("hidden");
       npcsSection.classList.add("hidden");
+      if (locationsSection) locationsSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
@@ -413,7 +441,7 @@
 
     players.forEach(function (p) {
       var isMaster = !!(currentCampaign && currentCampaign.dm_speaker_id && p.discord_id === currentCampaign.dm_speaker_id);
-      var masterSuffix = isMaster ? " · Master" : "";
+      var masterSuffix = isMaster ? " - Master" : "";
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -575,15 +603,118 @@
   }
 
 
+
+  function renderLocations(locations) {
+    if (!locationsSection) return;
+
+    var items = (locations || []).map(function (name) {
+      return String(name || "").trim();
+    }).filter(function (name) { return !!name; });
+
+    locationsSection.classList.remove("hidden");
+    locationsCount.textContent = "(" + items.length + ")";
+
+    if (!items.length) {
+      locationsList.innerHTML = '<p class="placeholder">No locations yet.</p>';
+      return;
+    }
+
+    locationsList.innerHTML = "";
+    items.forEach(function (name) {
+      var card = document.createElement("div");
+      card.className = "entity-card";
+      card.innerHTML =
+        '<div class="entity-display">' +
+          '<div class="entity-info">' +
+            '<strong class="entity-name">' + escapeHtml(name) + '</strong>' +
+          '</div>' +
+          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden">' +
+          '<div class="edit-row"><label>Name</label>' +
+            '<input type="text" class="edit-location-name" value="' + escapeAttr(name) + '" required /></div>' +
+          '<div class="edit-actions">' +
+            '<button type="submit" class="btn-small btn-save">Save</button>' +
+            '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
+          '</div>' +
+        '</form>';
+
+      var displayEl = card.querySelector(".entity-display");
+      var formEl = card.querySelector(".entity-edit-form");
+      card.querySelector(".btn-edit-entity").addEventListener("click", function () {
+        displayEl.classList.add("hidden");
+        formEl.classList.remove("hidden");
+      });
+      card.querySelector(".entity-edit-cancel").addEventListener("click", function () {
+        formEl.classList.add("hidden");
+        displayEl.classList.remove("hidden");
+      });
+
+      formEl.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (appMode !== "live" || !activeCampaignId) return;
+
+        var reqBody = {
+          old_name: name,
+          name: formEl.querySelector(".edit-location-name").value.trim(),
+        };
+        var saveBtn = formEl.querySelector(".btn-save");
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving...";
+
+        fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) { fetchCampaignInfo(); }
+            else { alert("Error: " + (data.error || "Unknown error")); }
+          })
+          .catch(function () { alert("Failed to save location."); })
+          .finally(function () {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save";
+          });
+      });
+
+      if (appMode !== "live") {
+        var editBtnLoc = card.querySelector(".btn-edit-entity");
+        if (editBtnLoc) editBtnLoc.classList.add("hidden");
+      }
+
+      locationsList.appendChild(card);
+    });
+  }
+
+  function normalizeEntityKey(key) {
+    var raw = (key || "").trim();
+    if (!raw) return "";
+    if (raw.indexOf("location:") === 0) return "loc:" + raw.slice("location:".length);
+    return raw;
+  }
+  function entityTypeFromKey(key) {
+    key = normalizeEntityKey(key);
+    if (!key) return "unknown";
+    if (key.indexOf("player:") === 0) return "player";
+    if (key.indexOf("npc:") === 0) return "npc";
+    if (key.indexOf("loc:") === 0 || key.indexOf("location:") === 0) return "location";
+    return "unknown";
+  }
+
   function buildRelationshipEntities(campaign) {
     var entities = [];
     var players = campaign.players || [];
     var npcs = campaign.npcs || [];
+    var locations = campaign.locations || [];
 
     players.forEach(function (p) {
       entities.push({
         key: "player:" + (p.discord_id || ""),
         label: "Player: " + (p.character_name || p.discord_name || p.discord_id || "?"),
+        kind: "player",
+        description: p.character_description || "",
       });
     });
 
@@ -591,51 +722,400 @@
       entities.push({
         key: "npc:" + (n.name || ""),
         label: "NPC: " + (n.name || "?"),
+        kind: "npc",
+        description: n.description || "",
+      });
+    });
+
+    locations.forEach(function (loc) {
+      if (!loc) return;
+      var name = String(loc);
+      entities.push({
+        key: "loc:" + name,
+        label: "Location: " + name,
+        kind: "location",
+        description: "",
       });
     });
 
     return entities.filter(function (e) { return !!e.key && !e.key.endsWith(":"); });
   }
 
-  function entityLabelFromKey(campaign, key) {
+  function entityDetailsFromKey(campaign, key) {
+    var normalized = normalizeEntityKey(key);
     var entities = buildRelationshipEntities(campaign);
     for (var i = 0; i < entities.length; i++) {
-      if (entities[i].key === key) return entities[i].label;
+      if (normalizeEntityKey(entities[i].key) === normalized) return entities[i];
     }
-    return key;
+    var kind = entityTypeFromKey(normalized);
+    return { key: normalized, label: normalized, kind: kind, description: "" };
+  }
+
+  function entityLabelFromKey(campaign, key) {
+    return entityDetailsFromKey(campaign, key).label;
+  }
+
+  function relationTypeKey(rel) {
+    return rel.type_key || rel.relation_type_key || rel.type_label || rel.relation_type_label || "unknown";
+  }
+
+  function relationTypeLabel(rel) {
+    return rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "unknown";
+  }
+
+  function relationPaletteColor(index) {
+    var palette = [
+      "#ff6b6b", "#22c55e", "#3b82f6", "#eab308", "#f97316",
+      "#14b8a6", "#a855f7", "#ec4899", "#84cc16", "#06b6d4"
+    ];
+    return palette[index % palette.length];
+  }
+
+  function graphPointFromMouse(evt) {
+    var rect = relationshipGraphSvg.getBoundingClientRect();
+    var x = ((evt.clientX - rect.left) / rect.width) * 900;
+    var y = ((evt.clientY - rect.top) / rect.height) * 520;
+    return { x: x, y: y };
+  }
+
+  function refreshRelationshipGraphPositions() {
+    if (!window.__relGraphModel) return;
+    var model = window.__relGraphModel;
+    Object.keys(model.nodes).forEach(function (key) {
+      var nodeEl = model.nodes[key];
+      var pos = relationshipNodePositions[key];
+      if (!nodeEl || !pos) return;
+      nodeEl.setAttribute("transform", "translate(" + pos.x + " " + pos.y + ")");
+    });
+
+    model.edges.forEach(function (edge) {
+      var source = relationshipNodePositions[edge.source];
+      var target = relationshipNodePositions[edge.target];
+      if (!source || !target) return;
+      edge.line.setAttribute("x1", source.x);
+      edge.line.setAttribute("y1", source.y);
+      edge.line.setAttribute("x2", target.x);
+      edge.line.setAttribute("y2", target.y);
+      edge.label.setAttribute("x", ((source.x + target.x) / 2));
+      edge.label.setAttribute("y", ((source.y + target.y) / 2) - 6);
+    });
+  }
+
+  function graphGroupIncluded(kind) {
+    if (kind === "player") return !!relationshipGraphFilters.players;
+    if (kind === "npc") return !!relationshipGraphFilters.npcs;
+    if (kind === "location") return !!relationshipGraphFilters.locations;
+    return true;
+  }
+
+  function nodeFillColor(kind) {
+    if (kind === "player") return "#1f3b5a";
+    if (kind === "npc") return "#3f3f46";
+    if (kind === "location") return "#2d4f3a";
+    return "#374151";
+  }
+
+  function showNodeTooltip(details, relationshipCount) {
+    if (!relationshipNodeTooltip) return;
+    relationshipNodeTooltip.classList.remove("hidden");
+    relationshipNodeTooltip.innerHTML =
+      '<strong>' + escapeHtml(details.label || details.key) + '</strong><br/>' +
+      'Type: ' + escapeHtml(details.kind || "unknown") + '<br/>' +
+      'Relations: ' + relationshipCount +
+      (details.description ? '<br/>' + escapeHtml(details.description) : "");
+  }
+
+  function hideNodeTooltip(force) {
+    if (!relationshipNodeTooltip) return;
+    if (!force && pinnedNodeTooltipKey) return;
+    relationshipNodeTooltip.classList.add("hidden");
+    relationshipNodeTooltip.innerHTML = "";
+  }
+
+  function renderRelationshipGraph(relationships, campaign) {
+    if (!relationshipGraphSvg || !relationshipLegend || !relationshipGraphPanel) return;
+    relationshipGraphSvg.innerHTML = "";
+    relationshipLegend.innerHTML = "";
+    hideNodeTooltip(true);
+
+    if (!relationshipGraphVisible) return;
+    var items = relationships || [];
+
+    var entityMap = {};
+    var visibleEntities = buildRelationshipEntities(campaign || {}).filter(function (entity) {
+      return graphGroupIncluded(entity.kind);
+    });
+
+    visibleEntities.forEach(function (entity) {
+      entityMap[normalizeEntityKey(entity.key)] = entity;
+    });
+
+    var filteredItems = items.filter(function (rel) {
+      var source = entityDetailsFromKey(campaign || {}, rel.source_key || "");
+      var target = entityDetailsFromKey(campaign || {}, rel.target_key || "");
+      return graphGroupIncluded(source.kind) && graphGroupIncluded(target.kind);
+    });
+
+    if (!visibleEntities.length) {
+      relationshipGraphSvg.innerHTML = '<text x="450" y="260" fill="#8b8fa3" text-anchor="middle">No visible entities with current filters</text>';
+      return;
+    }
+
+    var nodeKeys = visibleEntities
+      .map(function (e) { return normalizeEntityKey(e.key); })
+      .filter(function (k, idx, arr) { return !!k && arr.indexOf(k) === idx; });
+    var typeOrder = [];
+    var typeColors = {};
+    var typeLabels = {};
+    var relCountByNode = {};
+
+    filteredItems.forEach(function (rel) {
+      var source = normalizeEntityKey(rel.source_key || "");
+      var target = normalizeEntityKey(rel.target_key || "");
+      if (source && nodeKeys.indexOf(source) < 0) nodeKeys.push(source);
+      if (target && nodeKeys.indexOf(target) < 0) nodeKeys.push(target);
+      if (source) relCountByNode[source] = (relCountByNode[source] || 0) + 1;
+      if (target) relCountByNode[target] = (relCountByNode[target] || 0) + 1;
+      var tKey = relationTypeKey(rel);
+      if (typeOrder.indexOf(tKey) < 0) typeOrder.push(tKey);
+      if (!typeLabels[tKey]) typeLabels[tKey] = relationTypeLabel(rel);
+    });
+
+    typeOrder.forEach(function (tKey, idx) {
+      typeColors[tKey] = relationPaletteColor(idx);
+    });
+
+    var centerX = 450;
+    var centerY = 260;
+    var radius = Math.max(90, Math.min(210, 70 + nodeKeys.length * 14));
+    nodeKeys.forEach(function (key, idx) {
+      if (!relationshipNodePositions[key]) {
+        var angle = (Math.PI * 2 * idx) / Math.max(1, nodeKeys.length);
+        relationshipNodePositions[key] = {
+          x: centerX + Math.cos(angle) * radius,
+          y: centerY + Math.sin(angle) * radius,
+        };
+      }
+    });
+
+    var edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    var nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    relationshipGraphSvg.appendChild(edgeLayer);
+    relationshipGraphSvg.appendChild(nodeLayer);
+
+    var nodeEls = {};
+    var edgeEls = [];
+    window.__relGraphDragKey = null;
+
+    filteredItems.forEach(function (rel) {
+      var sourceKey = normalizeEntityKey(rel.source_key || "");
+      var targetKey = normalizeEntityKey(rel.target_key || "");
+      if (!sourceKey || !targetKey) return;
+      var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      var tKey = relationTypeKey(rel);
+      line.setAttribute("stroke", typeColors[tKey] || "#888");
+      line.setAttribute("stroke-width", "2");
+      line.setAttribute("opacity", "0.9");
+      edgeLayer.appendChild(line);
+
+      var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", "relationship-edge-label");
+      label.textContent = relationTypeLabel(rel);
+      edgeLayer.appendChild(label);
+
+      edgeEls.push({ line: line, label: label, source: sourceKey, target: targetKey });
+    });
+
+    nodeKeys.forEach(function (key) {
+      var details = entityMap[key] || entityDetailsFromKey(campaign || {}, key);
+      var group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      var shape;
+      if (details.kind === "player") {
+        shape = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        shape.setAttribute("r", "22");
+      } else if (details.kind === "npc") {
+        shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        shape.setAttribute("x", "-20");
+        shape.setAttribute("y", "-20");
+        shape.setAttribute("width", "40");
+        shape.setAttribute("height", "40");
+        shape.setAttribute("rx", "2");
+      } else {
+        shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        shape.setAttribute("x", "-30");
+        shape.setAttribute("y", "-16");
+        shape.setAttribute("width", "60");
+        shape.setAttribute("height", "32");
+        shape.setAttribute("rx", "4");
+      }
+      shape.setAttribute("fill", nodeFillColor(details.kind));
+      shape.setAttribute("class", "relationship-node-shape");
+
+      var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("class", "relationship-node-label");
+      var rawLabel = (details.label || details.key || key).replace("Player: ", "").replace("NPC: ", "").replace("Location: ", "");
+      text.textContent = rawLabel.length > 14 ? rawLabel.slice(0, 12) + ".." : rawLabel;
+      text.setAttribute("y", "4");
+
+      group.appendChild(shape);
+      group.appendChild(text);
+      nodeLayer.appendChild(group);
+      nodeEls[key] = group;
+
+      shape.addEventListener("mousedown", function () {
+        window.__relGraphDragKey = key;
+        shape.classList.add("dragging");
+      });
+      shape.addEventListener("mouseenter", function () {
+        showNodeTooltip(details, relCountByNode[key] || 0);
+      });
+      shape.addEventListener("mouseleave", function () {
+        hideNodeTooltip(false);
+      });
+      shape.addEventListener("click", function () {
+        if (pinnedNodeTooltipKey === key) {
+          pinnedNodeTooltipKey = null;
+          hideNodeTooltip(true);
+        } else {
+          pinnedNodeTooltipKey = key;
+          showNodeTooltip(details, relCountByNode[key] || 0);
+        }
+      });
+    });
+
+    window.__relGraphModel = { nodes: nodeEls, edges: edgeEls };
+    refreshRelationshipGraphPositions();
+
+    relationshipGraphSvg.onmousemove = function (evt) {
+      var dragKey = window.__relGraphDragKey;
+      if (!dragKey) return;
+      var point = graphPointFromMouse(evt);
+      relationshipNodePositions[dragKey] = {
+        x: Math.max(24, Math.min(876, point.x)),
+        y: Math.max(24, Math.min(496, point.y)),
+      };
+      refreshRelationshipGraphPositions();
+    };
+
+    relationshipGraphSvg.onmouseup = function () {
+      var dragKey = window.__relGraphDragKey;
+      if (dragKey && nodeEls[dragKey]) {
+        var dragShape = nodeEls[dragKey].querySelector(".relationship-node-shape");
+        if (dragShape) dragShape.classList.remove("dragging");
+      }
+      window.__relGraphDragKey = null;
+    };
+
+    relationshipGraphSvg.onmouseleave = relationshipGraphSvg.onmouseup;
+
+    if (!typeOrder.length) {
+      var emptyLegend = document.createElement("span");
+      emptyLegend.className = "relationship-legend-empty";
+      emptyLegend.textContent = "No relationships to draw for current filters.";
+      relationshipLegend.appendChild(emptyLegend);
+    } else {
+      typeOrder.forEach(function (tKey) {
+        var item = document.createElement("span");
+        item.className = "relationship-legend-item";
+        item.innerHTML =
+          '<span class="relationship-legend-swatch" style="background:' + escapeAttr(typeColors[tKey] || "#888") + '"></span>' +
+          '<span>' + escapeHtml(typeLabels[tKey] || tKey) + '</span>';
+        relationshipLegend.appendChild(item);
+      });
+    }
+  }
+  function setRelationshipGraphVisible(visible) {
+    relationshipGraphVisible = !!visible;
+    if (!relationshipGraphVisible) { pinnedNodeTooltipKey = null; hideNodeTooltip(true); }
+    if (!relationshipGraphPanel || !toggleRelationshipGraphBtn) return;
+    relationshipGraphPanel.classList.toggle("hidden", !relationshipGraphVisible);
+    toggleRelationshipGraphBtn.textContent = relationshipGraphVisible ? "Hide Graph" : "Graph";
   }
 
   function populateRelationshipSelects(campaign) {
     if (!relSourceSelect || !relTargetSelect) return;
     var entities = buildRelationshipEntities(campaign);
-
-    relSourceSelect.innerHTML = "";
-    relTargetSelect.innerHTML = "";
-
-    entities.forEach(function (e) {
-      var opt1 = document.createElement("option");
-      opt1.value = e.key;
-      opt1.textContent = e.label;
-      relSourceSelect.appendChild(opt1);
-
-      var opt2 = document.createElement("option");
-      opt2.value = e.key;
-      opt2.textContent = e.label;
-      relTargetSelect.appendChild(opt2);
-    });
+    setRelationshipEntityOptions(relSourceSelect, entities);
+    setRelationshipEntityOptions(relTargetSelect, entities);
+    filterRelationshipEntityOptions(relSourceSelect, relSourceSearch ? relSourceSearch.value : "");
+    filterRelationshipEntityOptions(relTargetSelect, relTargetSearch ? relTargetSearch.value : "");
 
     relSourceSelect.disabled = entities.length < 2;
     relTargetSelect.disabled = entities.length < 2;
+    if (relSourceSearch) relSourceSearch.disabled = entities.length < 2;
+    if (relTargetSearch) relTargetSearch.disabled = entities.length < 2;
   }
 
+  function setRelationshipEntityOptions(selectEl, entities) {
+    if (!selectEl) return;
+    var previous = selectEl.value;
+    selectEl.__allEntityOptions = (entities || []).map(function (e) {
+      return { value: e.key, label: e.label };
+    });
+
+    selectEl.innerHTML = "";
+    selectEl.__allEntityOptions.forEach(function (item) {
+      var opt = document.createElement("option");
+      opt.value = item.value;
+      opt.textContent = item.label;
+      selectEl.appendChild(opt);
+    });
+
+    if (previous && selectEl.querySelector('option[value="' + cssEscapeValue(previous) + '"]')) {
+      selectEl.value = previous;
+    }
+  }
+
+  function filterRelationshipEntityOptions(selectEl, query) {
+    if (!selectEl) return;
+    var allItems = selectEl.__allEntityOptions || [];
+    var previous = selectEl.value;
+    var q = (query || "").trim().toLowerCase();
+    var filtered = !q ? allItems : allItems.filter(function (item) {
+      return item.label.toLowerCase().indexOf(q) >= 0 || item.value.toLowerCase().indexOf(q) >= 0;
+    });
+
+    selectEl.innerHTML = "";
+    filtered.forEach(function (item) {
+      var opt = document.createElement("option");
+      opt.value = item.value;
+      opt.textContent = item.label;
+      selectEl.appendChild(opt);
+    });
+
+    if (!filtered.length) {
+      var emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = "No matches";
+      selectEl.appendChild(emptyOpt);
+      selectEl.value = "";
+      return;
+    }
+
+    if (previous && filtered.some(function (item) { return item.value === previous; })) {
+      selectEl.value = previous;
+    } else {
+      selectEl.selectedIndex = 0;
+    }
+  }
+
+  function cssEscapeValue(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/["\\]/g, "\\$&");
+  }
   function renderRelationships(relationships, campaign) {
     if (!relationshipsSection) return;
     relationshipsSection.classList.remove("hidden");
 
     var items = relationships || [];
+    lastRelationshipItems = items.slice();
+    lastRelationshipCampaign = campaign || {};
     relationshipsCount.textContent = "(" + items.length + ")";
 
     populateRelationshipSelects(campaign || {});
+    renderRelationshipGraph(items, campaign || {});
 
     if (!items.length) {
       relationshipsList.innerHTML = '<p class="placeholder">No relationships yet.</p>';
@@ -663,6 +1143,38 @@
     });
   }
 
+  if (toggleRelationshipGraphBtn) {
+    toggleRelationshipGraphBtn.addEventListener("click", function () {
+      setRelationshipGraphVisible(!relationshipGraphVisible);
+      renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
+    });
+  }
+
+  function onGraphFiltersChanged() {
+    relationshipGraphFilters.players = !graphFilterPlayers || !!graphFilterPlayers.checked;
+    relationshipGraphFilters.npcs = !graphFilterNpcs || !!graphFilterNpcs.checked;
+    relationshipGraphFilters.locations = !graphFilterLocations || !!graphFilterLocations.checked;
+    renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
+  }
+
+  if (graphFilterPlayers) graphFilterPlayers.addEventListener("change", onGraphFiltersChanged);
+  if (graphFilterNpcs) graphFilterNpcs.addEventListener("change", onGraphFiltersChanged);
+  if (graphFilterLocations) graphFilterLocations.addEventListener("change", onGraphFiltersChanged);
+  if (relSourceSearch) {
+    relSourceSearch.addEventListener("input", function () {
+      filterRelationshipEntityOptions(relSourceSelect, relSourceSearch.value);
+    });
+  }
+  if (relTargetSearch) {
+    relTargetSearch.addEventListener("input", function () {
+      filterRelationshipEntityOptions(relTargetSelect, relTargetSearch.value);
+    });
+  }
+
+  onGraphFiltersChanged();
+
+  setRelationshipGraphVisible(false);
+
   // Collapse toggles
   playersHeader.addEventListener("click", function () {
     playersBody.classList.toggle("collapsed");
@@ -672,6 +1184,12 @@
     npcsBody.classList.toggle("collapsed");
     npcsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
   });
+  if (locationsHeader) {
+    locationsHeader.addEventListener("click", function () {
+      locationsBody.classList.toggle("collapsed");
+      locationsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+    });
+  }
   if (relationshipsHeader) {
     relationshipsHeader.addEventListener("click", function () {
       relationshipsBody.classList.toggle("collapsed");
@@ -679,6 +1197,57 @@
     });
   }
 
+  // Add Location form
+  if (addLocationBtn) {
+    addLocationBtn.addEventListener("click", function () {
+      addLocationBtn.classList.add("hidden");
+      addLocationForm.classList.remove("hidden");
+      var input = document.getElementById("new-location-name");
+      if (input) input.focus();
+    });
+  }
+  if (addLocationCancel) {
+    addLocationCancel.addEventListener("click", function () {
+      addLocationForm.classList.add("hidden");
+      addLocationBtn.classList.remove("hidden");
+    });
+  }
+  if (addLocationForm) {
+    addLocationForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!activeCampaignId || appMode !== "live") return;
+
+      var nameInput = document.getElementById("new-location-name");
+      var reqBody = { name: nameInput ? nameInput.value.trim() : "" };
+      if (!reqBody.name) return;
+
+      var saveBtn = addLocationForm.querySelector(".btn-save");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+
+      fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            if (nameInput) nameInput.value = "";
+            addLocationForm.classList.add("hidden");
+            addLocationBtn.classList.remove("hidden");
+            fetchCampaignInfo();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to add location."); })
+        .finally(function () {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        });
+    });
+  }
   // Add NPC form
   addNpcBtn.addEventListener("click", function () {
     addNpcBtn.classList.add("hidden");
@@ -900,8 +1469,10 @@
       campaignSummaryEl.innerHTML = '<p class="placeholder">Select a session to view campaign summary.</p>';
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
       if (addNpcBtn) addNpcBtn.classList.add("hidden");
+      if (addLocationBtn) addLocationBtn.classList.add("hidden");
       if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
       if (addNpcForm) addNpcForm.classList.add("hidden");
+      if (addLocationForm) addLocationForm.classList.add("hidden");
       if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
       fetchBrowseCampaigns();
     } else {
@@ -911,6 +1482,7 @@
       if (sessionLogLinkEl) sessionLogLinkEl.classList.add("hidden");
       fetchCampaignInfo();
       if (addNpcBtn) addNpcBtn.classList.remove("hidden");
+      if (addLocationBtn) addLocationBtn.classList.remove("hidden");
       if (addRelationshipBtn) addRelationshipBtn.classList.remove("hidden");
       fetchSessionList();
       pollQuestions();
@@ -984,6 +1556,7 @@
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
       playersSection.classList.add("hidden");
       npcsSection.classList.add("hidden");
+      if (locationsSection) locationsSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
@@ -1003,10 +1576,13 @@
         campaignEditBtn.classList.add("hidden");
         renderPlayers(campaign.players || []);
         renderNpcs(campaign.npcs || []);
+        renderLocations(campaign.locations || []);
         renderRelationships(campaign.relationships || [], campaign);
         addNpcBtn.classList.add("hidden");
+        if (addLocationBtn) addLocationBtn.classList.add("hidden");
         addRelationshipBtn.classList.add("hidden");
         addNpcForm.classList.add("hidden");
+        if (addLocationForm) addLocationForm.classList.add("hidden");
         addRelationshipForm.classList.add("hidden");
         renderBrowseCampaignList(browseCampaignsCache);
         fetchSessionList();
@@ -1363,6 +1939,8 @@
 
   setMode("live");
 })();
+
+
 
 
 
