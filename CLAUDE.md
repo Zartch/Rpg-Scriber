@@ -68,9 +68,10 @@ src/rpg_scribe/
     ├── routes.py            # REST API + WebSocket (campaigns, players, NPCs, sessions)
     ├── websocket.py         # WebSocket bridge y ConnectionManager
     └── static/
-        ├── index.html       # Frontend HTML (campaign bar, players, NPCs, sessions sidebar)
-        ├── app.js           # Frontend JS (WebSocket, CRUD, session history)
-        └── style.css        # Estilos dark theme
+        ├── index.html              # Frontend HTML (campaign bar, players, NPCs, sessions sidebar)
+        ├── app.js                  # Frontend JS (WebSocket, CRUD, session history, browse mode)
+        ├── style.css               # Estilos dark theme
+        └── campaign-summaries.html # Página historial de resúmenes de campaña
 
 scripts/
 ├── import_campaign.py       # Utilidad para importar/generar TOML de campaña
@@ -87,7 +88,7 @@ config/
 - **Patrón**: Event-driven async con pub/sub via `EventBus`
 - **Eventos**: `AudioChunkEvent` → `TranscriptionEvent` → `SummaryUpdateEvent` + `SystemStatusEvent`
 - **Flujo**: Listener captura audio → Transcriber genera texto → Summarizer resume narrativamente
-- **Base de datos**: SQLite async (aiosqlite), 6 tablas: campaigns, players, npcs, sessions, transcriptions, questions
+- **Base de datos**: SQLite async (aiosqlite), 7 tablas: campaigns, players, npcs, sessions, transcriptions, questions, campaign_summaries
 - **Web**: FastAPI con WebSocket para actualizaciones en tiempo real
 - **Modo genérico**: Si no se pasa `--campaign`, crea un `CampaignContext.create_generic()` con prompt genérico
 
@@ -96,10 +97,14 @@ config/
 - **Campaign bar**: muestra/edita nombre, sistema, descripción, instrucciones (PATCH `/api/campaigns/{id}`)
 - **Players**: sección colapsable, edición inline (PUT `/api/campaigns/{id}/players/{pid}`)
 - **NPCs**: sección colapsable, edición inline + crear nuevos (POST/PUT `/api/campaigns/{id}/npcs`)
+- **Locations**: sección colapsable, edición inline + crear nuevos (POST/PUT `/api/campaigns/{id}/locations`)
+- **Relationships**: grafo de relaciones entre personajes (POST `/api/campaigns/{id}/relationships`)
 - **Session sidebar**: lista sesiones con duración, indicador de resumen, preview
 - **Session history**: click en sesión histórica carga transcripciones + resumen desde DB
 - **Live mode**: WebSocket para transcripciones y resúmenes en tiempo real
+- **Browse mode**: navegar sesiones de cualquier campaña sin estar en sesión activa
 - **Questions**: panel de preguntas pendientes del summarizer con respuesta inline
+- **Campaign summaries**: resumen acumulado de campaña; botón "Generate" para generar bajo demanda (también genera resúmenes de sesión faltantes); "View all" abre `campaign-summaries.html` con historial completo
 
 ### REST API Endpoints
 
@@ -111,12 +116,22 @@ config/
 | PUT | `/api/campaigns/{id}/players/{pid}` | Editar jugador |
 | POST | `/api/campaigns/{id}/npcs` | Crear NPC |
 | PUT | `/api/campaigns/{id}/npcs/{nid}` | Editar NPC |
+| POST | `/api/campaigns/{id}/locations` | Crear localización |
+| PUT | `/api/campaigns/{id}/locations/{lid}` | Editar localización |
+| POST | `/api/campaigns/{id}/relationships` | Crear relación entre personajes |
+| POST | `/api/campaigns/{id}/campaign-summaries/generate` | Generar resumen de campaña bajo demanda (también genera resúmenes de sesión faltantes) |
+| GET | `/api/campaigns/{id}/campaign-summaries` | Listar todos los resúmenes de campaña (más reciente primero) |
+| GET | `/api/campaigns/{id}/campaign-summaries/latest` | Resumen de campaña más reciente |
+| GET | `/api/campaigns/{id}/campaign-summaries/{sid}` | Resumen de campaña por ID |
 | GET | `/api/sessions` | Listar todas las sesiones |
 | GET | `/api/campaigns/{id}/sessions` | Sesiones de una campaña |
 | GET | `/api/sessions/{id}/transcriptions` | Transcripciones (memoria o DB) |
 | GET | `/api/sessions/{id}/summary` | Resumen (memoria o DB) |
 | GET | `/api/questions` | Preguntas pendientes |
 | POST | `/api/questions/{id}/answer` | Responder pregunta |
+| GET | `/api/browse/campaigns` | Listar todas las campañas (modo browse) |
+| GET | `/api/browse/campaigns/{id}` | Detalle de campaña (modo browse) |
+| GET | `/api/browse/sessions/uncategorized` | Sesiones sin campaña |
 | WS | `/ws/live` | WebSocket para eventos en tiempo real |
 
 ## Convenciones de Código
@@ -145,13 +160,16 @@ config/
 ## Testing
 
 - 14 archivos de test en `tests/`
-- 256 tests totales (254 pass, 2 fallos pre-existentes)
+- ~312 tests totales (~307 pass, 5 fallos pre-existentes)
 - Tests cubren: event bus, transcriber, summarizer, Discord listener, file listener, database, config, web, publisher, resilience, logging, main, integración, discord bot
 - Usar `pytest` sin argumentos para ejecutar toda la suite
 - `pytest -k test_nombre` para tests específicos
 - **Fallos pre-existentes**:
   - `test_defaults_from_toml_override_dataclass_defaults`: falla si `RPG_SCRIBE_HOST` está en env vars
   - `test_generate_toml_is_valid_toml`: requiere `tomllib` (Python 3.11+), no disponible en 3.10
+  - `test_locations` en `test_config.py`: compara `LocationInfo` objects vs strings (refactor pendiente)
+  - `test_format_transcriptions` en `test_summarizer.py`: llama método de instancia como estático
+  - `test_half_open_failure_reopens` en `test_resilience.py`: timing sensible
 
 ## Notas Importantes
 
@@ -178,6 +196,15 @@ config/
 
 ### Sync TOML → DB
 
-- Al arrancar con `--campaign`, los players y NPCs del TOML se persisten idempotentemente a la DB
+- Al arrancar con `--campaign`, los players, NPCs y locations del TOML se persisten idempotentemente a la DB
 - Si ya existen (por discord_id / name), no se duplican
 - Cambios hechos via Web UI se guardan en DB y en memoria (no modifican el TOML)
+
+### Campaign Summaries
+
+- Tabla `campaign_summaries`: historial append-only de resúmenes de campaña (no se sobreescriben)
+- `campaigns.campaign_summary`: columna cache con el último resumen, usada por el prompt del summarizer
+- Se generan automáticamente al finalizar cada sesión (si la sesión tiene resumen)
+- Se pueden generar bajo demanda desde el Web UI (botón "Generate")
+- El endpoint `POST /generate` genera primero resúmenes de sesión faltantes (post-hoc desde transcripciones), luego el resumen de campaña
+- La página `campaign-summaries.html` muestra el historial completo con navegación lateral

@@ -143,6 +143,15 @@ CREATE TABLE IF NOT EXISTS character_relationships (
     updated_at REAL,
     UNIQUE (campaign_id, source_key, target_key, type_key)
 );
+
+CREATE TABLE IF NOT EXISTS campaign_summaries (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT REFERENCES campaigns(id),
+    content TEXT NOT NULL,
+    trigger_session_id TEXT,
+    session_count INTEGER DEFAULT 0,
+    generated_at REAL
+);
 """
 
 
@@ -243,14 +252,72 @@ class Database:
     async def update_campaign_summary(
         self, campaign_id: str, summary: str
     ) -> None:
-        """Update the accumulated campaign summary."""
+        """Update the accumulated campaign summary (latest-only cache)."""
         await self.conn.execute(
             "UPDATE campaigns SET campaign_summary = ?, updated_at = ? WHERE id = ?",
             (summary, time.time(), campaign_id),
         )
         await self.conn.commit()
 
-    # -- Sessions ---------------------------------------------------
+    # ── Campaign summaries (history) ───────────────────────────────
+
+    async def save_campaign_summary(
+        self,
+        campaign_id: str,
+        content: str,
+        trigger_session_id: str = "",
+        session_count: int = 0,
+    ) -> str:
+        """Persist a new campaign summary snapshot and return its ID."""
+        import uuid
+
+        summary_id = str(uuid.uuid4())
+        now = time.time()
+        await self.conn.execute(
+            "INSERT INTO campaign_summaries "
+            "(id, campaign_id, content, trigger_session_id, session_count, generated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (summary_id, campaign_id, content, trigger_session_id, session_count, now),
+        )
+        await self.conn.commit()
+        # Also refresh the latest-cache column on the campaign row
+        await self.update_campaign_summary(campaign_id, content)
+        return summary_id
+
+    async def list_campaign_summaries(
+        self, campaign_id: str
+    ) -> list[dict[str, Any]]:
+        """Return all campaign summaries for a campaign, newest first."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_summaries WHERE campaign_id = ? "
+            "ORDER BY generated_at DESC",
+            (campaign_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_campaign_summary_by_id(
+        self, summary_id: str
+    ) -> dict[str, Any] | None:
+        """Retrieve a single campaign summary by its UUID."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_summaries WHERE id = ?", (summary_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_latest_campaign_summary(
+        self, campaign_id: str
+    ) -> dict[str, Any] | None:
+        """Return the most recently generated campaign summary."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_summaries WHERE campaign_id = ? "
+            "ORDER BY generated_at DESC LIMIT 1",
+            (campaign_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    # ── Sessions ───────────────────────────────────────────────────
 
     async def create_session(
         self, session_id: str, campaign_id: str

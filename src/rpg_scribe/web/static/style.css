@@ -505,6 +505,17 @@ header h1 { font-size: 1.25rem; }
 }
 .panel-header-row h2 { margin-bottom: 0; }
 
+/* Campaign summary header row */
+.campaign-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.campaign-summary-header h3 { margin: 0; }
+.campaign-summary-actions { display: flex; gap: 0.4rem; align-items: center; }
+
 /* Finalize button */
 .btn-finalize {
   background: var(--red);

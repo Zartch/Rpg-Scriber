@@ -106,6 +106,57 @@ Responde con el siguiente formato exacto:
 (resumen actualizado de la campaña)
 """
 
+CAMPAIGN_SUMMARY_SYSTEM = """\
+Eres un cronista experto de campañas de rol. Tu trabajo es escribir un resumen \
+narrativo global de toda la campaña hasta la fecha, a partir de los resúmenes \
+de cada sesión jugada.
+
+CONTEXTO DE LA CAMPAÑA:
+- Sistema: {game_system}
+- Campaña: {name} — {description}
+
+JUGADORES:
+{players_block}
+
+PNJS CONOCIDOS:
+{npcs_block}
+
+RELACIONES CONOCIDAS:
+{relationships_block}
+
+{custom_instructions}
+
+INSTRUCCIONES:
+1. Escribe en tercera persona, estilo crónica narrativa.
+2. Organiza la información por grandes arcos o temas si los hay.
+3. Incluye: eventos clave, PNJs relevantes, localizaciones importantes, \
+relaciones entre personajes y el estado actual de la trama.
+4. El resumen debe ser completo pero conciso — útil para retomar la campaña \
+tras un parón largo.
+5. NO incluyas meta-conversaciones de los jugadores.
+"""
+
+CAMPAIGN_SUMMARY_USER = """\
+A continuación tienes los resúmenes de las {session_count} sesiones jugadas \
+hasta ahora, en orden cronológico.
+
+{sessions_block}
+
+Genera el resumen global de la campaña incorporando toda esta información. \
+Devuelve ÚNICAMENTE el resumen, sin explicaciones adicionales.
+"""
+
+CAMPAIGN_SUMMARY_COMPRESS_USER = """\
+Los resúmenes de sesión son demasiado extensos para procesarlos de una vez. \
+A continuación tienes resúmenes de las sesiones más antiguas que necesitas \
+condensar antes de combinarlos con las sesiones recientes.
+
+{sessions_block}
+
+Genera un resumen condensado de estas sesiones que preserve los eventos clave, \
+PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condensado.
+"""
+
 EXTRACTION_USER = """\
 A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
 localizaciones nuevas que hayan aparecido.
@@ -593,6 +644,231 @@ class ClaudeSummarizer(BaseSummarizer):
 
         logger.info("Session finalized")
         return self._session_summary
+
+    async def generate_session_summary_from_transcriptions(
+        self, transcription_rows: list[dict]
+    ) -> str:
+        """Generate a session summary from DB transcription rows (post-hoc).
+
+        Stateless: does not read or modify ``self._pending`` or
+        ``self._session_summary``.  Used to retroactively create a session
+        summary when one is missing, before generating a campaign summary.
+        """
+        entries = [
+            TranscriptionEntry(
+                speaker_id=r.get("speaker_id", ""),
+                speaker_name=r.get("speaker_name", "") or r.get("speaker_id", ""),
+                text=r.get("text", ""),
+                timestamp=r.get("timestamp", 0.0),
+            )
+            for r in transcription_rows
+            if r.get("text", "").strip()
+        ]
+        if not entries:
+            return ""
+
+        system = self._build_system_prompt()
+        template_overhead = len(FINALIZE_USER) + 200
+        max_chars = max(self.config.max_input_chars - template_overhead, 1000)
+        pending_text = self._format_transcriptions(entries)
+
+        if len(pending_text) <= max_chars:
+            result = await self._call_api(
+                system,
+                FINALIZE_USER.format(
+                    session_summary="(inicio de sesión)",
+                    pending_transcriptions=pending_text,
+                ),
+            )
+            session_part, _ = self._parse_finalize_response(result)
+        else:
+            batches = self._split_into_batches(entries, max_chars)
+            running_summary = "(inicio de sesión)"
+            session_part = ""
+            for i, batch in enumerate(batches):
+                batch_text = self._format_transcriptions(batch)
+                is_last = i == len(batches) - 1
+                if is_last:
+                    result = await self._call_api(
+                        system,
+                        FINALIZE_USER.format(
+                            session_summary=running_summary,
+                            pending_transcriptions=batch_text,
+                        ),
+                    )
+                    session_part, _ = self._parse_finalize_response(result)
+                else:
+                    result = await self._call_api(
+                        system,
+                        SESSION_UPDATE_USER.format(
+                            recent_transcriptions=batch_text,
+                            current_session_summary=running_summary,
+                            user_answers_block="\n",
+                        ),
+                    )
+                    running_summary = result.strip()
+
+        return session_part or ""
+
+    # ------------------------------------------------------------------
+    # Campaign summary generation
+    # ------------------------------------------------------------------
+
+    def _build_campaign_system_prompt(self) -> str:
+        """Build the system prompt for campaign-level summarization."""
+        c = self.campaign
+
+        players_lines = [
+            f"- {p.discord_name} juega como {p.character_name}"
+            + (f" ({p.character_description})" if p.character_description else "")
+            for p in c.players
+        ] or ["(ninguno registrado)"]
+
+        npcs_lines = [f"- {n.name}: {n.description}" for n in c.known_npcs] or [
+            "(ninguno conocido)"
+        ]
+
+        entity_name_map = {
+            f"player:{p.discord_id}": p.character_name or p.discord_name
+            for p in c.players if p.discord_id
+        }
+        for n in c.known_npcs:
+            if n.name:
+                entity_name_map[f"npc:{n.name}"] = n.name
+
+        relationships_lines = []
+        for rel in c.relationships:
+            source = entity_name_map.get(rel.source_key, rel.source_key)
+            target = entity_name_map.get(rel.target_key, rel.target_key)
+            label = rel.relation_type_label or rel.relation_type_key
+            line = f"- {source} -> {target}: {label}"
+            if rel.notes:
+                line += f" ({rel.notes})"
+            relationships_lines.append(line)
+        if not relationships_lines:
+            relationships_lines = ["(ninguna registrada)"]
+
+        custom = f"INSTRUCCIONES ADICIONALES:\n{c.custom_instructions}" if c.custom_instructions else ""
+
+        return CAMPAIGN_SUMMARY_SYSTEM.format(
+            game_system=c.game_system,
+            name=c.name,
+            description=c.description,
+            players_block="\n".join(players_lines),
+            npcs_block="\n".join(npcs_lines),
+            relationships_block="\n".join(relationships_lines),
+            custom_instructions=custom,
+        )
+
+    async def generate_campaign_summary(
+        self,
+        session_summaries: list[dict],
+        *,
+        trigger_session_id: str = "",
+    ) -> str:
+        """Generate a full campaign summary from all session summaries.
+
+        Handles context limits by progressively compressing older sessions
+        before combining with recent ones.
+
+        Args:
+            session_summaries: List of dicts with at least 'session_summary' and
+                optionally 'started_at' and 'id', ordered oldest→newest.
+            trigger_session_id: The session ID that triggered this generation.
+
+        Returns:
+            The generated campaign summary text.
+        """
+        if not session_summaries:
+            return ""
+
+        system = self._build_campaign_system_prompt()
+
+        def _format_sessions(sessions: list[dict]) -> str:
+            lines = []
+            for i, s in enumerate(sessions, 1):
+                started = s.get("started_at")
+                date_str = ""
+                if started:
+                    try:
+                        import datetime
+                        date_str = " (" + datetime.datetime.fromtimestamp(float(started)).strftime("%Y-%m-%d") + ")"
+                    except Exception:
+                        pass
+                sid = s.get("id", f"sesion-{i}")
+                summary_text = s.get("session_summary", "").strip()
+                lines.append(f"### Sesión {i}{date_str} [{sid}]\n{summary_text}")
+            return "\n\n".join(lines)
+
+        # Estimate available chars for session content
+        template_overhead = len(CAMPAIGN_SUMMARY_USER) + len(system) + 500
+        max_content_chars = self.config.max_input_chars - template_overhead
+
+        sessions_text = _format_sessions(session_summaries)
+
+        if len(sessions_text) <= max_content_chars:
+            # Everything fits — single call
+            user_msg = CAMPAIGN_SUMMARY_USER.format(
+                session_count=len(session_summaries),
+                sessions_block=sessions_text,
+            )
+            return await self._call_api(system, user_msg)
+
+        # Content too large: compress older sessions progressively
+        logger.info(
+            "Campaign summary: %d chars exceeds limit (%d). Using progressive compression.",
+            len(sessions_text),
+            max_content_chars,
+        )
+
+        # Split sessions roughly in half; compress the older half first
+        compressed_summary = ""
+        remaining = list(session_summaries)
+
+        while True:
+            sessions_text = _format_sessions(remaining)
+            if compressed_summary:
+                combined = f"### Resumen comprimido de sesiones anteriores\n{compressed_summary}\n\n{sessions_text}"
+            else:
+                combined = sessions_text
+
+            if len(combined) <= max_content_chars:
+                break
+
+            # Compress the oldest half
+            split = max(1, len(remaining) // 2)
+            older = remaining[:split]
+            remaining = remaining[split:]
+
+            older_text = _format_sessions(older)
+            if compressed_summary:
+                older_text = f"### Resumen comprimido previo\n{compressed_summary}\n\n{older_text}"
+
+            compress_user = CAMPAIGN_SUMMARY_COMPRESS_USER.format(sessions_block=older_text)
+            compressed_summary = await self._call_api(system, compress_user)
+            logger.info(
+                "Compressed %d older session(s) into %d chars",
+                len(older),
+                len(compressed_summary),
+            )
+
+            if not remaining:
+                # All sessions were compressed — use the compressed result directly
+                return compressed_summary
+
+        # Final call with the (possibly compressed) content
+        if compressed_summary:
+            sessions_block = f"### Resumen comprimido de sesiones anteriores\n{compressed_summary}\n\n{_format_sessions(remaining)}"
+        else:
+            sessions_block = _format_sessions(remaining)
+
+        user_msg = CAMPAIGN_SUMMARY_USER.format(
+            session_count=len(session_summaries),
+            sessions_block=sessions_block,
+        )
+        result = await self._call_api(system, user_msg)
+        logger.info("Campaign summary generated from %d session(s)", len(session_summaries))
+        return result
 
     # ------------------------------------------------------------------
     # NPC / location extraction
