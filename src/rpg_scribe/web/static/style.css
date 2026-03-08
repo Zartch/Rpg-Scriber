@@ -155,6 +155,15 @@ header h1 { font-size: 1.25rem; }
 .entity-select-search {
   flex: 1;
 }
+.relationship-select-tools {
+  display: flex;
+  gap: 0.4rem;
+  width: 100%;
+}
+.entity-select-kind {
+  width: 120px;
+  max-width: 40%;
+}
 .edit-actions {
   display: flex;
   gap: 0.5rem;

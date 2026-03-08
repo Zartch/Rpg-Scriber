@@ -813,7 +813,7 @@ async def update_npc_endpoint(
 
 @router.post("/api/campaigns/{campaign_id}/locations")
 async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Add a location name to the active campaign context."""
+    """Add a location to the active campaign context."""
     state = _get_state()
     db = _get_database()
     config = _get_config()
@@ -822,6 +822,7 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
         return {"ok": False, "error": "Campaign not found"}
 
     name = str(body.get("name", "")).strip()
+    description = str(body.get("description", "")).strip()
     if not name:
         return {"ok": False, "error": "Location name is required"}
 
@@ -837,14 +838,14 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
             await db.save_location(
                 campaign_id=campaign_id,
                 name=name,
-                description="",
+                description=description,
                 first_seen_session=state.active_session_id or "",
             )
         except Exception as exc:
             logger.error("Error saving location: %s", exc)
             return {"ok": False, "error": "Failed to save"}
 
-    current.append({"name": name, "description": ""})
+    current.append({"name": name, "description": description})
     state.active_campaign["locations"] = current
 
     if config and hasattr(config, "campaign") and config.campaign:
@@ -862,7 +863,7 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
 
 @router.put("/api/campaigns/{campaign_id}/locations")
 async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Rename a location in the active campaign context."""
+    """Update a location (name/description) in the active campaign context."""
     state = _get_state()
     db = _get_database()
     config = _get_config()
@@ -872,6 +873,8 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
 
     old_name = str(body.get("old_name", "")).strip()
     new_name = str(body.get("name", "")).strip()
+    has_description = "description" in body
+    new_description = str(body.get("description", "")).strip() if has_description else ""
     if not old_name or not new_name:
         return {"ok": False, "error": "old_name and name are required"}
 
@@ -887,7 +890,11 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     updated_locations = [
         {
             "name": new_name if loc["name"] == old_name else loc["name"],
-            "description": loc.get("description", ""),
+            "description": (
+                new_description
+                if (loc["name"] == old_name and has_description)
+                else loc.get("description", "")
+            ),
         }
         for loc in locations
     ]
@@ -907,10 +914,10 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
             db_locations = await db.get_locations(campaign_id)
             for row in db_locations:
                 if str(row.get("name", "")).casefold() == old_name.casefold():
-                    await db.update_location(
-                        str(row.get("id", "")),
-                        name=new_name,
-                    )
+                    db_updates: dict[str, Any] = {"name": new_name}
+                    if has_description:
+                        db_updates["description"] = new_description
+                    await db.update_location(str(row.get("id", "")), **db_updates)
                     break
             await db.rename_relationship_entity_key(campaign_id, f"loc:{old_name}", f"loc:{new_name}")
             await db.rename_relationship_entity_key(campaign_id, f"location:{old_name}", f"loc:{new_name}")
@@ -1138,6 +1145,76 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     except Exception as exc:
         logger.error("Error saving relationship: %s", exc)
         return {"ok": False, "error": "Failed to save relationship"}
+
+    state.active_campaign["relationship_types"] = relationship_types
+    state.active_campaign["relationships"] = relationships
+
+    try:
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except Exception as exc:
+        logger.error("Error persisting relationship TOML sync: %s", exc)
+
+    return {
+        "ok": True,
+        "relationship": relationship,
+        "relationship_types": relationship_types,
+        "relationships": relationships,
+    }
+
+
+@router.put("/api/campaigns/{campaign_id}/relationships")
+async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Edit a typed relationship between two campaign entities."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    old_source_key = str(body.get("old_source_key", "")).strip()
+    old_target_key = str(body.get("old_target_key", "")).strip()
+    old_type_key = str(body.get("old_type_key", "")).strip()
+    source_key = str(body.get("source_key", "")).strip()
+    target_key = str(body.get("target_key", "")).strip()
+    relation_type = str(body.get("relation_type", "")).strip()
+    notes = str(body.get("notes", "")).strip()
+    category = str(body.get("category", "general") or "general").strip()
+
+    if not old_source_key or not old_target_key or not old_type_key:
+        return {"ok": False, "error": "old_source_key, old_target_key and old_type_key are required"}
+    if not source_key or not target_key:
+        return {"ok": False, "error": "source_key and target_key are required"}
+    if source_key == target_key:
+        return {"ok": False, "error": "Source and target cannot be the same"}
+    if not relation_type:
+        return {"ok": False, "error": "relation_type is required"}
+
+    try:
+        await db.delete_character_relationship(
+            campaign_id,
+            old_source_key,
+            old_target_key,
+            old_type_key,
+        )
+        relationship = await db.save_character_relationship(
+            campaign_id,
+            source_key,
+            target_key,
+            relation_type,
+            notes=notes,
+            category=category,
+        )
+        relationship_types = await db.get_relationship_types(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error updating relationship: %s", exc)
+        return {"ok": False, "error": "Failed to update relationship"}
 
     state.active_campaign["relationship_types"] = relationship_types
     state.active_campaign["relationships"] = relationships

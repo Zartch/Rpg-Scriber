@@ -806,6 +806,37 @@ class Database:
             "notes": notes.strip(),
             "type_category": relation_type.get("category", "general"),
         }
+
+    async def _recompute_relationship_type_usage(
+        self,
+        campaign_id: str,
+        type_key: str,
+    ) -> None:
+        """Recompute usage count for one relationship type key."""
+        await self.conn.execute(
+            "UPDATE relationship_types SET usage_count = ("
+            "SELECT COUNT(*) FROM character_relationships "
+            "WHERE campaign_id = ? AND type_key = ?"
+            "), updated_at = ? "
+            "WHERE campaign_id = ? AND canonical_key = ?",
+            (campaign_id, type_key, time.time(), campaign_id, type_key),
+        )
+        await self.conn.commit()
+
+    async def delete_character_relationship(
+        self,
+        campaign_id: str,
+        source_key: str,
+        target_key: str,
+        type_key: str,
+    ) -> None:
+        """Delete one relationship by its natural key triple."""
+        await self.conn.execute(
+            "DELETE FROM character_relationships "
+            "WHERE campaign_id = ? AND source_key = ? AND target_key = ? AND type_key = ?",
+            (campaign_id, source_key, target_key, type_key),
+        )
+        await self._recompute_relationship_type_usage(campaign_id, type_key)
     async def get_character_relationships(self, campaign_id: str) -> list[dict[str, Any]]:
         """List character relationships for a campaign."""
         cursor = await self.conn.execute(

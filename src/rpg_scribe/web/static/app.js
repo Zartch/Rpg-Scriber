@@ -80,6 +80,8 @@
   var relTargetSelect = document.getElementById("new-rel-target");
   var relSourceSearch = document.getElementById("new-rel-source-search");
   var relTargetSearch = document.getElementById("new-rel-target-search");
+  var relSourceKind = document.getElementById("new-rel-source-kind");
+  var relTargetKind = document.getElementById("new-rel-target-kind");
   var relTypeInput = document.getElementById("new-rel-type");
   var relCategoryInput = document.getElementById("new-rel-category");
   var relNotesInput = document.getElementById("new-rel-notes");
@@ -119,6 +121,7 @@
   var pinnedNodeTooltipKey = null;
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
+  var relationshipEditOriginal = null;
 
   // WebSocket
 
@@ -654,8 +657,11 @@
     if (!locationsSection) return;
 
     var items = (locations || []).map(function (loc) {
-      return locationName(loc);
-    }).filter(function (name) { return !!name; });
+      return {
+        name: locationName(loc),
+        description: locationDescription(loc),
+      };
+    }).filter(function (loc) { return !!loc.name; });
 
     locationsSection.classList.remove("hidden");
     locationsCount.textContent = "(" + items.length + ")";
@@ -666,7 +672,9 @@
     }
 
     locationsList.innerHTML = "";
-    items.forEach(function (name) {
+    items.forEach(function (loc) {
+      var name = loc.name;
+      var description = loc.description;
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -674,11 +682,14 @@
           '<div class="entity-info">' +
             '<strong class="entity-name">' + escapeHtml(name) + '</strong>' +
           '</div>' +
+          '<span class="entity-desc">' + escapeHtml(description || "") + '</span>' +
           '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
         '</div>' +
         '<form class="entity-edit-form hidden">' +
           '<div class="edit-row"><label>Name</label>' +
             '<input type="text" class="edit-location-name" value="' + escapeAttr(name) + '" required /></div>' +
+          '<div class="edit-row"><label>Description</label>' +
+            '<textarea class="edit-location-desc" rows="2">' + escapeHtml(description || "") + '</textarea></div>' +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
@@ -703,7 +714,9 @@
         var reqBody = {
           old_name: name,
           name: formEl.querySelector(".edit-location-name").value.trim(),
+          description: ((formEl.querySelector(".edit-location-desc") || {}).value || "").trim(),
         };
+        if (!reqBody.name) return;
         var saveBtn = formEl.querySelector(".btn-save");
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
@@ -1204,20 +1217,22 @@
     var entities = buildRelationshipEntities(campaign);
     setRelationshipEntityOptions(relSourceSelect, entities);
     setRelationshipEntityOptions(relTargetSelect, entities);
-    filterRelationshipEntityOptions(relSourceSelect, relSourceSearch ? relSourceSearch.value : "");
-    filterRelationshipEntityOptions(relTargetSelect, relTargetSearch ? relTargetSearch.value : "");
+    applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+    applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
 
     relSourceSelect.disabled = entities.length < 2;
     relTargetSelect.disabled = entities.length < 2;
     if (relSourceSearch) relSourceSearch.disabled = entities.length < 2;
     if (relTargetSearch) relTargetSearch.disabled = entities.length < 2;
+    if (relSourceKind) relSourceKind.disabled = entities.length < 2;
+    if (relTargetKind) relTargetKind.disabled = entities.length < 2;
   }
 
   function setRelationshipEntityOptions(selectEl, entities) {
     if (!selectEl) return;
     var previous = selectEl.value;
     selectEl.__allEntityOptions = (entities || []).map(function (e) {
-      return { value: e.key, label: e.label };
+      return { value: e.key, label: e.label, kind: e.kind || "unknown" };
     });
 
     selectEl.innerHTML = "";
@@ -1233,14 +1248,20 @@
     }
   }
 
-  function filterRelationshipEntityOptions(selectEl, query) {
+  function filterRelationshipEntityOptions(selectEl, query, kindFilter) {
     if (!selectEl) return;
     var allItems = selectEl.__allEntityOptions || [];
     var previous = selectEl.value;
     var q = (query || "").trim().toLowerCase();
+    var kind = (kindFilter || "all").trim().toLowerCase();
     var filtered = !q ? allItems : allItems.filter(function (item) {
       return item.label.toLowerCase().indexOf(q) >= 0 || item.value.toLowerCase().indexOf(q) >= 0;
     });
+    if (kind && kind !== "all") {
+      filtered = filtered.filter(function (item) {
+        return (item.kind || "").toLowerCase() === kind;
+      });
+    }
 
     selectEl.innerHTML = "";
     filtered.forEach(function (item) {
@@ -1305,7 +1326,34 @@
             '<span class="entity-meta">' + escapeHtml(typeLabel) + ' [' + escapeHtml(category) + ']</span>' +
           '</div>' +
           '<span class="entity-desc">' + escapeHtml(rel.notes || "") + '</span>' +
+          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
         '</div>';
+      var editBtn = card.querySelector(".btn-edit-entity");
+      if (editBtn) {
+        editBtn.addEventListener("click", function () {
+          if (appMode !== "live") return;
+          relationshipEditOriginal = {
+            source_key: rel.source_key || "",
+            target_key: rel.target_key || "",
+            type_key: rel.type_key || rel.relation_type_key || "",
+          };
+          if (relSourceSearch) relSourceSearch.value = "";
+          if (relTargetSearch) relTargetSearch.value = "";
+          if (relSourceKind) relSourceKind.value = "all";
+          if (relTargetKind) relTargetKind.value = "all";
+          applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+          applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
+          if (relSourceSelect) relSourceSelect.value = normalizeEntityKey(rel.source_key || "");
+          if (relTargetSelect) relTargetSelect.value = normalizeEntityKey(rel.target_key || "");
+          if (relTypeInput) relTypeInput.value = typeLabel;
+          if (relCategoryInput) relCategoryInput.value = category;
+          if (relNotesInput) relNotesInput.value = rel.notes || "";
+          if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
+          if (addRelationshipForm) addRelationshipForm.classList.remove("hidden");
+          if (relTypeInput) relTypeInput.focus();
+        });
+      }
+      if (appMode !== "live" && editBtn) editBtn.classList.add("hidden");
       relationshipsList.appendChild(card);
     });
   }
@@ -1325,18 +1373,34 @@
     renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
   }
 
+  function applyRelationshipEntityFilters(selectEl, searchEl, kindEl) {
+    var query = searchEl ? searchEl.value : "";
+    var kind = kindEl ? kindEl.value : "all";
+    filterRelationshipEntityOptions(selectEl, query, kind);
+  }
+
   if (graphFilterPlayers) graphFilterPlayers.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterNpcs) graphFilterNpcs.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterLocations) graphFilterLocations.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterEntities) graphFilterEntities.addEventListener("change", onGraphFiltersChanged);
   if (relSourceSearch) {
     relSourceSearch.addEventListener("input", function () {
-      filterRelationshipEntityOptions(relSourceSelect, relSourceSearch.value);
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
     });
   }
   if (relTargetSearch) {
     relTargetSearch.addEventListener("input", function () {
-      filterRelationshipEntityOptions(relTargetSelect, relTargetSearch.value);
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
+    });
+  }
+  if (relSourceKind) {
+    relSourceKind.addEventListener("change", function () {
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+    });
+  }
+  if (relTargetKind) {
+    relTargetKind.addEventListener("change", function () {
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
     });
   }
 
@@ -1393,7 +1457,11 @@
       if (!activeCampaignId || appMode !== "live") return;
 
       var nameInput = document.getElementById("new-location-name");
-      var reqBody = { name: nameInput ? nameInput.value.trim() : "" };
+      var descInput = document.getElementById("new-location-desc");
+      var reqBody = {
+        name: nameInput ? nameInput.value.trim() : "",
+        description: descInput ? descInput.value.trim() : "",
+      };
       if (!reqBody.name) return;
 
       var saveBtn = addLocationForm.querySelector(".btn-save");
@@ -1409,6 +1477,7 @@
         .then(function (data) {
           if (data.ok) {
             if (nameInput) nameInput.value = "";
+            if (descInput) descInput.value = "";
             addLocationForm.classList.add("hidden");
             addLocationBtn.classList.remove("hidden");
             fetchCampaignInfo();
@@ -1536,6 +1605,7 @@
   // Add Relationship form
   if (addRelationshipBtn) {
     addRelationshipBtn.addEventListener("click", function () {
+      relationshipEditOriginal = null;
       addRelationshipBtn.classList.add("hidden");
       addRelationshipForm.classList.remove("hidden");
       if (relTypeInput) relTypeInput.focus();
@@ -1545,6 +1615,13 @@
     addRelationshipCancel.addEventListener("click", function () {
       addRelationshipForm.classList.add("hidden");
       addRelationshipBtn.classList.remove("hidden");
+      relationshipEditOriginal = null;
+      if (relSourceSearch) relSourceSearch.value = "";
+      if (relTargetSearch) relTargetSearch.value = "";
+      if (relSourceKind) relSourceKind.value = "all";
+      if (relTargetKind) relTargetKind.value = "all";
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
     });
   }
   if (addRelationshipForm) {
@@ -1566,9 +1643,17 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving...";
 
+      var isEditing = !!relationshipEditOriginal;
+      var url = "/api/campaigns/" + activeCampaignId + "/relationships";
+      if (isEditing) {
+        reqBody.old_source_key = relationshipEditOriginal.source_key;
+        reqBody.old_target_key = relationshipEditOriginal.target_key;
+        reqBody.old_type_key = relationshipEditOriginal.type_key;
+      }
+
       if (appMode !== "live") return;
-      fetch("/api/campaigns/" + activeCampaignId + "/relationships", {
-        method: "POST",
+      fetch(url, {
+        method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reqBody),
       })
@@ -1577,8 +1662,10 @@
           if (data.ok) {
             if (relTypeInput) relTypeInput.value = "";
             if (relNotesInput) relNotesInput.value = "";
+            if (relCategoryInput) relCategoryInput.value = "general";
             addRelationshipForm.classList.add("hidden");
             addRelationshipBtn.classList.remove("hidden");
+            relationshipEditOriginal = null;
             fetchCampaignInfo();
           } else {
             alert("Error: " + (data.error || "Unknown error"));
