@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS locations (
     first_seen_session TEXT
 );
 
+CREATE TABLE IF NOT EXISTS campaign_entities (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT REFERENCES campaigns(id),
+    name TEXT,
+    entity_type TEXT,
+    description TEXT,
+    first_seen_session TEXT
+);
+
 CREATE TABLE IF NOT EXISTS questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id),
@@ -508,6 +517,68 @@ class Database:
         values = list(updates.values()) + [location_id]
         await self.conn.execute(
             f"UPDATE locations SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    # -- Campaign entities ------------------------------------------
+
+    async def save_entity(
+        self,
+        campaign_id: str,
+        name: str,
+        entity_type: str = "group",
+        description: str = "",
+        first_seen_session: str = "",
+    ) -> None:
+        """Insert a new campaign entity record."""
+        import uuid
+
+        entity_id = str(uuid.uuid4())
+        await self.conn.execute(
+            "INSERT INTO campaign_entities "
+            "(id, campaign_id, name, entity_type, description, first_seen_session) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                entity_id,
+                campaign_id,
+                name,
+                entity_type or "group",
+                description,
+                first_seen_session,
+            ),
+        )
+        await self.conn.commit()
+
+    async def get_entities(self, campaign_id: str) -> list[dict[str, Any]]:
+        """Get all campaign entities for a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_entities WHERE campaign_id = ? ORDER BY name",
+            (campaign_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def entity_exists(self, campaign_id: str, name: str) -> bool:
+        """Check if an entity with the given name already exists in a campaign."""
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM campaign_entities "
+            "WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, name),
+        )
+        return await cursor.fetchone() is not None
+
+    async def update_entity(self, entity_id: str, **fields: Any) -> None:
+        """Update specific fields of a campaign entity record.
+
+        Accepted fields: name, entity_type, description.
+        """
+        allowed = {"name", "entity_type", "description"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [entity_id]
+        await self.conn.execute(
+            f"UPDATE campaign_entities SET {set_clause} WHERE id = ?", values
         )
         await self.conn.commit()
 

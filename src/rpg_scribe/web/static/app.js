@@ -1,4 +1,4 @@
-/* RPG Scribe - frontend WebSocket client and DOM updates */
+﻿/* RPG Scribe - frontend WebSocket client and DOM updates */
 
 (function () {
   "use strict";
@@ -60,6 +60,14 @@
   var addLocationBtn = document.getElementById("add-location-btn");
   var addLocationForm = document.getElementById("add-location-form");
   var addLocationCancel = document.getElementById("add-location-cancel");
+  var entitiesSection = document.getElementById("entities-section");
+  var entitiesHeader = document.getElementById("entities-header");
+  var entitiesBody = document.getElementById("entities-body");
+  var entitiesList = document.getElementById("entities-list");
+  var entitiesCount = document.getElementById("entities-count");
+  var addEntityBtn = document.getElementById("add-entity-btn");
+  var addEntityForm = document.getElementById("add-entity-form");
+  var addEntityCancel = document.getElementById("add-entity-cancel");
   var relationshipsSection = document.getElementById("relationships-section");
   var relationshipsHeader = document.getElementById("relationships-header");
   var relationshipsBody = document.getElementById("relationships-body");
@@ -82,6 +90,7 @@
   var graphFilterPlayers = document.getElementById("graph-filter-players");
   var graphFilterNpcs = document.getElementById("graph-filter-npcs");
   var graphFilterLocations = document.getElementById("graph-filter-locations");
+  var graphFilterEntities = document.getElementById("graph-filter-entities");
   var relationshipNodeTooltip = document.getElementById("relationship-node-tooltip");
 
   // Summary control buttons
@@ -106,7 +115,7 @@
   var browseCampaignsCache = [];
   var relationshipGraphVisible = false;
   var relationshipNodePositions = {};
-  var relationshipGraphFilters = { players: true, npcs: true, locations: true };
+  var relationshipGraphFilters = { players: true, npcs: true, locations: true, entities: true };
   var pinnedNodeTooltipKey = null;
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
@@ -280,6 +289,16 @@
     return "";
   }
 
+  function entityType(entity) {
+    if (entity && typeof entity === "object") return String(entity.entity_type || "group").trim() || "group";
+    return "group";
+  }
+
+  function entityDescription(entity) {
+    if (entity && typeof entity === "object") return String(entity.description || "").trim();
+    return "";
+  }
+
   // Campaign info
 
   function fetchCampaignInfo() {
@@ -294,11 +313,13 @@
             playersSection.classList.add("hidden");
             npcsSection.classList.add("hidden");
             if (locationsSection) locationsSection.classList.add("hidden");
+            if (entitiesSection) entitiesSection.classList.add("hidden");
             if (relationshipsSection) relationshipsSection.classList.add("hidden");
           } else {
             renderPlayers(data.campaign.players || []);
             renderNpcs(data.campaign.npcs || []);
             renderLocations(data.campaign.locations || []);
+            renderEntities(data.campaign.entities || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
           }
           // Show "View all" link and "Generate" button for campaign summaries
@@ -322,6 +343,7 @@
           playersSection.classList.add("hidden");
           npcsSection.classList.add("hidden");
           if (locationsSection) locationsSection.classList.add("hidden");
+          if (entitiesSection) entitiesSection.classList.add("hidden");
           if (relationshipsSection) relationshipsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
@@ -351,6 +373,7 @@
       playersSection.classList.add("hidden");
       npcsSection.classList.add("hidden");
       if (locationsSection) locationsSection.classList.add("hidden");
+      if (entitiesSection) entitiesSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
@@ -711,10 +734,117 @@
     });
   }
 
+  function renderEntities(entities) {
+    if (!entitiesSection) return;
+
+    var items = (entities || []).filter(function (ent) {
+      return !!(ent && ent.name);
+    });
+
+    entitiesSection.classList.remove("hidden");
+    entitiesCount.textContent = "(" + items.length + ")";
+
+    if (!items.length) {
+      entitiesList.innerHTML = '<p class="placeholder">No entities yet.</p>';
+      return;
+    }
+
+    entitiesList.innerHTML = "";
+    items.forEach(function (ent) {
+      var card = document.createElement("div");
+      card.className = "entity-card";
+      card.innerHTML =
+        '<div class="entity-display">' +
+          '<div class="entity-info">' +
+            '<strong class="entity-name">' + escapeHtml(ent.name) + '</strong>' +
+            '<span class="entity-meta">' + escapeHtml(entityType(ent)) + '</span>' +
+          '</div>' +
+          '<span class="entity-desc">' + escapeHtml(entityDescription(ent)) + '</span>' +
+          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden">' +
+          '<div class="edit-row"><label>Name</label>' +
+            '<input type="text" class="edit-entity-name" value="' + escapeAttr(ent.name) + '" required /></div>' +
+          '<div class="edit-row"><label>Type</label>' +
+            '<input type="text" class="edit-entity-type" value="' + escapeAttr(entityType(ent)) + '" /></div>' +
+          '<div class="edit-row"><label>Description</label>' +
+            '<textarea class="edit-entity-desc" rows="2">' + escapeHtml(entityDescription(ent)) + '</textarea></div>' +
+          '<div class="edit-actions">' +
+            '<button type="submit" class="btn-small btn-save">Save</button>' +
+            '<button type="button" class="btn-small btn-cancel">Cancel</button>' +
+          '</div>' +
+        '</form>';
+
+      var editBtn = card.querySelector(".btn-edit-entity");
+      var form = card.querySelector(".entity-edit-form");
+      var cancelBtn = card.querySelector(".btn-cancel");
+
+      if (editBtn && form) {
+        editBtn.addEventListener("click", function () {
+          if (appMode !== "live") return;
+          form.classList.remove("hidden");
+          editBtn.classList.add("hidden");
+          var input = form.querySelector(".edit-entity-name");
+          if (input) input.focus();
+        });
+      }
+
+      if (cancelBtn && form && editBtn) {
+        cancelBtn.addEventListener("click", function () {
+          form.classList.add("hidden");
+          editBtn.classList.remove("hidden");
+        });
+      }
+
+      if (form) {
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          if (appMode !== "live") return;
+
+          var reqBody = {
+            old_name: ent.name || "",
+            name: ((form.querySelector(".edit-entity-name") || {}).value || "").trim(),
+            entity_type: ((form.querySelector(".edit-entity-type") || {}).value || "").trim(),
+            description: ((form.querySelector(".edit-entity-desc") || {}).value || "").trim(),
+          };
+          if (!reqBody.name) return;
+          if (!reqBody.entity_type) reqBody.entity_type = "group";
+
+          var saveBtn = form.querySelector(".btn-save");
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Saving...";
+
+          fetch("/api/campaigns/" + activeCampaignId + "/entities/" + ent.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) { fetchCampaignInfo(); }
+              else { alert("Error: " + (data.error || "Unknown error")); }
+            })
+            .catch(function () { alert("Failed to update entity."); })
+            .finally(function () {
+              saveBtn.disabled = false;
+              saveBtn.textContent = "Save";
+            });
+        });
+      }
+
+      if (appMode !== "live") {
+        if (editBtn) editBtn.classList.add("hidden");
+      }
+
+      entitiesList.appendChild(card);
+    });
+  }
+
   function normalizeEntityKey(key) {
     var raw = (key || "").trim();
     if (!raw) return "";
     if (raw.indexOf("location:") === 0) return "loc:" + raw.slice("location:".length);
+    if (raw.indexOf("entity:") === 0) return "ent:" + raw.slice("entity:".length);
     return raw;
   }
   function entityTypeFromKey(key) {
@@ -723,17 +853,19 @@
     if (key.indexOf("player:") === 0) return "player";
     if (key.indexOf("npc:") === 0) return "npc";
     if (key.indexOf("loc:") === 0 || key.indexOf("location:") === 0) return "location";
+    if (key.indexOf("ent:") === 0 || key.indexOf("entity:") === 0) return "entity";
     return "unknown";
   }
 
   function buildRelationshipEntities(campaign) {
-    var entities = [];
+    var allEntities = [];
     var players = campaign.players || [];
     var npcs = campaign.npcs || [];
     var locations = campaign.locations || [];
+    var campaignEntities = campaign.entities || [];
 
     players.forEach(function (p) {
-      entities.push({
+      allEntities.push({
         key: "player:" + (p.discord_id || ""),
         label: "Player: " + (p.character_name || p.discord_name || p.discord_id || "?"),
         kind: "player",
@@ -742,7 +874,7 @@
     });
 
     npcs.forEach(function (n) {
-      entities.push({
+      allEntities.push({
         key: "npc:" + (n.name || ""),
         label: "NPC: " + (n.name || "?"),
         kind: "npc",
@@ -753,7 +885,7 @@
     locations.forEach(function (loc) {
       var name = locationName(loc);
       if (!name) return;
-      entities.push({
+      allEntities.push({
         key: "loc:" + name,
         label: "Location: " + name,
         kind: "location",
@@ -761,7 +893,17 @@
       });
     });
 
-    return entities.filter(function (e) { return !!e.key && !e.key.endsWith(":"); });
+    campaignEntities.forEach(function (ent) {
+      if (!ent || !ent.name) return;
+      allEntities.push({
+        key: "ent:" + ent.name,
+        label: "Entity (" + entityType(ent) + "): " + ent.name,
+        kind: "entity",
+        description: entityDescription(ent),
+      });
+    });
+
+    return allEntities.filter(function (e) { return !!e.key && !e.key.endsWith(":"); });
   }
 
   function entityDetailsFromKey(campaign, key) {
@@ -828,6 +970,7 @@
     if (kind === "player") return !!relationshipGraphFilters.players;
     if (kind === "npc") return !!relationshipGraphFilters.npcs;
     if (kind === "location") return !!relationshipGraphFilters.locations;
+    if (kind === "entity") return !!relationshipGraphFilters.entities;
     return true;
   }
 
@@ -835,6 +978,7 @@
     if (kind === "player") return "#1f3b5a";
     if (kind === "npc") return "#3f3f46";
     if (kind === "location") return "#2d4f3a";
+    if (kind === "entity") return "#5b3a1f";
     return "#374151";
   }
 
@@ -1177,12 +1321,14 @@
     relationshipGraphFilters.players = !graphFilterPlayers || !!graphFilterPlayers.checked;
     relationshipGraphFilters.npcs = !graphFilterNpcs || !!graphFilterNpcs.checked;
     relationshipGraphFilters.locations = !graphFilterLocations || !!graphFilterLocations.checked;
+    relationshipGraphFilters.entities = !graphFilterEntities || !!graphFilterEntities.checked;
     renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
   }
 
   if (graphFilterPlayers) graphFilterPlayers.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterNpcs) graphFilterNpcs.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterLocations) graphFilterLocations.addEventListener("change", onGraphFiltersChanged);
+  if (graphFilterEntities) graphFilterEntities.addEventListener("change", onGraphFiltersChanged);
   if (relSourceSearch) {
     relSourceSearch.addEventListener("input", function () {
       filterRelationshipEntityOptions(relSourceSelect, relSourceSearch.value);
@@ -1211,6 +1357,12 @@
     locationsHeader.addEventListener("click", function () {
       locationsBody.classList.toggle("collapsed");
       locationsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+    });
+  }
+  if (entitiesHeader) {
+    entitiesHeader.addEventListener("click", function () {
+      entitiesBody.classList.toggle("collapsed");
+      entitiesHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
     });
   }
   if (relationshipsHeader) {
@@ -1265,6 +1417,67 @@
           }
         })
         .catch(function () { alert("Failed to add location."); })
+        .finally(function () {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+      });
+    });
+  }
+
+  // Add Entity form
+  if (addEntityBtn) {
+    addEntityBtn.addEventListener("click", function () {
+      addEntityBtn.classList.add("hidden");
+      addEntityForm.classList.remove("hidden");
+      var input = document.getElementById("new-entity-name");
+      if (input) input.focus();
+    });
+  }
+  if (addEntityCancel) {
+    addEntityCancel.addEventListener("click", function () {
+      addEntityForm.classList.add("hidden");
+      addEntityBtn.classList.remove("hidden");
+    });
+  }
+  if (addEntityForm) {
+    addEntityForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!activeCampaignId || appMode !== "live") return;
+
+      var nameInput = document.getElementById("new-entity-name");
+      var typeInput = document.getElementById("new-entity-type");
+      var descInput = document.getElementById("new-entity-desc");
+      var reqBody = {
+        name: nameInput ? nameInput.value.trim() : "",
+        entity_type: typeInput ? typeInput.value.trim() : "group",
+        description: descInput ? descInput.value.trim() : "",
+      };
+      if (!reqBody.name) return;
+      if (!reqBody.entity_type) reqBody.entity_type = "group";
+
+      var saveBtn = addEntityForm.querySelector(".btn-save");
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+
+      fetch("/api/campaigns/" + activeCampaignId + "/entities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            if (nameInput) nameInput.value = "";
+            if (typeInput) typeInput.value = "group";
+            if (descInput) descInput.value = "";
+            addEntityForm.classList.add("hidden");
+            addEntityBtn.classList.remove("hidden");
+            fetchCampaignInfo();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to add entity."); })
         .finally(function () {
           saveBtn.disabled = false;
           saveBtn.textContent = "Save";
@@ -1493,9 +1706,11 @@
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
       if (addNpcBtn) addNpcBtn.classList.add("hidden");
       if (addLocationBtn) addLocationBtn.classList.add("hidden");
+      if (addEntityBtn) addEntityBtn.classList.add("hidden");
       if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
       if (addNpcForm) addNpcForm.classList.add("hidden");
       if (addLocationForm) addLocationForm.classList.add("hidden");
+      if (addEntityForm) addEntityForm.classList.add("hidden");
       if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
       fetchBrowseCampaigns();
     } else {
@@ -1506,6 +1721,7 @@
       fetchCampaignInfo();
       if (addNpcBtn) addNpcBtn.classList.remove("hidden");
       if (addLocationBtn) addLocationBtn.classList.remove("hidden");
+      if (addEntityBtn) addEntityBtn.classList.remove("hidden");
       if (addRelationshipBtn) addRelationshipBtn.classList.remove("hidden");
       fetchSessionList();
       pollQuestions();
@@ -1580,6 +1796,7 @@
       playersSection.classList.add("hidden");
       npcsSection.classList.add("hidden");
       if (locationsSection) locationsSection.classList.add("hidden");
+      if (entitiesSection) entitiesSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
@@ -1600,12 +1817,15 @@
         renderPlayers(campaign.players || []);
         renderNpcs(campaign.npcs || []);
         renderLocations(campaign.locations || []);
+        renderEntities(campaign.entities || []);
         renderRelationships(campaign.relationships || [], campaign);
         addNpcBtn.classList.add("hidden");
         if (addLocationBtn) addLocationBtn.classList.add("hidden");
+        if (addEntityBtn) addEntityBtn.classList.add("hidden");
         addRelationshipBtn.classList.add("hidden");
         addNpcForm.classList.add("hidden");
         if (addLocationForm) addLocationForm.classList.add("hidden");
+        if (addEntityForm) addEntityForm.classList.add("hidden");
         addRelationshipForm.classList.add("hidden");
         renderBrowseCampaignList(browseCampaignsCache);
         fetchSessionList();
@@ -1956,7 +2176,7 @@
       if (!campaignId) return;
       var originalText = generateCampaignSummaryBtn.textContent;
       generateCampaignSummaryBtn.disabled = true;
-      generateCampaignSummaryBtn.textContent = "Generating…";
+      generateCampaignSummaryBtn.textContent = "Generatingâ€¦";
       fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
         method: "POST",
       })
@@ -1997,4 +2217,5 @@
 
   setMode("live");
 })();
+
 
