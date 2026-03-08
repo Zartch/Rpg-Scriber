@@ -66,6 +66,18 @@ class SummaryRefreshRequestEvent:
 
 
 @dataclass(frozen=True)
+class EntitiesUpdatedEvent:
+    """Emitted when new NPCs, locations or relationships are discovered via extraction."""
+
+    campaign_id: str
+    session_id: str
+    new_npcs: tuple[str, ...]         # Names of newly-saved NPCs
+    new_locations: tuple[str, ...]    # Names of newly-saved locations
+    new_relationships: tuple[str, ...]  # "source -> target: type" labels
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
 class SystemStatusEvent:
     """System status for visualization."""
 

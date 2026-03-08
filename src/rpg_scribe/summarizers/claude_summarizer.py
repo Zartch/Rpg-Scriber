@@ -1,4 +1,4 @@
-﻿"""Claude-based summarizer using the Anthropic API."""
+"""Claude-based summarizer using the Anthropic API."""
 
 from __future__ import annotations
 
@@ -10,8 +10,15 @@ import time
 
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import SystemStatusEvent, TranscriptionEvent
-from rpg_scribe.core.models import CampaignContext, SummarizerConfig
+from rpg_scribe.core.events import EntitiesUpdatedEvent, SystemStatusEvent, TranscriptionEvent
+from rpg_scribe.core.models import (
+    CampaignContext,
+    CharacterRelationshipInfo,
+    EntityInfo,
+    LocationInfo,
+    NPCInfo,
+    SummarizerConfig,
+)
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
 
 logger = logging.getLogger(__name__)
@@ -191,10 +198,15 @@ texto adicional antes o después:
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
 "locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
 "entities": [{{"name": "Nombre de la entidad", "entity_type": "clan|corporacion|faccion|grupo", "description": "Breve descripción"}}], \
-"relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", "target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", "relation_type": "aliado de|enemigo de|miembro de...", "category": "general|politica|familiar|social", "notes": "opcional"}}]}}
+"relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
+"target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
+"relation_type": "aliado de|enemigo de|miembro de...", \
+"category": "general|politica|familiar|social", "notes": "opcional"}}]}}
 
 Si no hay nuevos elementos, devuelve listas vacías.
 """
+
+
 
 
 class ClaudeSummarizer(BaseSummarizer):
@@ -219,6 +231,7 @@ class ClaudeSummarizer(BaseSummarizer):
         self._client = client
         self._database = database
         self._update_lock = asyncio.Lock()
+        self._extraction_counter: int = 0  # Count of _update_summary() calls for periodic extraction
 
     # ------------------------------------------------------------------
     # Lazy client
@@ -460,6 +473,15 @@ class ClaudeSummarizer(BaseSummarizer):
                     "Session summary updated (%d transcriptions processed)",
                     len(entries),
                 )
+
+                # Periodic entity extraction (non-blocking background task)
+                self._extraction_counter += 1
+                n = self.config.extraction_every_n_updates
+                if n > 0 and self._extraction_counter % n == 0:
+                    asyncio.create_task(
+                        self._extract_entities(),
+                        name=f"entity-extraction-{self._session_id}-{self._extraction_counter}",
+                    )
             except Exception as exc:
                 # Put entries back so they aren't lost
                 self._pending = entries + self._pending
@@ -672,7 +694,8 @@ class ClaudeSummarizer(BaseSummarizer):
         await self._publish_summary("final")
 
         # Extract structured entities/relationships from the final summary
-        await self._extract_entities_and_relationships()
+        await self._extract_entities()
+
 
         logger.info("Session finalized")
         return self._session_summary
@@ -918,7 +941,9 @@ class ClaudeSummarizer(BaseSummarizer):
         return result
 
     # ------------------------------------------------------------------
-    # Structured extraction
+    # Structured entity extraction
+    # ------------------------------------------------------------------
+
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -928,7 +953,6 @@ class ClaudeSummarizer(BaseSummarizer):
         Returns a dict with 'npcs', 'locations', 'entities', 'relationships'
         lists. Missing or invalid lists are normalized to empty lists.
         """
-        # Try to find JSON in the response (the LLM may add surrounding text)
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
             return {"npcs": [], "locations": [], "entities": [], "relationships": []}
@@ -937,7 +961,6 @@ class ClaudeSummarizer(BaseSummarizer):
         except (json.JSONDecodeError, ValueError):
             return {"npcs": [], "locations": [], "entities": [], "relationships": []}
 
-        # Validate structure
         npcs = data.get("npcs", [])
         locations = data.get("locations", [])
         entities = data.get("entities", [])
@@ -958,11 +981,33 @@ class ClaudeSummarizer(BaseSummarizer):
             "relationships": relationships,
         }
 
-    async def _extract_entities_and_relationships(self) -> None:
-        """Extract and save NPCs, locations, entities and relationships."""
-        if not self._database or not self._session_summary:
-            return
+    async def extract_entities_from_summary(
+        self,
+        session_id: str,
+        session_summary: str,
+    ) -> dict[str, list[str]]:
+        """Extract and persist new NPCs, locations, entities and relationships.
 
+        Public interface usable both during live sessions and for retroactive
+        processing of historical sessions. Updates the in-memory campaign
+        context after saving so subsequent system prompts include new entities.
+
+        Returns:
+            dict with 'new_npcs', 'new_locations', 'new_entities', 'new_relationships'.
+        """
+        results: dict[str, list[str]] = {
+            "new_npcs": [],
+            "new_locations": [],
+            "new_entities": [],
+            "new_relationships": [],
+        }
+
+        if not self._database or not session_summary:
+            return results
+        if self.campaign.is_generic:
+            return results
+
+        # Build known-context blocks for the prompt (dedup layer 1: LLM skips known)
         known_npcs_lines = [
             f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
         ] or ["(ninguno)"]
@@ -984,7 +1029,7 @@ class ClaudeSummarizer(BaseSummarizer):
         ] or ["(ninguna)"]
 
         user_msg = EXTRACTION_USER.format(
-            session_summary=self._session_summary,
+            session_summary=session_summary,
             known_npcs="\n".join(known_npcs_lines),
             known_locations="\n".join(known_locations_lines),
             known_entities="\n".join(known_entities_lines),
@@ -999,7 +1044,7 @@ class ClaudeSummarizer(BaseSummarizer):
             )
             extracted = self._parse_extraction_response(result)
 
-            new_npcs = 0
+            # ── NPCs ───────────────────────────────────────────────
             for npc in extracted["npcs"]:
                 name = npc.get("name", "").strip()
                 description = npc.get("description", "").strip()
@@ -1011,11 +1056,12 @@ class ClaudeSummarizer(BaseSummarizer):
                     campaign_id=self.campaign.campaign_id,
                     name=name,
                     description=description,
-                    first_seen_session=self._session_id,
+                    first_seen_session=session_id,
                 )
-                new_npcs += 1
+                self.campaign.known_npcs.append(NPCInfo(name=name, description=description))
+                results["new_npcs"].append(name)
 
-            new_locations = 0
+            # ── Locations ──────────────────────────────────────────
             for loc in extracted["locations"]:
                 name = loc.get("name", "").strip()
                 description = loc.get("description", "").strip()
@@ -1027,11 +1073,12 @@ class ClaudeSummarizer(BaseSummarizer):
                     campaign_id=self.campaign.campaign_id,
                     name=name,
                     description=description,
-                    first_seen_session=self._session_id,
+                    first_seen_session=session_id,
                 )
-                new_locations += 1
+                self.campaign.locations.append(LocationInfo(name=name, description=description))
+                results["new_locations"].append(name)
 
-            new_entities = 0
+            # ── Entities ───────────────────────────────────────────
             for entity in extracted["entities"]:
                 name = str(entity.get("name", "")).strip()
                 entity_type = str(entity.get("entity_type", "group") or "group").strip() or "group"
@@ -1045,10 +1092,14 @@ class ClaudeSummarizer(BaseSummarizer):
                     name=name,
                     entity_type=entity_type,
                     description=description,
-                    first_seen_session=self._session_id,
+                    first_seen_session=session_id,
                 )
-                new_entities += 1
+                self.campaign.entities.append(
+                    EntityInfo(name=name, entity_type=entity_type, description=description)
+                )
+                results["new_entities"].append(name)
 
+            # ── Build relation seed map (all known + newly saved) ──
             relation_seed_map: dict[str, str] = {}
             for p in self.campaign.players:
                 if p.discord_id:
@@ -1059,18 +1110,6 @@ class ClaudeSummarizer(BaseSummarizer):
                 relation_seed_map[loc.name.strip().casefold()] = f"loc:{loc.name}"
             for ent in self.campaign.entities:
                 relation_seed_map[ent.name.strip().casefold()] = f"ent:{ent.name}"
-            for npc in extracted["npcs"]:
-                name = str(npc.get("name", "")).strip()
-                if name:
-                    relation_seed_map[name.casefold()] = f"npc:{name}"
-            for loc in extracted["locations"]:
-                name = str(loc.get("name", "")).strip()
-                if name:
-                    relation_seed_map[name.casefold()] = f"loc:{name}"
-            for ent in extracted["entities"]:
-                name = str(ent.get("name", "")).strip()
-                if name:
-                    relation_seed_map[name.casefold()] = f"ent:{name}"
 
             def _resolve_relation_key(raw_key: str, fallback_name: str = "") -> str:
                 candidate = str(raw_key or "").strip()
@@ -1086,7 +1125,7 @@ class ClaudeSummarizer(BaseSummarizer):
                     return relation_seed_map.get(candidate.casefold(), "")
                 return ""
 
-            new_relationships = 0
+            # ── Relationships ──────────────────────────────────────
             for rel in extracted["relationships"]:
                 source_key = _resolve_relation_key(
                     str(rel.get("source_key", "")).strip(),
@@ -1110,16 +1149,36 @@ class ClaudeSummarizer(BaseSummarizer):
                         notes=notes,
                         category=category,
                     )
-                    new_relationships += 1
+                    results["new_relationships"].append(
+                        f"{source_key} -> {target_key}: {relation_type}"
+                    )
                 except Exception:
                     continue
 
             logger.info(
-                "Extracted %d new NPC(s), %d location(s), %d entity(s), %d relationship(s)",
-                new_npcs,
-                new_locations,
-                new_entities,
-                new_relationships,
+                "Extraction: %d new NPC(s), %d new location(s), %d new entity(s), %d new relationship(s)",
+                len(results["new_npcs"]),
+                len(results["new_locations"]),
+                len(results["new_entities"]),
+                len(results["new_relationships"]),
             )
         except Exception as exc:
-            logger.error("Structured extraction failed: %s", exc)
+            logger.error("Entity extraction failed: %s", exc)
+
+        return results
+
+    async def _extract_entities(self) -> None:
+        """Run entity extraction for the current session and publish EntitiesUpdatedEvent."""
+        results = await self.extract_entities_from_summary(
+            self._session_id, self._session_summary
+        )
+        if any(results.values()):
+            await self.event_bus.publish(
+                EntitiesUpdatedEvent(
+                    campaign_id=self.campaign.campaign_id,
+                    session_id=self._session_id,
+                    new_npcs=tuple(results["new_npcs"]),
+                    new_locations=tuple(results["new_locations"]),
+                    new_relationships=tuple(results["new_relationships"]),
+                )
+            )

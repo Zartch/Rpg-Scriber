@@ -43,6 +43,8 @@ max_tokens = 4096
 api_timeout_s = 60.0
 max_retries = 3
 retry_base_delay_s = 1.0
+# Entity extraction frequency: run every N summary updates (0 = only at session finalization)
+extraction_every_n_updates = 0
 
 [web]
 host = "127.0.0.1"

@@ -1,6 +1,3 @@
-# Ejemplo de configuracion de campana para RPG Scribe
-# Copia este archivo y adaptalo a tu campana.
-
 [campaign]
 id = "la-marca-del-este"
 name = "La Marca del Este"
@@ -12,7 +9,15 @@ enfrentando peligros en mazmorras antiguas y protegiendose de las amenazas
 que acechan en la oscuridad.
 """
 campaign_summary = ""
-locations = ["Castillo de Dorado", "Bosque Negro", "Minas de Hierro"]
+
+[[campaign.locations]]
+name = "Castillo de Dorado"
+
+[[campaign.locations]]
+name = "Bosque Negro"
+
+[[campaign.locations]]
+name = "Minas de Hierro"
 
 [campaign.dm]
 discord_id = "123456789012345678"
@@ -42,6 +47,10 @@ description = "Gobernante del Castillo de Dorado, patron de los aventureros"
 [[campaign.npcs]]
 name = "Moira la Sabia"
 description = "Herbolaria y sanadora del pueblo, fuente de rumores"
+
+[[campaign.entities]]
+name = "Arasaka"
+entity_type = "Corporation"
 
 [campaign.custom_instructions]
 text = """

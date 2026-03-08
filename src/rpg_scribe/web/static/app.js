@@ -98,6 +98,7 @@
 
   // Summary control buttons
   var refreshSummaryBtn = document.getElementById("refresh-summary-btn");
+  var extractEntitiesBtn = document.getElementById("extract-entities-btn");
   var finalizeBtn = document.getElementById("finalize-btn");
 
   // State
@@ -171,6 +172,10 @@
         break;
       case "status":
         updateStatus(msg.data);
+        break;
+      case "entities_updated":
+        // Refresh campaign data so NPC/location/relationship panels stay current
+        fetchCampaignInfo();
         break;
     }
   }
@@ -2807,6 +2812,7 @@
     currentHistoricalSessionId = sessionId;
     if (appMode === "live") backToLiveBtn.classList.remove("hidden");
     renderSessionLogLink(sessionId);
+    updateFinalizeButton();
 
     Promise.all([
       fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
@@ -2838,6 +2844,7 @@
     currentHistoricalSessionId = null;
     loadedLiveSessionId = null;
     backToLiveBtn.classList.add("hidden");
+    updateFinalizeButton();
 
     if (sessionLogLinkEl) {
       sessionLogLinkEl.classList.add("hidden");
@@ -2901,6 +2908,16 @@
         refreshSummaryBtn.classList.add("hidden");
       }
     }
+
+    // Extract entities button: also visible when viewing a historical session
+    var showExtract = show || !!(currentHistoricalSessionId);
+    if (extractEntitiesBtn) {
+      if (showExtract) {
+        extractEntitiesBtn.classList.remove("hidden");
+      } else {
+        extractEntitiesBtn.classList.add("hidden");
+      }
+    }
   }
 
   if (refreshSummaryBtn) {
@@ -2926,6 +2943,40 @@
         .finally(function () {
           refreshSummaryBtn.disabled = false;
           refreshSummaryBtn.textContent = "Update Summary";
+        });
+    });
+  }
+
+  if (extractEntitiesBtn) {
+    extractEntitiesBtn.addEventListener("click", function () {
+      var sessionId = activeSessionId || (viewingHistorical ? currentHistoricalSessionId : null);
+      if (!sessionId) return;
+
+      extractEntitiesBtn.disabled = true;
+      extractEntitiesBtn.textContent = "Extracting...";
+
+      fetch("/api/sessions/" + sessionId + "/extract-entities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            var total = (data.new_npcs || []).length + (data.new_locations || []).length + (data.new_relationships || []).length;
+            extractEntitiesBtn.textContent = total > 0 ? ("+" + total + " found!") : "Nothing new";
+            fetchCampaignInfo();
+            setTimeout(function () {
+              extractEntitiesBtn.textContent = "Extract Entities";
+            }, 3000);
+          } else {
+            alert("Extraction failed: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () {
+          alert("Failed to run entity extraction.");
+        })
+        .finally(function () {
+          extractEntitiesBtn.disabled = false;
         });
     });
   }

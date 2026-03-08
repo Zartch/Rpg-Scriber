@@ -183,4 +183,7 @@ class SummarizerConfig:
     # Batch finalization - max chars per API call (~4 chars/token)
     max_input_chars: int = 600_000  # ~150K tokens, safe for Sonnet 200K
 
+    # Entity extraction frequency: run every N summary updates (0 = only at finalization)
+    extraction_every_n_updates: int = 3
+
 

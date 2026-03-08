@@ -1389,6 +1389,22 @@ class Database:
             (campaign_id, source_key, target_key, type_key),
         )
         await self._recompute_relationship_type_usage(campaign_id, type_key)
+
+    async def relationship_exists(
+        self,
+        campaign_id: str,
+        source_key: str,
+        target_key: str,
+        type_key: str,
+    ) -> bool:
+        """Check if a specific typed relationship already exists."""
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM character_relationships "
+            "WHERE campaign_id = ? AND source_key = ? AND target_key = ? AND type_key = ? LIMIT 1",
+            (campaign_id, source_key, target_key, type_key),
+        )
+        return await cursor.fetchone() is not None
+
     async def get_character_relationships(self, campaign_id: str) -> list[dict[str, Any]]:
         """List character relationships for a campaign."""
         cursor = await self.conn.execute(
