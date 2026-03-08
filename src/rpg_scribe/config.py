@@ -21,6 +21,7 @@ else:
 from rpg_scribe.core.models import (
     CharacterRelationshipInfo,
     CampaignContext,
+    EntityInfo,
     ListenerConfig,
     LocationInfo,
     NPCInfo,
@@ -154,6 +155,21 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
                 LocationInfo(name=loc["name"], description=loc.get("description", ""))
             )
 
+    entities: list[EntityInfo] = []
+    for entity in campaign_data.get("entities", []):
+        if not isinstance(entity, dict):
+            continue
+        name = str(entity.get("name", "")).strip()
+        if not name:
+            continue
+        entities.append(
+            EntityInfo(
+                name=name,
+                entity_type=str(entity.get("entity_type", "group") or "group").strip() or "group",
+                description=str(entity.get("description", "")).strip(),
+            )
+        )
+
     # Relationship types (thesaurus)
     relation_types: list[RelationshipTypeInfo] = []
     for rt in campaign_data.get("relationship_types", []):
@@ -208,6 +224,7 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
         description=campaign_data.get("description", "").strip(),
         players=players,
         known_npcs=npcs,
+        entities=entities,
         relation_types=relation_types,
         relationships=relationships,
         locations=locations,
@@ -323,7 +340,7 @@ def campaign_to_toml(campaign: CampaignContext) -> str:
         lines.append("[[campaign.locations]]")
         lines.append(f'name = "{_escape_toml_string(loc.name)}"')
         if loc.description.strip():
-            lines.append(f'description = "{_escape_toml_string(loc.description)}"')
+            lines.append(_render_toml_text_field("description", loc.description))
 
     if campaign.dm_speaker_id:
         lines.append("")
@@ -337,16 +354,26 @@ def campaign_to_toml(campaign: CampaignContext) -> str:
         lines.append(f'discord_name = "{_escape_toml_string(player.discord_name)}"')
         lines.append(f'character_name = "{_escape_toml_string(player.character_name)}"')
         if player.character_description.strip():
-            lines.append(
-                f'character_description = "{_escape_toml_string(player.character_description)}"'
-            )
+            lines.append(_render_toml_text_field("character_description", player.character_description))
 
     for npc in campaign.known_npcs:
         lines.append("")
         lines.append("[[campaign.npcs]]")
         lines.append(f'name = "{_escape_toml_string(npc.name)}"')
         if npc.description.strip():
-            lines.append(f'description = "{_escape_toml_string(npc.description)}"')
+            lines.append(_render_toml_text_field("description", npc.description))
+
+    for entity in campaign.entities:
+        if not entity.name.strip():
+            continue
+        lines.append("")
+        lines.append("[[campaign.entities]]")
+        lines.append(f'name = "{_escape_toml_string(entity.name)}"')
+        lines.append(
+            f'entity_type = "{_escape_toml_string(entity.entity_type.strip() or "group")}"'
+        )
+        if entity.description.strip():
+            lines.append(_render_toml_text_field("description", entity.description))
 
     for relation_type in campaign.relation_types:
         lines.append("")

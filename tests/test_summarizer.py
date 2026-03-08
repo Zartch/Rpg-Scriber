@@ -1,4 +1,4 @@
-"""Tests for the Summarizer module (Phase 3)."""
+﻿"""Tests for the Summarizer module (Phase 3)."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _make_campaign(**overrides) -> CampaignContext:
             ),
         ],
         known_npcs=[
-            NPCInfo(name="Tabernero", description="Dueño de la taberna"),
+            NPCInfo(name="Tabernero", description="DueÃ±o de la taberna"),
         ],
         speaker_map={"user1": "Aelar", "user2": "Brog"},
         dm_speaker_id="dm1",
@@ -367,12 +367,12 @@ class TestClaudeSummarizer:
 
     # --- Format transcriptions ---
 
-    def test_format_transcriptions(self):
+    def test_format_transcriptions(self, summarizer):
         entries = [
             TranscriptionEntry("u1", "Aelar", "I open the door.", 1.0),
             TranscriptionEntry("u2", "Brog", "I follow behind.", 2.0),
         ]
-        result = ClaudeSummarizer._format_transcriptions(entries)
+        result = summarizer._format_transcriptions(entries)
         assert "[Aelar]: I open the door." in result
         assert "[Brog]: I follow behind." in result
 
@@ -570,7 +570,7 @@ class TestClaudeSummarizer:
 
     @pytest.mark.asyncio
     async def test_full_flow_via_event_bus(self, summarizer, bus, mock_client):
-        """End-to-end: publish TranscriptionEvents → trigger update → SummaryUpdateEvent."""
+        """End-to-end: publish TranscriptionEvents â†’ trigger update â†’ SummaryUpdateEvent."""
         summarizer.config.max_pending_transcriptions = 3
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response("Integrated summary")
@@ -622,32 +622,32 @@ class TestClaudeSummarizer:
     # --- Question extraction ---
 
     def test_extract_questions_single(self):
-        text = "El grupo entró en la taberna. [PREGUNTA: ¿Quién es el líder del grupo?] Pidieron cerveza."
+        text = "El grupo entrÃ³ en la taberna. [PREGUNTA: Â¿QuiÃ©n es el lÃ­der del grupo?] Pidieron cerveza."
         cleaned, questions = ClaudeSummarizer._extract_questions(text)
-        assert questions == ["¿Quién es el líder del grupo?"]
+        assert questions == ["Â¿QuiÃ©n es el lÃ­der del grupo?"]
         assert "[PREGUNTA:" not in cleaned
         assert "taberna" in cleaned
         assert "cerveza" in cleaned
 
     def test_extract_questions_multiple(self):
         text = (
-            "Resumen. [PREGUNTA: ¿Aelar habló como jugador o personaje?] "
-            "Más texto. [PREGUNTA: ¿El tabernero es amigo o enemigo?]"
+            "Resumen. [PREGUNTA: Â¿Aelar hablÃ³ como jugador o personaje?] "
+            "MÃ¡s texto. [PREGUNTA: Â¿El tabernero es amigo o enemigo?]"
         )
         cleaned, questions = ClaudeSummarizer._extract_questions(text)
         assert len(questions) == 2
-        assert "¿Aelar habló como jugador o personaje?" in questions
-        assert "¿El tabernero es amigo o enemigo?" in questions
+        assert "Â¿Aelar hablÃ³ como jugador o personaje?" in questions
+        assert "Â¿El tabernero es amigo o enemigo?" in questions
         assert "[PREGUNTA:" not in cleaned
 
     def test_extract_questions_none(self):
-        text = "El grupo descansó en la posada sin incidentes."
+        text = "El grupo descansÃ³ en la posada sin incidentes."
         cleaned, questions = ClaudeSummarizer._extract_questions(text)
         assert questions == []
         assert cleaned == text
 
     def test_extract_questions_cleans_extra_whitespace(self):
-        text = "Inicio.\n\n[PREGUNTA: ¿Algo?]\n\n\n\nFin."
+        text = "Inicio.\n\n[PREGUNTA: Â¿Algo?]\n\n\n\nFin."
         cleaned, _ = ClaudeSummarizer._extract_questions(text)
         assert "\n\n\n" not in cleaned
 
@@ -664,7 +664,7 @@ class TestClaudeSummarizer:
 
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response(
-                "Resumen actualizado. [PREGUNTA: ¿Quién habló?] Fin."
+                "Resumen actualizado. [PREGUNTA: Â¿QuiÃ©n hablÃ³?] Fin."
             )
         )
 
@@ -674,7 +674,7 @@ class TestClaudeSummarizer:
         )
         await summarizer._update_summary()
 
-        db.save_question.assert_called_once_with("session-1", "¿Quién habló?")
+        db.save_question.assert_called_once_with("session-1", "Â¿QuiÃ©n hablÃ³?")
 
     @pytest.mark.asyncio
     async def test_summary_clean_after_question_extraction(
@@ -691,7 +691,7 @@ class TestClaudeSummarizer:
 
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response(
-                "El grupo viajó al norte. [PREGUNTA: ¿Era de día o de noche?] Llegaron al bosque."
+                "El grupo viajÃ³ al norte. [PREGUNTA: Â¿Era de dÃ­a o de noche?] Llegaron al bosque."
             )
         )
 
@@ -717,7 +717,7 @@ class TestClaudeSummarizer:
         db.save_question = AsyncMock(return_value=1)
         db.get_answered_unprocessed_questions = AsyncMock(
             return_value=[
-                {"id": 1, "question": "¿Quién es el líder?", "answer": "Aelar es el líder"},
+                {"id": 1, "question": "Â¿QuiÃ©n es el lÃ­der?", "answer": "Aelar es el lÃ­der"},
             ]
         )
         db.mark_questions_processed = AsyncMock()
@@ -740,8 +740,8 @@ class TestClaudeSummarizer:
         call_kwargs = mock_client.messages.create.call_args.kwargs
         user_content = call_kwargs["messages"][0]["content"]
         assert "RESPUESTAS DEL USUARIO" in user_content
-        assert "¿Quién es el líder?" in user_content
-        assert "Aelar es el líder" in user_content
+        assert "Â¿QuiÃ©n es el lÃ­der?" in user_content
+        assert "Aelar es el lÃ­der" in user_content
 
         # Verify questions were marked as processed
         db.mark_questions_processed.assert_called_once_with([1])
@@ -802,35 +802,39 @@ class TestExtractionParsing:
         assert result["locations"][0]["name"] == "Bosque Oscuro"
 
     def test_parse_empty_lists(self):
-        text = '{"npcs": [], "locations": []}'
+        text = '{"npcs": [], "locations": [], "entities": [], "relationships": []}'
         result = ClaudeSummarizer._parse_extraction_response(text)
         assert result["npcs"] == []
         assert result["locations"] == []
+        assert result["entities"] == []
+        assert result["relationships"] == []
 
     def test_parse_json_with_surrounding_text(self):
-        text = 'Aquí tienes el resultado:\n{"npcs": [{"name": "Elara", "description": "Elfa sanadora"}], "locations": []}\nEspero que sea útil.'
+        text = 'AquÃ­ tienes el resultado:\n{"npcs": [{"name": "Elara", "description": "Elfa sanadora"}], "locations": []}\nEspero que sea Ãºtil.'
         result = ClaudeSummarizer._parse_extraction_response(text)
         assert len(result["npcs"]) == 1
         assert result["npcs"][0]["name"] == "Elara"
 
     def test_parse_invalid_json(self):
-        text = "Esto no es JSON válido"
+        text = "Esto no es JSON vÃ¡lido"
         result = ClaudeSummarizer._parse_extraction_response(text)
-        assert result["npcs"] == []
-        assert result["locations"] == []
-        assert result.get("relationships", []) == []
+        assert result == {"npcs": [], "locations": [], "entities": [], "relationships": []}
 
     def test_parse_malformed_json(self):
         text = '{"npcs": "not a list", "locations": 42}'
         result = ClaudeSummarizer._parse_extraction_response(text)
         assert result["npcs"] == []
         assert result["locations"] == []
+        assert result["entities"] == []
+        assert result["relationships"] == []
 
     def test_parse_missing_keys(self):
         text = '{"other": "data"}'
         result = ClaudeSummarizer._parse_extraction_response(text)
         assert result["npcs"] == []
         assert result["locations"] == []
+        assert result["entities"] == []
+        assert result["relationships"] == []
 
 
 class TestFinalizeSessionWithExtraction:
@@ -867,13 +871,13 @@ class TestFinalizeSessionWithExtraction:
 
         finalize_response = (
             "---SESSION_SUMMARY---\n"
-            "El grupo conoció a Gareth en la taberna.\n\n"
+            "El grupo conociÃ³ a Gareth en la taberna.\n\n"
             "---CAMPAIGN_SUMMARY---\n"
-            "La campaña continúa."
+            "La campaÃ±a continÃºa."
         )
         extraction_response = (
             '{"npcs": [{"name": "Gareth", "description": "Mercader ambulante"}], '
-            '"locations": [{"name": "Cueva del Dragón", "description": "Cueva peligrosa"}]}'
+            '"locations": [{"name": "Cueva del DragÃ³n", "description": "Cueva peligrosa"}]}'
         )
         mock_client.messages.create = AsyncMock(
             side_effect=[
@@ -907,7 +911,7 @@ class TestFinalizeSessionWithExtraction:
         )
 
         finalize_response = (
-            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
         extraction_response = (
             '{"npcs": [{"name": "Tabernero", "description": "Ya conocido"}], "locations": []}'
@@ -934,7 +938,7 @@ class TestFinalizeSessionWithExtraction:
         )
 
         finalize_response = (
-            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response(finalize_response)
@@ -958,7 +962,7 @@ class TestFinalizeSessionWithExtraction:
         )
 
         finalize_response = (
-            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
         mock_client.messages.create = AsyncMock(
             side_effect=[
@@ -989,11 +993,11 @@ class TestFinalizeSessionWithExtraction:
         )
 
         finalize_response = (
-            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaña."
+            "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
         extraction_response = (
             '{"npcs": [{"name": "", "description": "Sin nombre"}, '
-            '{"name": "Valida", "description": "NPC válida"}], "locations": []}'
+            '{"name": "Valida", "description": "NPC vÃ¡lida"}], "locations": []}'
         )
         mock_client.messages.create = AsyncMock(
             side_effect=[
@@ -1009,7 +1013,7 @@ class TestFinalizeSessionWithExtraction:
         db.save_npc.assert_called_once_with(
             campaign_id="test-campaign",
             name="Valida",
-            description="NPC válida",
+            description="NPC vÃ¡lida",
             first_seen_session="session-1",
         )
 
@@ -1172,8 +1176,8 @@ class TestBatchFinalization:
             side_effect=[intermediate_resp, final_resp]
         )
 
-        # Each entry formatted: "[Alice]: AAA...250A\n" ≈ 260 chars
-        # 5 entries ≈ 1300 chars > 1000 minimum → forces multi-batch
+        # Each entry formatted: "[Alice]: AAA...250A\n" â‰ˆ 260 chars
+        # 5 entries â‰ˆ 1300 chars > 1000 minimum â†’ forces multi-batch
         summarizer._pending = [
             TranscriptionEntry("u1", "Alice", "A" * 250, float(i))
             for i in range(5)
@@ -1198,3 +1202,4 @@ def _collect(target: list):
         target.append(event)
 
     return handler
+

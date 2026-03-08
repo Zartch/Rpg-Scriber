@@ -1,4 +1,4 @@
-﻿"""Claude-based summarizer using the Anthropic API."""
+"""Claude-based summarizer using the Anthropic API."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from rpg_scribe.core.events import EntitiesUpdatedEvent, SystemStatusEvent, Tran
 from rpg_scribe.core.models import (
     CampaignContext,
     CharacterRelationshipInfo,
+    EntityInfo,
     LocationInfo,
     NPCInfo,
     SummarizerConfig,
@@ -57,6 +58,9 @@ PNJS CONOCIDOS:
 
 LOCALIZACIONES CONOCIDAS:
 {locations_block}
+
+ENTIDADES CONOCIDAS:
+{entities_block}
 
 RELACIONES CONOCIDAS:
 {relationships_block}
@@ -127,6 +131,9 @@ JUGADORES:
 PNJS CONOCIDOS:
 {npcs_block}
 
+ENTIDADES CONOCIDAS:
+{entities_block}
+
 RELACIONES CONOCIDAS:
 {relationships_block}
 
@@ -165,9 +172,10 @@ PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condens
 
 EXTRACTION_USER = """\
 A partir del siguiente resumen de sesión, extrae:
-1. PNJs nuevos que hayan aparecido
-2. Localizaciones nuevas que hayan aparecido
-3. Relaciones nuevas entre personajes (jugadores, PNJs o localizaciones)
+- PNJs nuevos
+- Localizaciones nuevas
+- Entidades nuevas (clanes, corporaciones, facciones, grupos...)
+- Relaciones nuevas entre entidades de campaña
 
 RESUMEN DE LA SESIÓN:
 {session_summary}
@@ -178,23 +186,27 @@ PNJS YA CONOCIDOS (NO los incluyas de nuevo):
 LOCALIZACIONES YA CONOCIDAS (NO las incluyas de nuevo):
 {known_locations}
 
-RELACIONES YA CONOCIDAS (NO las incluyas de nuevo):
-{known_relationships}
+ENTIDADES YA CONOCIDAS (NO las incluyas de nuevo):
+{known_entities}
 
-PERSONAJES JUGADORES (para referencias de relaciones):
-{player_characters}
+RELACIONES YA CONOCIDAS (NO las repitas):
+{known_relationships}
 
 Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
 texto adicional antes o después:
 
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
 "locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
-"relationships": [{{"source": "Nombre A", "target": "Nombre B", \
-"relation_type": "tipo de relación", "notes": "contexto opcional"}}]}}
+"entities": [{{"name": "Nombre de la entidad", "entity_type": "clan|corporacion|faccion|grupo", "description": "Breve descripción"}}], \
+"relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
+"target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
+"relation_type": "aliado de|enemigo de|miembro de...", \
+"category": "general|politica|familiar|social", "notes": "opcional"}}]}}
 
-Si no hay elementos nuevos de algún tipo, devuelve la lista vacía correspondiente.
-Usa nombres exactos de personajes tal como aparecen en los bloques de contexto.
+Si no hay nuevos elementos, devuelve listas vacías.
 """
+
+
 
 
 class ClaudeSummarizer(BaseSummarizer):
@@ -271,6 +283,12 @@ class ClaudeSummarizer(BaseSummarizer):
             for loc in c.locations
         ] or ["(ninguna conocida)"]
 
+        entities_lines = [
+            f"- {ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            for ent in c.entities
+        ] or ["(ninguna conocida)"]
+
         entity_name_map: dict[str, str] = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
             for p in c.players if p.discord_id
@@ -278,6 +296,14 @@ class ClaudeSummarizer(BaseSummarizer):
         for n in c.known_npcs:
             if n.name:
                 entity_name_map[f"npc:{n.name}"] = n.name
+        for loc in c.locations:
+            if loc.name:
+                entity_name_map[f"loc:{loc.name}"] = loc.name
+                entity_name_map[f"location:{loc.name}"] = loc.name
+        for ent in c.entities:
+            if ent.name:
+                entity_name_map[f"ent:{ent.name}"] = ent.name
+                entity_name_map[f"entity:{ent.name}"] = ent.name
 
         relationships_lines: list[str] = []
         for rel in c.relationships:
@@ -304,6 +330,7 @@ class ClaudeSummarizer(BaseSummarizer):
             dm_name=dm_name,
             npcs_block="\n".join(npcs_lines),
             locations_block="\n".join(locations_lines),
+            entities_block="\n".join(entities_lines),
             relationships_block="\n".join(relationships_lines),
             custom_instructions=custom,
         )
@@ -666,8 +693,9 @@ class ClaudeSummarizer(BaseSummarizer):
 
         await self._publish_summary("final")
 
-        # Extract entities from the final polished summary
+        # Extract structured entities/relationships from the final summary
         await self._extract_entities()
+
 
         logger.info("Session finalized")
         return self._session_summary
@@ -755,6 +783,12 @@ class ClaudeSummarizer(BaseSummarizer):
             "(ninguno conocido)"
         ]
 
+        entities_lines = [
+            f"- {ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            for ent in c.entities
+        ] or ["(ninguna conocida)"]
+
         entity_name_map = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
             for p in c.players if p.discord_id
@@ -762,6 +796,14 @@ class ClaudeSummarizer(BaseSummarizer):
         for n in c.known_npcs:
             if n.name:
                 entity_name_map[f"npc:{n.name}"] = n.name
+        for loc in c.locations:
+            if loc.name:
+                entity_name_map[f"loc:{loc.name}"] = loc.name
+                entity_name_map[f"location:{loc.name}"] = loc.name
+        for ent in c.entities:
+            if ent.name:
+                entity_name_map[f"ent:{ent.name}"] = ent.name
+                entity_name_map[f"entity:{ent.name}"] = ent.name
 
         relationships_lines = []
         for rel in c.relationships:
@@ -783,6 +825,7 @@ class ClaudeSummarizer(BaseSummarizer):
             description=c.description,
             players_block="\n".join(players_lines),
             npcs_block="\n".join(npcs_lines),
+            entities_block="\n".join(entities_lines),
             relationships_block="\n".join(relationships_lines),
             custom_instructions=custom,
         )
@@ -898,70 +941,64 @@ class ClaudeSummarizer(BaseSummarizer):
         return result
 
     # ------------------------------------------------------------------
-    # NPC / location / relationship extraction
+    # Structured entity extraction
+    # ------------------------------------------------------------------
+
     # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_extraction_response(text: str) -> dict:
         """Parse the JSON extraction response from the LLM.
 
-        Returns a dict with 'npcs', 'locations' and 'relationships' lists,
-        or empty lists if parsing fails.
+        Returns a dict with 'npcs', 'locations', 'entities', 'relationships'
+        lists. Missing or invalid lists are normalized to empty lists.
         """
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
-            return {"npcs": [], "locations": [], "relationships": []}
+            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
         try:
             data = json.loads(match.group())
         except (json.JSONDecodeError, ValueError):
-            return {"npcs": [], "locations": [], "relationships": []}
+            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
 
         npcs = data.get("npcs", [])
         locations = data.get("locations", [])
+        entities = data.get("entities", [])
         relationships = data.get("relationships", [])
         if not isinstance(npcs, list):
             npcs = []
         if not isinstance(locations, list):
             locations = []
+        if not isinstance(entities, list):
+            entities = []
         if not isinstance(relationships, list):
             relationships = []
 
-        return {"npcs": npcs, "locations": locations, "relationships": relationships}
-
-    def _build_entity_key_map(self) -> dict[str, str]:
-        """Build a name → entity_key map for resolving Claude's name outputs.
-
-        Lookup is case-insensitive (keys are lowercased).
-        Players map via character_name → player:{discord_id}.
-        NPCs map via name → npc:{name}.
-        """
-        name_to_key: dict[str, str] = {}
-        for npc in self.campaign.known_npcs:
-            if npc.name:
-                name_to_key[npc.name.lower()] = f"npc:{npc.name}"
-        for player in self.campaign.players:
-            display = player.character_name or player.discord_name
-            if display and player.discord_id:
-                name_to_key[display.lower()] = f"player:{player.discord_id}"
-        return name_to_key
+        return {
+            "npcs": npcs,
+            "locations": locations,
+            "entities": entities,
+            "relationships": relationships,
+        }
 
     async def extract_entities_from_summary(
         self,
         session_id: str,
         session_summary: str,
     ) -> dict[str, list[str]]:
-        """Extract and persist new NPCs, locations and relationships from a session summary.
+        """Extract and persist new NPCs, locations, entities and relationships.
 
         Public interface usable both during live sessions and for retroactive
         processing of historical sessions. Updates the in-memory campaign
         context after saving so subsequent system prompts include new entities.
 
         Returns:
-            dict with 'new_npcs', 'new_locations', 'new_relationships' (list of str labels).
+            dict with 'new_npcs', 'new_locations', 'new_entities', 'new_relationships'.
         """
         results: dict[str, list[str]] = {
             "new_npcs": [],
             "new_locations": [],
+            "new_entities": [],
             "new_relationships": [],
         }
 
@@ -970,7 +1007,7 @@ class ClaudeSummarizer(BaseSummarizer):
         if self.campaign.is_generic:
             return results
 
-        # Build known-context blocks for the prompt (dedup layer 1: LLM won't re-extract known things)
+        # Build known-context blocks for the prompt (dedup layer 1: LLM skips known)
         known_npcs_lines = [
             f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
         ] or ["(ninguno)"]
@@ -980,29 +1017,23 @@ class ClaudeSummarizer(BaseSummarizer):
             for loc in self.campaign.locations
         ] or ["(ninguna)"]
 
-        name_to_key = self._build_entity_key_map()
-        key_to_name = {v: k for k, v in name_to_key.items()}
+        known_entities_lines = [
+            f"- ent:{ent.name} [{ent.entity_type}]: {ent.description}"
+            if ent.description else f"- ent:{ent.name} [{ent.entity_type}]"
+            for ent in self.campaign.entities
+        ] or ["(ninguna)"]
 
-        known_rel_lines: list[str] = []
-        for rel in self.campaign.relationships:
-            src = key_to_name.get(rel.source_key, rel.source_key)
-            tgt = key_to_name.get(rel.target_key, rel.target_key)
-            label = rel.relation_type_label or rel.relation_type_key
-            known_rel_lines.append(f"- {src} -> {tgt}: {label}")
-        if not known_rel_lines:
-            known_rel_lines = ["(ninguna)"]
-
-        player_lines = [
-            f"- {p.character_name or p.discord_name} (jugador: {p.discord_name})"
-            for p in self.campaign.players
-        ] or ["(ninguno)"]
+        known_relationships_lines = [
+            f"- {rel.source_key} -> {rel.target_key}: {rel.relation_type_label or rel.relation_type_key}"
+            for rel in self.campaign.relationships
+        ] or ["(ninguna)"]
 
         user_msg = EXTRACTION_USER.format(
             session_summary=session_summary,
             known_npcs="\n".join(known_npcs_lines),
             known_locations="\n".join(known_locations_lines),
-            known_relationships="\n".join(known_rel_lines),
-            player_characters="\n".join(player_lines),
+            known_entities="\n".join(known_entities_lines),
+            known_relationships="\n".join(known_relationships_lines),
         )
 
         try:
@@ -1019,7 +1050,6 @@ class ClaudeSummarizer(BaseSummarizer):
                 description = npc.get("description", "").strip()
                 if not name:
                     continue
-                # Dedup layer 2: DB check
                 if await self._database.npc_exists(self.campaign.campaign_id, name):
                     continue
                 await self._database.save_npc(
@@ -1028,12 +1058,8 @@ class ClaudeSummarizer(BaseSummarizer):
                     description=description,
                     first_seen_session=session_id,
                 )
-                # Fix: update in-memory cache so next system prompt includes this NPC
                 self.campaign.known_npcs.append(NPCInfo(name=name, description=description))
                 results["new_npcs"].append(name)
-
-            # Rebuild key map now that new NPCs are in campaign.known_npcs
-            name_to_key = self._build_entity_key_map()
 
             # ── Locations ──────────────────────────────────────────
             for loc in extracted["locations"]:
@@ -1052,57 +1078,88 @@ class ClaudeSummarizer(BaseSummarizer):
                 self.campaign.locations.append(LocationInfo(name=name, description=description))
                 results["new_locations"].append(name)
 
-            # ── Relationships ──────────────────────────────────────
-            existing_rel_keys = {
-                (r.source_key, r.target_key, r.relation_type_key)
-                for r in self.campaign.relationships
-            }
-            for rel_data in extracted["relationships"]:
-                source_name = rel_data.get("source", "").strip()
-                target_name = rel_data.get("target", "").strip()
-                relation_type = rel_data.get("relation_type", "").strip()
-                notes = rel_data.get("notes", "").strip()
-                if not source_name or not target_name or not relation_type:
+            # ── Entities ───────────────────────────────────────────
+            for entity in extracted["entities"]:
+                name = str(entity.get("name", "")).strip()
+                entity_type = str(entity.get("entity_type", "group") or "group").strip() or "group"
+                description = str(entity.get("description", "")).strip()
+                if not name:
                     continue
-
-                source_key = name_to_key.get(source_name.lower(), f"npc:{source_name}")
-                target_key = name_to_key.get(target_name.lower(), f"npc:{target_name}")
-
-                if source_key == target_key:
-                    continue  # skip self-relationships
-
-                # Dedup layer 2: DB upsert handles conflicts idempotently
-                saved = await self._database.save_character_relationship(
-                    self.campaign.campaign_id,
-                    source_key,
-                    target_key,
-                    relation_type,
-                    notes=notes,
+                if await self._database.entity_exists(self.campaign.campaign_id, name):
+                    continue
+                await self._database.save_entity(
+                    campaign_id=self.campaign.campaign_id,
+                    name=name,
+                    entity_type=entity_type,
+                    description=description,
+                    first_seen_session=session_id,
                 )
-                rel_triple = (
-                    saved["source_key"],
-                    saved["target_key"],
-                    saved["type_key"],
+                self.campaign.entities.append(
+                    EntityInfo(name=name, entity_type=entity_type, description=description)
                 )
-                if rel_triple not in existing_rel_keys:
-                    existing_rel_keys.add(rel_triple)
-                    self.campaign.relationships.append(
-                        CharacterRelationshipInfo(
-                            source_key=saved["source_key"],
-                            target_key=saved["target_key"],
-                            relation_type_key=saved["type_key"],
-                            relation_type_label=saved["type_label"],
-                            notes=saved.get("notes", ""),
-                        )
+                results["new_entities"].append(name)
+
+            # ── Build relation seed map (all known + newly saved) ──
+            relation_seed_map: dict[str, str] = {}
+            for p in self.campaign.players:
+                if p.discord_id:
+                    relation_seed_map[p.character_name.strip().casefold()] = f"player:{p.discord_id}"
+            for n in self.campaign.known_npcs:
+                relation_seed_map[n.name.strip().casefold()] = f"npc:{n.name}"
+            for loc in self.campaign.locations:
+                relation_seed_map[loc.name.strip().casefold()] = f"loc:{loc.name}"
+            for ent in self.campaign.entities:
+                relation_seed_map[ent.name.strip().casefold()] = f"ent:{ent.name}"
+
+            def _resolve_relation_key(raw_key: str, fallback_name: str = "") -> str:
+                candidate = str(raw_key or "").strip()
+                if not candidate and fallback_name:
+                    candidate = relation_seed_map.get(fallback_name.casefold(), "")
+                if candidate.startswith("location:"):
+                    candidate = "loc:" + candidate[len("location:"):]
+                if candidate.startswith("entity:"):
+                    candidate = "ent:" + candidate[len("entity:"):]
+                if ":" in candidate:
+                    return candidate
+                if candidate:
+                    return relation_seed_map.get(candidate.casefold(), "")
+                return ""
+
+            # ── Relationships ──────────────────────────────────────
+            for rel in extracted["relationships"]:
+                source_key = _resolve_relation_key(
+                    str(rel.get("source_key", "")).strip(),
+                    str(rel.get("source", "")).strip(),
+                )
+                target_key = _resolve_relation_key(
+                    str(rel.get("target_key", "")).strip(),
+                    str(rel.get("target", "")).strip(),
+                )
+                relation_type = str(rel.get("relation_type", "")).strip()
+                category = str(rel.get("category", "general") or "general").strip() or "general"
+                notes = str(rel.get("notes", "")).strip()
+                if not source_key or not target_key or not relation_type:
+                    continue
+                try:
+                    await self._database.save_character_relationship(
+                        self.campaign.campaign_id,
+                        source_key,
+                        target_key,
+                        relation_type,
+                        notes=notes,
+                        category=category,
                     )
                     results["new_relationships"].append(
-                        f"{source_name} -> {target_name}: {relation_type}"
+                        f"{source_key} -> {target_key}: {relation_type}"
                     )
+                except Exception:
+                    continue
 
             logger.info(
-                "Extraction: %d new NPC(s), %d new location(s), %d new relationship(s)",
+                "Extraction: %d new NPC(s), %d new location(s), %d new entity(s), %d new relationship(s)",
                 len(results["new_npcs"]),
                 len(results["new_locations"]),
+                len(results["new_entities"]),
                 len(results["new_relationships"]),
             )
         except Exception as exc:

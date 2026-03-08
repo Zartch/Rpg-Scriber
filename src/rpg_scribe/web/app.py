@@ -1,4 +1,4 @@
-"""FastAPI application factory for RPG Scribe web UI."""
+﻿"""FastAPI application factory for RPG Scribe web UI."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def create_app(
     manager = ConnectionManager()
     bridge = WebSocketBridge(event_bus, manager)
 
-    # ── Event handlers that keep WebState in sync ────────────────
+    # â”€â”€ Event handlers that keep WebState in sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _on_transcription(event: TranscriptionEvent) -> None:
         state.add_transcription(asdict(event))
@@ -75,6 +75,7 @@ def create_app(
         try:
             state.active_campaign["npcs"] = await database.get_npcs(event.campaign_id)
             state.active_campaign["locations"] = await database.get_locations(event.campaign_id)
+            state.active_campaign["entities"] = await database.get_entities(event.campaign_id)
             state.active_campaign["relationships"] = await database.get_character_relationships(
                 event.campaign_id
             )
@@ -84,7 +85,7 @@ def create_app(
         except Exception as exc:
             logger.error("Failed to sync entities to WebState: %s", exc)
 
-    # Subscribe eagerly � EventBus.subscribe is synchronous and the
+    # Subscribe eagerly — EventBus.subscribe is synchronous and the
     # handlers are valid as soon as the app object exists.
     event_bus.subscribe(TranscriptionEvent, _on_transcription)
     event_bus.subscribe(SummaryUpdateEvent, _on_summary)
@@ -137,15 +138,19 @@ def create_app(
             "dm_speaker_id": config.campaign.dm_speaker_id,
             "relationship_types": [asdict(rt) for rt in getattr(config.campaign, "relation_types", [])],
             "relationships": [asdict(rel) for rel in getattr(config.campaign, "relationships", [])],
-            "locations": list(getattr(config.campaign, "locations", [])),
+            "locations": [asdict(loc) for loc in getattr(config.campaign, "locations", [])],
+            "entities": [asdict(ent) for ent in getattr(config.campaign, "entities", [])],
             "is_generic": getattr(config.campaign, "is_generic", False),
         }
 
     app.include_router(router)
 
-    # Serve static files (HTML/JS/CSS) at the root path � mounted
+    # Serve static files (HTML/JS/CSS) at the root path — mounted
     # last so API and WS routes take priority.
     if STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
     return app
+
+
+

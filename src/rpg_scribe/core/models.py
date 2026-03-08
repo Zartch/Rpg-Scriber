@@ -46,6 +46,15 @@ class LocationInfo:
 
 
 @dataclass
+class EntityInfo:
+    """A known campaign entity (clan, corporation, faction, group)."""
+
+    name: str
+    entity_type: str = "group"
+    description: str = ""
+
+
+@dataclass
 class RelationshipTypeInfo:
     """A canonical relationship type inside a campaign thesaurus."""
 
@@ -78,6 +87,7 @@ class CampaignContext:
 
     players: list[PlayerInfo] = field(default_factory=list)
     known_npcs: list[NPCInfo] = field(default_factory=list)
+    entities: list[EntityInfo] = field(default_factory=list)
     relation_types: list[RelationshipTypeInfo] = field(default_factory=list)
     relationships: list[CharacterRelationshipInfo] = field(default_factory=list)
     locations: list[LocationInfo] = field(default_factory=list)
