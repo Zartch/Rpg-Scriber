@@ -581,6 +581,12 @@
     npcsList.innerHTML = "";
 
     npcs.forEach(function (n) {
+      var mergeTargetOptions = npcs
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== n.name; })
+        .map(function (candidate) {
+          return '<option value="' + escapeAttr(candidate.name) + '">' + escapeHtml(candidate.name) + "</option>";
+        })
+        .join("");
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -596,6 +602,12 @@
             '<input type="text" class="edit-npc-name" value="' + escapeAttr(n.name) + '" required /></div>' +
           '<div class="edit-row"><label>Description</label>' +
             '<textarea class="edit-npc-desc" rows="2">' + escapeHtml(n.description) + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<select class="merge-npc-target">' +
+              (mergeTargetOptions || '<option value="">No compatible target</option>') +
+            '</select>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetOptions ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
@@ -643,6 +655,36 @@
           });
       });
 
+      var mergeNpcBtn = formEl.querySelector(".btn-merge-entity");
+      var mergeNpcTarget = formEl.querySelector(".merge-npc-target");
+      if (mergeNpcBtn && mergeNpcTarget) {
+        mergeNpcBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeNpcTarget.value || "").trim();
+          if (!targetName) return;
+          mergeNpcBtn.disabled = true;
+          mergeNpcBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: n.name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge NPC."); })
+            .finally(function () {
+              mergeNpcBtn.disabled = false;
+              mergeNpcBtn.textContent = "Merge";
+            });
+        });
+      }
+
       if (appMode !== "live") {
         var editBtnNpc = card.querySelector(".btn-edit-entity");
         if (editBtnNpc) editBtnNpc.classList.add("hidden");
@@ -675,6 +717,12 @@
     items.forEach(function (loc) {
       var name = loc.name;
       var description = loc.description;
+      var mergeTargetOptions = items
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== name; })
+        .map(function (candidate) {
+          return '<option value="' + escapeAttr(candidate.name) + '">' + escapeHtml(candidate.name) + "</option>";
+        })
+        .join("");
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -690,6 +738,12 @@
             '<input type="text" class="edit-location-name" value="' + escapeAttr(name) + '" required /></div>' +
           '<div class="edit-row"><label>Description</label>' +
             '<textarea class="edit-location-desc" rows="2">' + escapeHtml(description || "") + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<select class="merge-location-target">' +
+              (mergeTargetOptions || '<option value="">No compatible target</option>') +
+            '</select>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetOptions ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
@@ -738,6 +792,36 @@
           });
       });
 
+      var mergeLocBtn = formEl.querySelector(".btn-merge-entity");
+      var mergeLocTarget = formEl.querySelector(".merge-location-target");
+      if (mergeLocBtn && mergeLocTarget) {
+        mergeLocBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeLocTarget.value || "").trim();
+          if (!targetName) return;
+          mergeLocBtn.disabled = true;
+          mergeLocBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge location."); })
+            .finally(function () {
+              mergeLocBtn.disabled = false;
+              mergeLocBtn.textContent = "Merge";
+            });
+        });
+      }
+
       if (appMode !== "live") {
         var editBtnLoc = card.querySelector(".btn-edit-entity");
         if (editBtnLoc) editBtnLoc.classList.add("hidden");
@@ -764,6 +848,12 @@
 
     entitiesList.innerHTML = "";
     items.forEach(function (ent) {
+      var mergeTargetOptions = items
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== ent.name; })
+        .map(function (candidate) {
+          return '<option value="' + escapeAttr(candidate.name) + '">' + escapeHtml(candidate.name) + "</option>";
+        })
+        .join("");
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -782,6 +872,12 @@
             '<input type="text" class="edit-entity-type" value="' + escapeAttr(entityType(ent)) + '" /></div>' +
           '<div class="edit-row"><label>Description</label>' +
             '<textarea class="edit-entity-desc" rows="2">' + escapeHtml(entityDescription(ent)) + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<select class="merge-entity-target">' +
+              (mergeTargetOptions || '<option value="">No compatible target</option>') +
+            '</select>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetOptions ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel">Cancel</button>' +
@@ -841,6 +937,36 @@
             .finally(function () {
               saveBtn.disabled = false;
               saveBtn.textContent = "Save";
+            });
+        });
+      }
+
+      var mergeEntBtn = form.querySelector(".btn-merge-entity");
+      var mergeEntTarget = form.querySelector(".merge-entity-target");
+      if (mergeEntBtn && mergeEntTarget) {
+        mergeEntBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeEntTarget.value || "").trim();
+          if (!targetName) return;
+          mergeEntBtn.disabled = true;
+          mergeEntBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: ent.name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge entity."); })
+            .finally(function () {
+              mergeEntBtn.disabled = false;
+              mergeEntBtn.textContent = "Merge";
             });
         });
       }
@@ -1311,11 +1437,26 @@
     }
 
     relationshipsList.innerHTML = "";
+    var relationshipTypes = ((campaign || {}).relationship_types || []).filter(function (row) {
+      return !!(row && row.canonical_key);
+    });
     items.forEach(function (rel) {
       var source = entityLabelFromKey(campaign, rel.source_key || "");
       var target = entityLabelFromKey(campaign, rel.target_key || "");
       var typeLabel = rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "(unknown)";
       var category = rel.type_category || "general";
+      var typeKey = rel.type_key || rel.relation_type_key || "";
+      var mergeTypeOptions = relationshipTypes
+        .filter(function (candidate) {
+          return candidate.canonical_key && candidate.canonical_key !== typeKey;
+        })
+        .map(function (candidate) {
+          var label = candidate.label || candidate.canonical_key;
+          return '<option value="' + escapeAttr(candidate.canonical_key) + '">' +
+            escapeHtml(label + " [" + (candidate.category || "general") + "]") +
+            "</option>";
+        })
+        .join("");
 
       var card = document.createElement("div");
       card.className = "entity-card";
@@ -1326,8 +1467,24 @@
             '<span class="entity-meta">' + escapeHtml(typeLabel) + ' [' + escapeHtml(category) + ']</span>' +
           '</div>' +
           '<span class="entity-desc">' + escapeHtml(rel.notes || "") + '</span>' +
-          '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
-        '</div>';
+          '<div class="entity-actions">' +
+            '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+            '<button class="btn-small btn-merge-reltype" title="Merge relationship type" ' +
+              ((typeKey && mergeTypeOptions) ? "" : "disabled") +
+            '>Merge Type</button>' +
+          '</div>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden merge-reltype-form">' +
+          '<div class="edit-row merge-row"><label>Type parent</label>' +
+            '<select class="merge-reltype-target">' +
+              (mergeTypeOptions || '<option value="">No compatible target</option>') +
+            '</select>' +
+            '<button type="button" class="btn-small btn-confirm-reltype-merge" ' +
+              ((typeKey && mergeTypeOptions) ? "" : "disabled") +
+            '>Merge</button>' +
+            '<button type="button" class="btn-small btn-cancel-reltype-merge">Cancel</button>' +
+          '</div>' +
+        '</form>';
       var editBtn = card.querySelector(".btn-edit-entity");
       if (editBtn) {
         editBtn.addEventListener("click", function () {
@@ -1353,7 +1510,53 @@
           if (relTypeInput) relTypeInput.focus();
         });
       }
-      if (appMode !== "live" && editBtn) editBtn.classList.add("hidden");
+      var mergeTypeBtn = card.querySelector(".btn-merge-reltype");
+      var mergeTypeForm = card.querySelector(".merge-reltype-form");
+      var mergeTypeCancelBtn = card.querySelector(".btn-cancel-reltype-merge");
+      var mergeTypeConfirmBtn = card.querySelector(".btn-confirm-reltype-merge");
+      var mergeTypeTarget = card.querySelector(".merge-reltype-target");
+      if (mergeTypeBtn && mergeTypeForm) {
+        mergeTypeBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !typeKey) return;
+          mergeTypeForm.classList.remove("hidden");
+        });
+      }
+      if (mergeTypeCancelBtn && mergeTypeForm) {
+        mergeTypeCancelBtn.addEventListener("click", function () {
+          mergeTypeForm.classList.add("hidden");
+        });
+      }
+      if (mergeTypeConfirmBtn && mergeTypeTarget) {
+        mergeTypeConfirmBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId || !typeKey) return;
+          var targetTypeKey = (mergeTypeTarget.value || "").trim();
+          if (!targetTypeKey) return;
+          mergeTypeConfirmBtn.disabled = true;
+          mergeTypeConfirmBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_type_key: typeKey,
+              target_type_key: targetTypeKey,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge relationship type."); })
+            .finally(function () {
+              mergeTypeConfirmBtn.disabled = false;
+              mergeTypeConfirmBtn.textContent = "Merge";
+            });
+        });
+      }
+      if (appMode !== "live") {
+        if (editBtn) editBtn.classList.add("hidden");
+        if (mergeTypeBtn) mergeTypeBtn.classList.add("hidden");
+      }
       relationshipsList.appendChild(card);
     });
   }

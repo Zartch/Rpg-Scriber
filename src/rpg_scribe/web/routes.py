@@ -24,6 +24,7 @@ from rpg_scribe.core.models import (
     CharacterRelationshipInfo,
     EntityInfo,
     LocationInfo,
+    NPCInfo,
     RelationshipTypeInfo,
 )
 from rpg_scribe.config import save_campaign_toml
@@ -946,6 +947,49 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     return {"ok": True, "locations": updated_locations}
 
 
+@router.post("/api/campaigns/{campaign_id}/locations/merge")
+async def merge_locations_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Merge one location into another location in the same campaign."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_name = str(body.get("source_name", "")).strip()
+    target_name = str(body.get("target_name", "")).strip()
+    if not source_name or not target_name:
+        return {"ok": False, "error": "source_name and target_name are required"}
+
+    try:
+        await db.merge_locations(campaign_id, source_name, target_name)
+        locations = await db.get_locations(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["locations"] = locations
+        state.active_campaign["relationships"] = relationships
+
+        if config and getattr(config, "campaign", None):
+            config.campaign.locations = [
+                LocationInfo(
+                    name=str(l.get("name", "")),
+                    description=str(l.get("description", "")),
+                )
+                for l in locations
+                if l.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error merging locations: %s", exc)
+        return {"ok": False, "error": "Failed to merge locations"}
+
+    return {"ok": True, "locations": state.active_campaign.get("locations", [])}
+
+
 @router.post("/api/campaigns/{campaign_id}/entities")
 async def create_entity_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Create a new campaign entity (clan, corporation, faction, group...)."""
@@ -1084,6 +1128,93 @@ async def update_entity_endpoint(
     return {"ok": True}
 
 
+@router.post("/api/campaigns/{campaign_id}/entities/merge")
+async def merge_entities_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Merge one campaign entity into another entity in same campaign."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_name = str(body.get("source_name", "")).strip()
+    target_name = str(body.get("target_name", "")).strip()
+    if not source_name or not target_name:
+        return {"ok": False, "error": "source_name and target_name are required"}
+
+    try:
+        await db.merge_entities(campaign_id, source_name, target_name)
+        entities = await db.get_entities(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["entities"] = entities
+        state.active_campaign["relationships"] = relationships
+
+        if config and getattr(config, "campaign", None):
+            config.campaign.entities = [
+                EntityInfo(
+                    name=str(e.get("name", "")),
+                    entity_type=str(e.get("entity_type", "group") or "group"),
+                    description=str(e.get("description", "")),
+                )
+                for e in entities
+                if e.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error merging entities: %s", exc)
+        return {"ok": False, "error": "Failed to merge entities"}
+
+    return {"ok": True, "entities": state.active_campaign.get("entities", [])}
+
+
+@router.post("/api/campaigns/{campaign_id}/npcs/merge")
+async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Merge one NPC into another NPC in the same campaign."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_name = str(body.get("source_name", "")).strip()
+    target_name = str(body.get("target_name", "")).strip()
+    if not source_name or not target_name:
+        return {"ok": False, "error": "source_name and target_name are required"}
+
+    try:
+        await db.merge_npcs(campaign_id, source_name, target_name)
+        npcs = await db.get_npcs(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["npcs"] = npcs
+        state.active_campaign["relationships"] = relationships
+
+        if config and getattr(config, "campaign", None):
+            config.campaign.known_npcs = [
+                NPCInfo(
+                    name=str(n.get("name", "")),
+                    description=str(n.get("description", "")),
+                )
+                for n in npcs
+                if n.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error merging NPCs: %s", exc)
+        return {"ok": False, "error": "Failed to merge NPCs"}
+
+    return {"ok": True, "npcs": state.active_campaign.get("npcs", [])}
+
+
 @router.get("/api/campaigns/{campaign_id}/relationships")
 async def list_relationships(campaign_id: str) -> dict[str, Any]:
     """List relationship thesaurus + relationships for a campaign."""
@@ -1160,6 +1291,43 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
         "relationship": relationship,
         "relationship_types": relationship_types,
         "relationships": relationships,
+    }
+
+
+@router.post("/api/campaigns/{campaign_id}/relationship-types/merge")
+async def merge_relationship_types(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Merge one relationship type label into another canonical type."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_type_key = str(body.get("source_type_key", "")).strip()
+    target_type_key = str(body.get("target_type_key", "")).strip()
+    if not source_type_key or not target_type_key:
+        return {"ok": False, "error": "source_type_key and target_type_key are required"}
+
+    try:
+        await db.merge_relationship_types(campaign_id, source_type_key, target_type_key)
+        relationship_types = await db.get_relationship_types(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["relationship_types"] = relationship_types
+        state.active_campaign["relationships"] = relationships
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error merging relationship types: %s", exc)
+        return {"ok": False, "error": "Failed to merge relationship types"}
+
+    return {
+        "ok": True,
+        "relationship_types": state.active_campaign.get("relationship_types", []),
+        "relationships": state.active_campaign.get("relationships", []),
     }
 
 

@@ -486,6 +486,12 @@ header h1 { font-size: 1.25rem; }
   white-space: nowrap;
 }
 .btn-edit-entity { margin-left: auto; flex-shrink: 0; }
+.entity-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
 
 .entity-edit-form {
   display: flex;
@@ -494,6 +500,8 @@ header h1 { font-size: 1.25rem; }
   padding-top: 0.35rem;
 }
 .entity-edit-form .edit-row label { width: 100px; }
+.merge-row { align-items: center; }
+.merge-row select { max-width: 320px; }
 
 .btn-add {
   margin-top: 0.5rem;
