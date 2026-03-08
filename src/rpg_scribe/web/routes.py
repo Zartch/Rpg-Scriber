@@ -273,6 +273,24 @@ async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) 
         if r.get("source_key") and r.get("target_key") and r.get("type_key")
     ]
 
+
+async def _load_merged_children_maps(
+    db: Any,
+    campaign_id: str,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Load merged children maps for npcs/locations/entities."""
+    if db is None or not campaign_id:
+        return {
+            "merged_npcs_by_parent": {},
+            "merged_locations_by_parent": {},
+            "merged_entities_by_parent": {},
+        }
+    return {
+        "merged_npcs_by_parent": await db.get_merged_npcs_map(campaign_id),
+        "merged_locations_by_parent": await db.get_merged_locations_map(campaign_id),
+        "merged_entities_by_parent": await db.get_merged_entities_map(campaign_id),
+    }
+
 @router.get("/api/status")
 async def get_status() -> dict[str, Any]:
     """Return current component statuses."""
@@ -496,6 +514,13 @@ async def get_campaigns() -> dict[str, Any]:
         except Exception as exc:
             logger.error("Error fetching relationships: %s", exc)
             campaign.setdefault("relationships", [])
+        try:
+            campaign.update(await _load_merged_children_maps(db, campaign_id))
+        except Exception as exc:
+            logger.error("Error fetching merged children maps: %s", exc)
+            campaign.setdefault("merged_npcs_by_parent", {})
+            campaign.setdefault("merged_locations_by_parent", {})
+            campaign.setdefault("merged_entities_by_parent", {})
     else:
         campaign.setdefault("players", [])
         campaign.setdefault("npcs", [])
@@ -503,9 +528,15 @@ async def get_campaigns() -> dict[str, Any]:
         campaign.setdefault("relationship_types", [])
         campaign.setdefault("relationships", [])
         campaign.setdefault("locations", [])
+        campaign.setdefault("merged_npcs_by_parent", {})
+        campaign.setdefault("merged_locations_by_parent", {})
+        campaign.setdefault("merged_entities_by_parent", {})
 
     campaign.setdefault("locations", [])
     campaign.setdefault("entities", [])
+    campaign.setdefault("merged_npcs_by_parent", {})
+    campaign.setdefault("merged_locations_by_parent", {})
+    campaign.setdefault("merged_entities_by_parent", {})
 
     campaign.setdefault("dm_speaker_id", "")
     return {"campaign": campaign}
@@ -557,6 +588,7 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
                 campaign["entities"] = await db.get_entities(campaign_id)
                 campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
                 campaign["relationships"] = await db.get_character_relationships(campaign_id)
+                campaign.update(await _load_merged_children_maps(db, campaign_id))
         except Exception as exc:
             logger.error("Error loading browse campaign %s: %s", campaign_id, exc)
             return {"campaign": None}
@@ -572,6 +604,13 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
 
         campaign.setdefault("locations", [])
         campaign.setdefault("entities", [])
+        campaign.setdefault("merged_npcs_by_parent", {})
+        campaign.setdefault("merged_locations_by_parent", {})
+        campaign.setdefault("merged_entities_by_parent", {})
+    if campaign is not None:
+        campaign.setdefault("merged_npcs_by_parent", {})
+        campaign.setdefault("merged_locations_by_parent", {})
+        campaign.setdefault("merged_entities_by_parent", {})
     return {"campaign": campaign}
 
 @router.patch("/api/campaigns/{campaign_id}")
@@ -990,6 +1029,58 @@ async def merge_locations_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     return {"ok": True, "locations": state.active_campaign.get("locations", [])}
 
 
+@router.put("/api/campaigns/{campaign_id}/locations/merged/{location_id}")
+async def update_merged_location_endpoint(
+    campaign_id: str,
+    location_id: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    """Update a merged location alias and optionally move/unmerge it."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    name = str(body.get("name", "")).strip()
+    description = str(body.get("description", "")).strip()
+    merged_into = str(body.get("merged_into", "")).strip()
+    if not name:
+        return {"ok": False, "error": "name is required"}
+
+    try:
+        await db.update_merged_location(
+            campaign_id,
+            location_id,
+            name=name,
+            description=description,
+            merged_into=merged_into,
+        )
+        state.active_campaign["locations"] = await db.get_locations(campaign_id)
+        state.active_campaign["merged_locations_by_parent"] = await db.get_merged_locations_map(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["relationships"] = relationships
+        if config and getattr(config, "campaign", None):
+            config.campaign.locations = [
+                LocationInfo(
+                    name=str(loc.get("name", "")),
+                    description=str(loc.get("description", "")),
+                )
+                for loc in state.active_campaign.get("locations", [])
+                if loc.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error updating merged location: %s", exc)
+        return {"ok": False, "error": "Failed to update merged location"}
+    return {"ok": True}
+
+
 @router.post("/api/campaigns/{campaign_id}/entities")
 async def create_entity_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Create a new campaign entity (clan, corporation, faction, group...)."""
@@ -1172,6 +1263,61 @@ async def merge_entities_endpoint(campaign_id: str, body: dict[str, Any]) -> dic
     return {"ok": True, "entities": state.active_campaign.get("entities", [])}
 
 
+@router.put("/api/campaigns/{campaign_id}/entities/merged/{entity_id}")
+async def update_merged_entity_endpoint(
+    campaign_id: str,
+    entity_id: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    """Update a merged campaign entity alias and optionally move/unmerge it."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    name = str(body.get("name", "")).strip()
+    entity_type = str(body.get("entity_type", "")).strip() or "group"
+    description = str(body.get("description", "")).strip()
+    merged_into = str(body.get("merged_into", "")).strip()
+    if not name:
+        return {"ok": False, "error": "name is required"}
+
+    try:
+        await db.update_merged_entity(
+            campaign_id,
+            entity_id,
+            name=name,
+            description=description,
+            entity_type=entity_type,
+            merged_into=merged_into,
+        )
+        state.active_campaign["entities"] = await db.get_entities(campaign_id)
+        state.active_campaign["merged_entities_by_parent"] = await db.get_merged_entities_map(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["relationships"] = relationships
+        if config and getattr(config, "campaign", None):
+            config.campaign.entities = [
+                EntityInfo(
+                    name=str(ent.get("name", "")),
+                    entity_type=str(ent.get("entity_type", "group") or "group"),
+                    description=str(ent.get("description", "")),
+                )
+                for ent in state.active_campaign.get("entities", [])
+                if ent.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error updating merged entity: %s", exc)
+        return {"ok": False, "error": "Failed to update merged entity"}
+    return {"ok": True}
+
+
 @router.post("/api/campaigns/{campaign_id}/npcs/merge")
 async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Merge one NPC into another NPC in the same campaign."""
@@ -1213,6 +1359,58 @@ async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[st
         return {"ok": False, "error": "Failed to merge NPCs"}
 
     return {"ok": True, "npcs": state.active_campaign.get("npcs", [])}
+
+
+@router.put("/api/campaigns/{campaign_id}/npcs/merged/{npc_id}")
+async def update_merged_npc_endpoint(
+    campaign_id: str,
+    npc_id: str,
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    """Update a merged NPC alias and optionally move/unmerge it."""
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+        return {"ok": False, "error": "Campaign not found"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    name = str(body.get("name", "")).strip()
+    description = str(body.get("description", "")).strip()
+    merged_into = str(body.get("merged_into", "")).strip()
+    if not name:
+        return {"ok": False, "error": "name is required"}
+
+    try:
+        await db.update_merged_npc(
+            campaign_id,
+            npc_id,
+            name=name,
+            description=description,
+            merged_into=merged_into,
+        )
+        state.active_campaign["npcs"] = await db.get_npcs(campaign_id)
+        state.active_campaign["merged_npcs_by_parent"] = await db.get_merged_npcs_map(campaign_id)
+        relationships = await db.get_character_relationships(campaign_id)
+        state.active_campaign["relationships"] = relationships
+        if config and getattr(config, "campaign", None):
+            config.campaign.known_npcs = [
+                NPCInfo(
+                    name=str(npc.get("name", "")),
+                    description=str(npc.get("description", "")),
+                )
+                for npc in state.active_campaign.get("npcs", [])
+                if npc.get("name")
+            ]
+        await _sync_relationships_to_config(config, db, campaign_id)
+        _persist_campaign_toml(config)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.error("Error updating merged NPC: %s", exc)
+        return {"ok": False, "error": "Failed to update merged NPC"}
+    return {"ok": True}
 
 
 @router.get("/api/campaigns/{campaign_id}/relationships")

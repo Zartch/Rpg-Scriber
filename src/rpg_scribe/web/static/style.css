@@ -502,6 +502,83 @@ header h1 { font-size: 1.25rem; }
 .entity-edit-form .edit-row label { width: 100px; }
 .merge-row { align-items: center; }
 .merge-row select { max-width: 320px; }
+.merge-select-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 180px;
+}
+.merge-target-search {
+  width: 100%;
+}
+.merged-children {
+  border-top: 1px dashed var(--border);
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.merged-children-empty {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.merged-children-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.merged-child-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.4rem;
+}
+.merged-child-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+.merged-child-desc {
+  margin-top: 0.35rem;
+  width: 100%;
+}
+.related-relationships {
+  border-top: 1px dashed var(--border);
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.related-relationships-empty {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.related-rel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3rem 0.4rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+.related-rel-main {
+  font-size: 0.8rem;
+}
+.related-rel-notes {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+@media (max-width: 900px) {
+  .merged-child-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 .btn-add {
   margin-top: 0.5rem;
