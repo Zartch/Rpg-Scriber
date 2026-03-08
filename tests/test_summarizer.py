@@ -816,7 +816,9 @@ class TestExtractionParsing:
     def test_parse_invalid_json(self):
         text = "Esto no es JSON válido"
         result = ClaudeSummarizer._parse_extraction_response(text)
-        assert result == {"npcs": [], "locations": []}
+        assert result["npcs"] == []
+        assert result["locations"] == []
+        assert result.get("relationships", []) == []
 
     def test_parse_malformed_json(self):
         text = '{"npcs": "not a list", "locations": 42}'

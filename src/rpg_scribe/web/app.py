@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    EntitiesUpdatedEvent,
     SessionEndRequestEvent,
     SessionStartRequestEvent,
     SummaryUpdateEvent,
@@ -63,18 +64,40 @@ def create_app(
         # happens when a SummaryUpdateEvent with update_type="final" arrives.
         pass
 
-    # Subscribe eagerly — EventBus.subscribe is synchronous and the
+    async def _on_entities_updated(event: EntitiesUpdatedEvent) -> None:
+        """Sync WebState.active_campaign with newly extracted entities from DB."""
+        if state.active_campaign is None:
+            return
+        if state.active_campaign.get("id") != event.campaign_id:
+            return
+        if database is None:
+            return
+        try:
+            state.active_campaign["npcs"] = await database.get_npcs(event.campaign_id)
+            state.active_campaign["locations"] = await database.get_locations(event.campaign_id)
+            state.active_campaign["relationships"] = await database.get_character_relationships(
+                event.campaign_id
+            )
+            state.active_campaign["relationship_types"] = await database.get_relationship_types(
+                event.campaign_id
+            )
+        except Exception as exc:
+            logger.error("Failed to sync entities to WebState: %s", exc)
+
+    # Subscribe eagerly ï¿½ EventBus.subscribe is synchronous and the
     # handlers are valid as soon as the app object exists.
     event_bus.subscribe(TranscriptionEvent, _on_transcription)
     event_bus.subscribe(SummaryUpdateEvent, _on_summary)
     event_bus.subscribe(SystemStatusEvent, _on_status)
     event_bus.subscribe(SessionStartRequestEvent, _on_session_start)
     event_bus.subscribe(SessionEndRequestEvent, _on_session_end)
+    event_bus.subscribe(EntitiesUpdatedEvent, _on_entities_updated)
     bridge.event_bus = event_bus
     # Bridge also subscribes eagerly (its start is sync-safe)
     event_bus.subscribe(TranscriptionEvent, bridge._on_transcription)
     event_bus.subscribe(SummaryUpdateEvent, bridge._on_summary)
     event_bus.subscribe(SystemStatusEvent, bridge._on_status)
+    event_bus.subscribe(EntitiesUpdatedEvent, bridge._on_entities_updated)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -84,9 +107,11 @@ def create_app(
         event_bus.unsubscribe(TranscriptionEvent, _on_transcription)
         event_bus.unsubscribe(SummaryUpdateEvent, _on_summary)
         event_bus.unsubscribe(SystemStatusEvent, _on_status)
+        event_bus.unsubscribe(EntitiesUpdatedEvent, _on_entities_updated)
         event_bus.unsubscribe(TranscriptionEvent, bridge._on_transcription)
         event_bus.unsubscribe(SummaryUpdateEvent, bridge._on_summary)
         event_bus.unsubscribe(SystemStatusEvent, bridge._on_status)
+        event_bus.unsubscribe(EntitiesUpdatedEvent, bridge._on_entities_updated)
         event_bus.unsubscribe(SessionStartRequestEvent, _on_session_start)
         event_bus.unsubscribe(SessionEndRequestEvent, _on_session_end)
         logger.info("RPG Scribe Web UI stopped")
@@ -118,7 +143,7 @@ def create_app(
 
     app.include_router(router)
 
-    # Serve static files (HTML/JS/CSS) at the root path — mounted
+    # Serve static files (HTML/JS/CSS) at the root path ï¿½ mounted
     # last so API and WS routes take priority.
     if STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

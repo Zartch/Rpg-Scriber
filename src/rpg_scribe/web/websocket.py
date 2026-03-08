@@ -13,6 +13,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    EntitiesUpdatedEvent,
     SummaryUpdateEvent,
     SystemStatusEvent,
     TranscriptionEvent,
@@ -75,6 +76,7 @@ class WebSocketBridge:
         self._event_bus.subscribe(TranscriptionEvent, self._on_transcription)
         self._event_bus.subscribe(SummaryUpdateEvent, self._on_summary)
         self._event_bus.subscribe(SystemStatusEvent, self._on_status)
+        self._event_bus.subscribe(EntitiesUpdatedEvent, self._on_entities_updated)
         logger.info("WebSocketBridge started")
 
     async def stop(self) -> None:
@@ -82,6 +84,7 @@ class WebSocketBridge:
         self._event_bus.unsubscribe(TranscriptionEvent, self._on_transcription)
         self._event_bus.unsubscribe(SummaryUpdateEvent, self._on_summary)
         self._event_bus.unsubscribe(SystemStatusEvent, self._on_status)
+        self._event_bus.unsubscribe(EntitiesUpdatedEvent, self._on_entities_updated)
         logger.info("WebSocketBridge stopped")
 
     async def _on_transcription(self, event: TranscriptionEvent) -> None:
@@ -100,4 +103,17 @@ class WebSocketBridge:
         await self._manager.broadcast({
             "type": "status",
             "data": asdict(event),
+        })
+
+    async def _on_entities_updated(self, event: EntitiesUpdatedEvent) -> None:
+        await self._manager.broadcast({
+            "type": "entities_updated",
+            "data": {
+                "campaign_id": event.campaign_id,
+                "session_id": event.session_id,
+                "new_npcs": list(event.new_npcs),
+                "new_locations": list(event.new_locations),
+                "new_relationships": list(event.new_relationships),
+                "timestamp": event.timestamp,
+            },
         })

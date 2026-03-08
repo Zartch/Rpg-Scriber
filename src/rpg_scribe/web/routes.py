@@ -1211,6 +1211,68 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
 
 
 
+@router.post("/api/sessions/{session_id}/extract-entities")
+async def extract_entities(session_id: str) -> dict[str, Any]:
+    """Trigger entity extraction (NPCs, locations, relationships) for a session.
+
+    Works for both the active live session and historical sessions.
+    For the active session, uses the in-memory session summary.
+    For historical sessions, loads the saved summary from the database.
+    """
+    state = _get_state()
+    db = _get_database()
+    config = _get_config()
+    event_bus = _get_event_bus()
+
+    if config is None or not getattr(config, "campaign", None):
+        return {"ok": False, "error": "No campaign configured"}
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    campaign = config.campaign
+
+    # Determine session summary to use
+    if session_id == state.active_session_id:
+        session_summary = state.session_summary
+    else:
+        try:
+            session_row = await db.get_session(session_id)
+        except Exception as exc:
+            return {"ok": False, "error": f"Session not found: {exc}"}
+        if not session_row:
+            return {"ok": False, "error": "Session not found"}
+        session_summary = session_row.get("session_summary", "")
+
+    if not session_summary:
+        return {"ok": False, "error": "No session summary available to extract from"}
+
+    try:
+        from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+        summarizer = ClaudeSummarizer(
+            event_bus,
+            config.summarizer,
+            campaign,
+            database=db,
+        )
+        results = await summarizer.extract_entities_from_summary(session_id, session_summary)
+        # Publish EntitiesUpdatedEvent if anything new was found
+        if any(results.values()):
+            from rpg_scribe.core.events import EntitiesUpdatedEvent
+            await event_bus.publish(
+                EntitiesUpdatedEvent(
+                    campaign_id=campaign.campaign_id,
+                    session_id=session_id,
+                    new_npcs=tuple(results["new_npcs"]),
+                    new_locations=tuple(results["new_locations"]),
+                    new_relationships=tuple(results["new_relationships"]),
+                )
+            )
+        return {"ok": True, **results}
+    except Exception as exc:
+        logger.error("Entity extraction failed for session %s: %s", session_id, exc)
+        return {"ok": False, "error": str(exc)}
+
+
 @router.post("/api/sessions/{session_id}/refresh-summary")
 async def refresh_summary(session_id: str) -> dict[str, Any]:
     """Trigger an on-demand summary refresh for the active session."""

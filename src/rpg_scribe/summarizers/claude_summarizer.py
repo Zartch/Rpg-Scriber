@@ -10,8 +10,14 @@ import time
 
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import SystemStatusEvent, TranscriptionEvent
-from rpg_scribe.core.models import CampaignContext, SummarizerConfig
+from rpg_scribe.core.events import EntitiesUpdatedEvent, SystemStatusEvent, TranscriptionEvent
+from rpg_scribe.core.models import (
+    CampaignContext,
+    CharacterRelationshipInfo,
+    LocationInfo,
+    NPCInfo,
+    SummarizerConfig,
+)
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
 
 logger = logging.getLogger(__name__)
@@ -158,8 +164,10 @@ PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condens
 """
 
 EXTRACTION_USER = """\
-A partir del siguiente resumen de sesión, extrae los PNJs nuevos y \
-localizaciones nuevas que hayan aparecido.
+A partir del siguiente resumen de sesión, extrae:
+1. PNJs nuevos que hayan aparecido
+2. Localizaciones nuevas que hayan aparecido
+3. Relaciones nuevas entre personajes (jugadores, PNJs o localizaciones)
 
 RESUMEN DE LA SESIÓN:
 {session_summary}
@@ -170,13 +178,22 @@ PNJS YA CONOCIDOS (NO los incluyas de nuevo):
 LOCALIZACIONES YA CONOCIDAS (NO las incluyas de nuevo):
 {known_locations}
 
+RELACIONES YA CONOCIDAS (NO las incluyas de nuevo):
+{known_relationships}
+
+PERSONAJES JUGADORES (para referencias de relaciones):
+{player_characters}
+
 Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
 texto adicional antes o después:
 
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
-"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}]}}
+"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
+"relationships": [{{"source": "Nombre A", "target": "Nombre B", \
+"relation_type": "tipo de relación", "notes": "contexto opcional"}}]}}
 
-Si no hay PNJs o localizaciones nuevas, devuelve listas vacías.
+Si no hay elementos nuevos de algún tipo, devuelve la lista vacía correspondiente.
+Usa nombres exactos de personajes tal como aparecen en los bloques de contexto.
 """
 
 
@@ -202,6 +219,7 @@ class ClaudeSummarizer(BaseSummarizer):
         self._client = client
         self._database = database
         self._update_lock = asyncio.Lock()
+        self._extraction_counter: int = 0  # Count of _update_summary() calls for periodic extraction
 
     # ------------------------------------------------------------------
     # Lazy client
@@ -428,6 +446,15 @@ class ClaudeSummarizer(BaseSummarizer):
                     "Session summary updated (%d transcriptions processed)",
                     len(entries),
                 )
+
+                # Periodic entity extraction (non-blocking background task)
+                self._extraction_counter += 1
+                n = self.config.extraction_every_n_updates
+                if n > 0 and self._extraction_counter % n == 0:
+                    asyncio.create_task(
+                        self._extract_entities(),
+                        name=f"entity-extraction-{self._session_id}-{self._extraction_counter}",
+                    )
             except Exception as exc:
                 # Put entries back so they aren't lost
                 self._pending = entries + self._pending
@@ -639,8 +666,8 @@ class ClaudeSummarizer(BaseSummarizer):
 
         await self._publish_summary("final")
 
-        # Extract NPCs and locations from the final summary
-        await self._extract_npcs_and_locations()
+        # Extract entities from the final polished summary
+        await self._extract_entities()
 
         logger.info("Session finalized")
         return self._session_summary
@@ -871,40 +898,79 @@ class ClaudeSummarizer(BaseSummarizer):
         return result
 
     # ------------------------------------------------------------------
-    # NPC / location extraction
+    # NPC / location / relationship extraction
     # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_extraction_response(text: str) -> dict:
         """Parse the JSON extraction response from the LLM.
 
-        Returns a dict with 'npcs' and 'locations' lists, or empty lists
-        if parsing fails.
+        Returns a dict with 'npcs', 'locations' and 'relationships' lists,
+        or empty lists if parsing fails.
         """
-        # Try to find JSON in the response (the LLM may add surrounding text)
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
-            return {"npcs": [], "locations": []}
+            return {"npcs": [], "locations": [], "relationships": []}
         try:
             data = json.loads(match.group())
         except (json.JSONDecodeError, ValueError):
-            return {"npcs": [], "locations": []}
+            return {"npcs": [], "locations": [], "relationships": []}
 
-        # Validate structure
         npcs = data.get("npcs", [])
         locations = data.get("locations", [])
+        relationships = data.get("relationships", [])
         if not isinstance(npcs, list):
             npcs = []
         if not isinstance(locations, list):
             locations = []
+        if not isinstance(relationships, list):
+            relationships = []
 
-        return {"npcs": npcs, "locations": locations}
+        return {"npcs": npcs, "locations": locations, "relationships": relationships}
 
-    async def _extract_npcs_and_locations(self) -> None:
-        """Make a second LLM call to extract new NPCs and locations, then save them."""
-        if not self._database or not self._session_summary:
-            return
+    def _build_entity_key_map(self) -> dict[str, str]:
+        """Build a name → entity_key map for resolving Claude's name outputs.
 
+        Lookup is case-insensitive (keys are lowercased).
+        Players map via character_name → player:{discord_id}.
+        NPCs map via name → npc:{name}.
+        """
+        name_to_key: dict[str, str] = {}
+        for npc in self.campaign.known_npcs:
+            if npc.name:
+                name_to_key[npc.name.lower()] = f"npc:{npc.name}"
+        for player in self.campaign.players:
+            display = player.character_name or player.discord_name
+            if display and player.discord_id:
+                name_to_key[display.lower()] = f"player:{player.discord_id}"
+        return name_to_key
+
+    async def extract_entities_from_summary(
+        self,
+        session_id: str,
+        session_summary: str,
+    ) -> dict[str, list[str]]:
+        """Extract and persist new NPCs, locations and relationships from a session summary.
+
+        Public interface usable both during live sessions and for retroactive
+        processing of historical sessions. Updates the in-memory campaign
+        context after saving so subsequent system prompts include new entities.
+
+        Returns:
+            dict with 'new_npcs', 'new_locations', 'new_relationships' (list of str labels).
+        """
+        results: dict[str, list[str]] = {
+            "new_npcs": [],
+            "new_locations": [],
+            "new_relationships": [],
+        }
+
+        if not self._database or not session_summary:
+            return results
+        if self.campaign.is_generic:
+            return results
+
+        # Build known-context blocks for the prompt (dedup layer 1: LLM won't re-extract known things)
         known_npcs_lines = [
             f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
         ] or ["(ninguno)"]
@@ -914,10 +980,29 @@ class ClaudeSummarizer(BaseSummarizer):
             for loc in self.campaign.locations
         ] or ["(ninguna)"]
 
+        name_to_key = self._build_entity_key_map()
+        key_to_name = {v: k for k, v in name_to_key.items()}
+
+        known_rel_lines: list[str] = []
+        for rel in self.campaign.relationships:
+            src = key_to_name.get(rel.source_key, rel.source_key)
+            tgt = key_to_name.get(rel.target_key, rel.target_key)
+            label = rel.relation_type_label or rel.relation_type_key
+            known_rel_lines.append(f"- {src} -> {tgt}: {label}")
+        if not known_rel_lines:
+            known_rel_lines = ["(ninguna)"]
+
+        player_lines = [
+            f"- {p.character_name or p.discord_name} (jugador: {p.discord_name})"
+            for p in self.campaign.players
+        ] or ["(ninguno)"]
+
         user_msg = EXTRACTION_USER.format(
-            session_summary=self._session_summary,
+            session_summary=session_summary,
             known_npcs="\n".join(known_npcs_lines),
             known_locations="\n".join(known_locations_lines),
+            known_relationships="\n".join(known_rel_lines),
+            player_characters="\n".join(player_lines),
         )
 
         try:
@@ -928,23 +1013,29 @@ class ClaudeSummarizer(BaseSummarizer):
             )
             extracted = self._parse_extraction_response(result)
 
-            new_npcs = 0
+            # ── NPCs ───────────────────────────────────────────────
             for npc in extracted["npcs"]:
                 name = npc.get("name", "").strip()
                 description = npc.get("description", "").strip()
                 if not name:
                     continue
+                # Dedup layer 2: DB check
                 if await self._database.npc_exists(self.campaign.campaign_id, name):
                     continue
                 await self._database.save_npc(
                     campaign_id=self.campaign.campaign_id,
                     name=name,
                     description=description,
-                    first_seen_session=self._session_id,
+                    first_seen_session=session_id,
                 )
-                new_npcs += 1
+                # Fix: update in-memory cache so next system prompt includes this NPC
+                self.campaign.known_npcs.append(NPCInfo(name=name, description=description))
+                results["new_npcs"].append(name)
 
-            new_locations = 0
+            # Rebuild key map now that new NPCs are in campaign.known_npcs
+            name_to_key = self._build_entity_key_map()
+
+            # ── Locations ──────────────────────────────────────────
             for loc in extracted["locations"]:
                 name = loc.get("name", "").strip()
                 description = loc.get("description", "").strip()
@@ -956,14 +1047,81 @@ class ClaudeSummarizer(BaseSummarizer):
                     campaign_id=self.campaign.campaign_id,
                     name=name,
                     description=description,
-                    first_seen_session=self._session_id,
+                    first_seen_session=session_id,
                 )
-                new_locations += 1
+                self.campaign.locations.append(LocationInfo(name=name, description=description))
+                results["new_locations"].append(name)
+
+            # ── Relationships ──────────────────────────────────────
+            existing_rel_keys = {
+                (r.source_key, r.target_key, r.relation_type_key)
+                for r in self.campaign.relationships
+            }
+            for rel_data in extracted["relationships"]:
+                source_name = rel_data.get("source", "").strip()
+                target_name = rel_data.get("target", "").strip()
+                relation_type = rel_data.get("relation_type", "").strip()
+                notes = rel_data.get("notes", "").strip()
+                if not source_name or not target_name or not relation_type:
+                    continue
+
+                source_key = name_to_key.get(source_name.lower(), f"npc:{source_name}")
+                target_key = name_to_key.get(target_name.lower(), f"npc:{target_name}")
+
+                if source_key == target_key:
+                    continue  # skip self-relationships
+
+                # Dedup layer 2: DB upsert handles conflicts idempotently
+                saved = await self._database.save_character_relationship(
+                    self.campaign.campaign_id,
+                    source_key,
+                    target_key,
+                    relation_type,
+                    notes=notes,
+                )
+                rel_triple = (
+                    saved["source_key"],
+                    saved["target_key"],
+                    saved["type_key"],
+                )
+                if rel_triple not in existing_rel_keys:
+                    existing_rel_keys.add(rel_triple)
+                    self.campaign.relationships.append(
+                        CharacterRelationshipInfo(
+                            source_key=saved["source_key"],
+                            target_key=saved["target_key"],
+                            relation_type_key=saved["type_key"],
+                            relation_type_label=saved["type_label"],
+                            notes=saved.get("notes", ""),
+                        )
+                    )
+                    results["new_relationships"].append(
+                        f"{source_name} -> {target_name}: {relation_type}"
+                    )
 
             logger.info(
-                "Extracted %d new NPC(s) and %d new location(s)",
-                new_npcs,
-                new_locations,
+                "Extraction: %d new NPC(s), %d new location(s), %d new relationship(s)",
+                len(results["new_npcs"]),
+                len(results["new_locations"]),
+                len(results["new_relationships"]),
             )
         except Exception as exc:
-            logger.error("NPC/location extraction failed: %s", exc)
+            logger.error("Entity extraction failed: %s", exc)
+
+        return results
+
+    async def _extract_entities(self) -> None:
+        """Run entity extraction for the current session and publish EntitiesUpdatedEvent."""
+        results = await self.extract_entities_from_summary(
+            self._session_id, self._session_summary
+        )
+        if any(results.values()):
+            await self.event_bus.publish(
+                EntitiesUpdatedEvent(
+                    campaign_id=self.campaign.campaign_id,
+                    session_id=self._session_id,
+                    new_npcs=tuple(results["new_npcs"]),
+                    new_locations=tuple(results["new_locations"]),
+                    new_relationships=tuple(results["new_relationships"]),
+                )
+            )
