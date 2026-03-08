@@ -259,6 +259,161 @@ class TestDatabaseEntities:
         assert entities[0]["entity_type"] == "faccion"
 
 
+class TestDatabaseMerges:
+    async def test_merge_npcs_hides_child_and_rewrites_relationships(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Johnny", "Solo")
+        await db.save_npc("c1", "J. Silverhand", "Alias")
+        await db.save_character_relationship(
+            "c1",
+            "npc:J. Silverhand",
+            "npc:Johnny",
+            "ally",
+        )
+
+        await db.merge_npcs("c1", "J. Silverhand", "Johnny")
+
+        npcs = await db.get_npcs("c1")
+        assert [n["name"] for n in npcs] == ["Johnny"]
+        relationships = await db.get_character_relationships("c1")
+        assert relationships == []
+
+    async def test_merge_locations_rewrites_legacy_and_short_prefixes(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_location("c1", "Night City", "City")
+        await db.save_location("c1", "Ciudad Nocturna", "ES alias")
+        await db.save_character_relationship(
+            "c1",
+            "location:Ciudad Nocturna",
+            "loc:Night City",
+            "same place as",
+        )
+
+        await db.merge_locations("c1", "Ciudad Nocturna", "Night City")
+
+        locations = await db.get_locations("c1")
+        assert [l["name"] for l in locations] == ["Night City"]
+        relationships = await db.get_character_relationships("c1")
+        assert relationships == []
+
+    async def test_merge_entities_combines_descriptions(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_entity("c1", "Arasaka", "corp", "Corp")
+        await db.save_entity("c1", "Arasaka Corp", "corp", "Alias")
+
+        await db.merge_entities("c1", "Arasaka Corp", "Arasaka")
+
+        entities = await db.get_entities("c1")
+        assert len(entities) == 1
+        assert entities[0]["name"] == "Arasaka"
+        assert "Corp" in entities[0]["description"]
+        assert "Alias" in entities[0]["description"]
+
+    async def test_merge_relationship_types_collapses_duplicate_edges(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_character_relationship("c1", "npc:V", "ent:Afterlife", "allied with")
+        await db.save_character_relationship("c1", "npc:V", "ent:Afterlife", "ally")
+        types_before = await db.get_relationship_types("c1")
+        assert len(types_before) == 2
+
+        await db.merge_relationship_types("c1", "ally", "allied with")
+
+        relationships = await db.get_character_relationships("c1")
+        assert len(relationships) == 1
+        assert relationships[0]["type_key"] == "allied with"
+        types_after = await db.get_relationship_types("c1")
+        assert len(types_after) == 1
+        assert "ally" in (types_after[0].get("aliases") or [])
+
+    async def test_merge_relationship_types_preserves_notes_on_collision(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_character_relationship(
+            "c1",
+            "npc:V",
+            "ent:Afterlife",
+            "allied with",
+            notes="Long term pact",
+        )
+        await db.save_character_relationship(
+            "c1",
+            "npc:V",
+            "ent:Afterlife",
+            "ally",
+            notes="Street deal",
+        )
+
+        await db.merge_relationship_types("c1", "ally", "allied with")
+        relationships = await db.get_character_relationships("c1")
+        assert len(relationships) == 1
+        notes = relationships[0]["notes"]
+        assert "Long term pact" in notes
+        assert "Street deal" in notes
+
+    async def test_update_merged_npc_can_unmerge(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_npc("c1", "Johnny", "Parent")
+        await db.save_npc("c1", "J. Silverhand", "Alias")
+        await db.merge_npcs("c1", "J. Silverhand", "Johnny")
+
+        merged_map = await db.get_merged_npcs_map("c1")
+        merged_child = merged_map["Johnny"][0]
+        await db.update_merged_npc(
+            "c1",
+            merged_child["id"],
+            name="John Silverhand",
+            description="Recovered alias",
+            merged_into="",
+        )
+
+        npcs = await db.get_npcs("c1")
+        names = [n["name"] for n in npcs]
+        assert "Johnny" in names
+        assert "John Silverhand" in names
+
+    async def test_update_merged_location_parent(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_location("c1", "Night City", "Parent A")
+        await db.save_location("c1", "NC", "Alias A")
+        await db.save_location("c1", "Dogtown", "Parent B")
+        await db.merge_locations("c1", "NC", "Night City")
+
+        merged_map = await db.get_merged_locations_map("c1")
+        merged_child = merged_map["Night City"][0]
+        await db.update_merged_location(
+            "c1",
+            merged_child["id"],
+            name="NC Alias",
+            description="Moved alias",
+            merged_into="Dogtown",
+        )
+
+        merged_map_after = await db.get_merged_locations_map("c1")
+        assert "Dogtown" in merged_map_after
+        assert merged_map_after["Dogtown"][0]["name"] == "NC Alias"
+
+    async def test_update_merged_entity_keeps_type(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.save_entity("c1", "Arasaka", "corp", "Parent")
+        await db.save_entity("c1", "Arasaka Corp", "corp", "Alias")
+        await db.merge_entities("c1", "Arasaka Corp", "Arasaka")
+
+        merged_map = await db.get_merged_entities_map("c1")
+        merged_child = merged_map["Arasaka"][0]
+        await db.update_merged_entity(
+            "c1",
+            merged_child["id"],
+            name="Arasaka Corporation",
+            description="Renamed alias",
+            entity_type="megacorp",
+            merged_into="Arasaka",
+        )
+
+        merged_map_after = await db.get_merged_entities_map("c1")
+        updated = merged_map_after["Arasaka"][0]
+        assert updated["name"] == "Arasaka Corporation"
+        assert updated["entity_type"] == "megacorp"
+
+
 class TestDatabaseQuestions:
     async def test_save_and_get_questions(self, db: Database) -> None:
         await db.upsert_campaign(campaign_id="c1", name="Test")

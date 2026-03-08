@@ -115,6 +115,10 @@
           <label>Name</label>
           <input type="text" id="new-location-name" required />
         </div>
+        <div class="edit-row">
+          <label>Description</label>
+          <textarea id="new-location-desc" rows="2" placeholder="Location description..."></textarea>
+        </div>
         <div class="edit-actions">
           <button type="submit" class="btn-small btn-save">Save</button>
           <button type="button" id="add-location-cancel" class="btn-small btn-cancel">Cancel</button>
@@ -186,12 +190,30 @@
       <form id="add-relationship-form" class="entity-edit-form hidden">
         <div class="edit-row">
           <label>Source</label>
-          <input type="text" id="new-rel-source-search" class="entity-select-search" placeholder="Search source..." />
+          <div class="relationship-select-tools">
+            <input type="text" id="new-rel-source-search" class="entity-select-search" placeholder="Search source..." />
+            <select id="new-rel-source-kind" class="entity-select-kind">
+              <option value="all">All</option>
+              <option value="player">Players</option>
+              <option value="npc">NPCs</option>
+              <option value="location">Locations</option>
+              <option value="entity">Entities</option>
+            </select>
+          </div>
           <select id="new-rel-source" required></select>
         </div>
         <div class="edit-row">
           <label>Target</label>
-          <input type="text" id="new-rel-target-search" class="entity-select-search" placeholder="Search target..." />
+          <div class="relationship-select-tools">
+            <input type="text" id="new-rel-target-search" class="entity-select-search" placeholder="Search target..." />
+            <select id="new-rel-target-kind" class="entity-select-kind">
+              <option value="all">All</option>
+              <option value="player">Players</option>
+              <option value="npc">NPCs</option>
+              <option value="location">Locations</option>
+              <option value="entity">Entities</option>
+            </select>
+          </div>
           <select id="new-rel-target" required></select>
         </div>
         <div class="edit-row">
@@ -206,6 +228,7 @@
           <label>Notes</label>
           <textarea id="new-rel-notes" rows="2" placeholder="Context or nuance..."></textarea>
         </div>
+        <div id="relationship-edit-parents" class="related-relationships hidden"></div>
         <div class="edit-actions">
           <button type="submit" class="btn-small btn-save">Save</button>
           <button type="button" id="add-relationship-cancel" class="btn-small btn-cancel">Cancel</button>

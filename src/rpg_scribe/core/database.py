@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS npcs (
     campaign_id TEXT REFERENCES campaigns(id),
     name TEXT,
     description TEXT,
-    first_seen_session TEXT
+    first_seen_session TEXT,
+    merged_into TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -106,7 +107,8 @@ CREATE TABLE IF NOT EXISTS locations (
     campaign_id TEXT REFERENCES campaigns(id),
     name TEXT,
     description TEXT,
-    first_seen_session TEXT
+    first_seen_session TEXT,
+    merged_into TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS campaign_entities (
@@ -115,7 +117,8 @@ CREATE TABLE IF NOT EXISTS campaign_entities (
     name TEXT,
     entity_type TEXT,
     description TEXT,
-    first_seen_session TEXT
+    first_seen_session TEXT,
+    merged_into TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS questions (
@@ -176,8 +179,22 @@ class Database:
         self._conn = await aiosqlite.connect(self._db_path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript(SCHEMA_SQL)
+        await self._run_schema_migrations()
         await self._conn.commit()
         logger.info("Database connected: %s", self._db_path)
+
+    async def _run_schema_migrations(self) -> None:
+        """Apply lightweight in-place schema migrations for legacy DB files."""
+        await self._ensure_column("npcs", "merged_into", "TEXT DEFAULT ''")
+        await self._ensure_column("locations", "merged_into", "TEXT DEFAULT ''")
+        await self._ensure_column("campaign_entities", "merged_into", "TEXT DEFAULT ''")
+
+    async def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+        cursor = await self.conn.execute(f"PRAGMA table_info({table})")
+        cols = [str(r["name"]) for r in await cursor.fetchall()]
+        if column in cols:
+            return
+        await self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -435,10 +452,29 @@ class Database:
     async def get_npcs(self, campaign_id: str) -> list[dict[str, Any]]:
         """Get all NPCs for a campaign."""
         cursor = await self.conn.execute(
-            "SELECT * FROM npcs WHERE campaign_id = ? ORDER BY name",
+            "SELECT * FROM npcs WHERE campaign_id = ? "
+            "AND (merged_into IS NULL OR merged_into = '') "
+            "ORDER BY name",
             (campaign_id,),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_merged_npcs_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Get merged NPC children grouped by parent NPC name."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM npcs WHERE campaign_id = ? "
+            "AND (merged_into IS NOT NULL AND merged_into != '') "
+            "ORDER BY merged_into, name",
+            (campaign_id,),
+        )
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in await cursor.fetchall():
+            item = dict(row)
+            parent = str(item.get("merged_into", "") or "")
+            if not parent:
+                continue
+            grouped.setdefault(parent, []).append(item)
+        return grouped
 
     async def npc_exists(self, campaign_id: str, name: str) -> bool:
         """Check if an NPC with the given name already exists in a campaign."""
@@ -461,6 +497,58 @@ class Database:
         values = list(updates.values()) + [npc_id]
         await self.conn.execute(
             f"UPDATE npcs SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    async def update_merged_npc(
+        self,
+        campaign_id: str,
+        npc_id: str,
+        *,
+        name: str,
+        description: str,
+        merged_into: str,
+    ) -> None:
+        """Update a merged NPC child and optionally move/unmerge it."""
+        target_parent = merged_into.strip()
+        new_name = name.strip()
+        if not new_name:
+            raise ValueError("name is required")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM npcs WHERE id = ? AND campaign_id = ? LIMIT 1",
+            (npc_id, campaign_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Merged NPC not found")
+        current_name = str(row["name"])
+
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM npcs WHERE campaign_id = ? AND lower(name) = lower(?) AND id != ? LIMIT 1",
+            (campaign_id, new_name, npc_id),
+        )
+        if await cursor.fetchone():
+            raise ValueError("Another NPC already has that name")
+
+        if target_parent:
+            cursor = await self.conn.execute(
+                "SELECT 1 FROM npcs WHERE campaign_id = ? AND lower(name) = lower(?) "
+                "AND (merged_into IS NULL OR merged_into = '') LIMIT 1",
+                (campaign_id, target_parent),
+            )
+            if await cursor.fetchone() is None:
+                raise ValueError("Parent NPC not found")
+            if new_name.casefold() == target_parent.casefold():
+                raise ValueError("Child NPC name cannot match parent name")
+
+        await self.conn.execute(
+            "UPDATE npcs SET name = ?, description = ?, merged_into = ? WHERE id = ? AND campaign_id = ?",
+            (new_name, description.strip(), target_parent, npc_id, campaign_id),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {f"npc:{current_name}": f"npc:{new_name}"},
         )
         await self.conn.commit()
 
@@ -487,10 +575,29 @@ class Database:
     async def get_locations(self, campaign_id: str) -> list[dict[str, Any]]:
         """Get all locations for a campaign."""
         cursor = await self.conn.execute(
-            "SELECT * FROM locations WHERE campaign_id = ? ORDER BY name",
+            "SELECT * FROM locations WHERE campaign_id = ? "
+            "AND (merged_into IS NULL OR merged_into = '') "
+            "ORDER BY name",
             (campaign_id,),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_merged_locations_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Get merged location children grouped by parent location name."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM locations WHERE campaign_id = ? "
+            "AND (merged_into IS NOT NULL AND merged_into != '') "
+            "ORDER BY merged_into, name",
+            (campaign_id,),
+        )
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in await cursor.fetchall():
+            item = dict(row)
+            parent = str(item.get("merged_into", "") or "")
+            if not parent:
+                continue
+            grouped.setdefault(parent, []).append(item)
+        return grouped
 
     async def location_exists(self, campaign_id: str, name: str) -> bool:
         """Check if a location with the given name already exists in a campaign.
@@ -517,6 +624,61 @@ class Database:
         values = list(updates.values()) + [location_id]
         await self.conn.execute(
             f"UPDATE locations SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    async def update_merged_location(
+        self,
+        campaign_id: str,
+        location_id: str,
+        *,
+        name: str,
+        description: str,
+        merged_into: str,
+    ) -> None:
+        """Update a merged location child and optionally move/unmerge it."""
+        target_parent = merged_into.strip()
+        new_name = name.strip()
+        if not new_name:
+            raise ValueError("name is required")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM locations WHERE id = ? AND campaign_id = ? LIMIT 1",
+            (location_id, campaign_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Merged location not found")
+        current_name = str(row["name"])
+
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM locations WHERE campaign_id = ? AND lower(name) = lower(?) AND id != ? LIMIT 1",
+            (campaign_id, new_name, location_id),
+        )
+        if await cursor.fetchone():
+            raise ValueError("Another location already has that name")
+
+        if target_parent:
+            cursor = await self.conn.execute(
+                "SELECT 1 FROM locations WHERE campaign_id = ? AND lower(name) = lower(?) "
+                "AND (merged_into IS NULL OR merged_into = '') LIMIT 1",
+                (campaign_id, target_parent),
+            )
+            if await cursor.fetchone() is None:
+                raise ValueError("Parent location not found")
+            if new_name.casefold() == target_parent.casefold():
+                raise ValueError("Child location name cannot match parent name")
+
+        await self.conn.execute(
+            "UPDATE locations SET name = ?, description = ?, merged_into = ? WHERE id = ? AND campaign_id = ?",
+            (new_name, description.strip(), target_parent, location_id, campaign_id),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {
+                f"loc:{current_name}": f"loc:{new_name}",
+                f"location:{current_name}": f"loc:{new_name}",
+            },
         )
         await self.conn.commit()
 
@@ -552,10 +714,29 @@ class Database:
     async def get_entities(self, campaign_id: str) -> list[dict[str, Any]]:
         """Get all campaign entities for a campaign."""
         cursor = await self.conn.execute(
-            "SELECT * FROM campaign_entities WHERE campaign_id = ? ORDER BY name",
+            "SELECT * FROM campaign_entities WHERE campaign_id = ? "
+            "AND (merged_into IS NULL OR merged_into = '') "
+            "ORDER BY name",
             (campaign_id,),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_merged_entities_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Get merged entity children grouped by parent entity name."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_entities WHERE campaign_id = ? "
+            "AND (merged_into IS NOT NULL AND merged_into != '') "
+            "ORDER BY merged_into, name",
+            (campaign_id,),
+        )
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in await cursor.fetchall():
+            item = dict(row)
+            parent = str(item.get("merged_into", "") or "")
+            if not parent:
+                continue
+            grouped.setdefault(parent, []).append(item)
+        return grouped
 
     async def entity_exists(self, campaign_id: str, name: str) -> bool:
         """Check if an entity with the given name already exists in a campaign."""
@@ -579,6 +760,289 @@ class Database:
         values = list(updates.values()) + [entity_id]
         await self.conn.execute(
             f"UPDATE campaign_entities SET {set_clause} WHERE id = ?", values
+        )
+        await self.conn.commit()
+
+    async def update_merged_entity(
+        self,
+        campaign_id: str,
+        entity_id: str,
+        *,
+        name: str,
+        description: str,
+        entity_type: str,
+        merged_into: str,
+    ) -> None:
+        """Update a merged campaign entity child and optionally move/unmerge it."""
+        target_parent = merged_into.strip()
+        new_name = name.strip()
+        normalized_type = entity_type.strip() or "group"
+        if not new_name:
+            raise ValueError("name is required")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_entities WHERE id = ? AND campaign_id = ? LIMIT 1",
+            (entity_id, campaign_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Merged entity not found")
+        current_name = str(row["name"])
+
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM campaign_entities WHERE campaign_id = ? AND lower(name) = lower(?) AND id != ? LIMIT 1",
+            (campaign_id, new_name, entity_id),
+        )
+        if await cursor.fetchone():
+            raise ValueError("Another entity already has that name")
+
+        if target_parent:
+            cursor = await self.conn.execute(
+                "SELECT 1 FROM campaign_entities WHERE campaign_id = ? AND lower(name) = lower(?) "
+                "AND (merged_into IS NULL OR merged_into = '') LIMIT 1",
+                (campaign_id, target_parent),
+            )
+            if await cursor.fetchone() is None:
+                raise ValueError("Parent entity not found")
+            if new_name.casefold() == target_parent.casefold():
+                raise ValueError("Child entity name cannot match parent name")
+
+        await self.conn.execute(
+            "UPDATE campaign_entities SET name = ?, entity_type = ?, description = ?, merged_into = ? "
+            "WHERE id = ? AND campaign_id = ?",
+            (new_name, normalized_type, description.strip(), target_parent, entity_id, campaign_id),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {
+                f"ent:{current_name}": f"ent:{new_name}",
+                f"entity:{current_name}": f"ent:{new_name}",
+            },
+        )
+        await self.conn.commit()
+
+    @staticmethod
+    def _merge_text_fields(primary: str, secondary: str) -> str:
+        """Merge two description-like fields without losing unique text."""
+        a = (primary or "").strip()
+        b = (secondary or "").strip()
+        if not a:
+            return b
+        if not b:
+            return a
+        if b.casefold() in a.casefold():
+            return a
+        return f"{a}\n{b}"
+
+    async def _upsert_relationship_row(
+        self,
+        campaign_id: str,
+        source_key: str,
+        target_key: str,
+        type_key: str,
+        type_label: str,
+        notes: str,
+    ) -> None:
+        """Insert/update one relationship row by natural key."""
+        import uuid
+
+        now = time.time()
+        await self.conn.execute(
+            "INSERT INTO character_relationships "
+            "(id, campaign_id, source_key, target_key, type_key, type_label, notes, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(campaign_id, source_key, target_key, type_key) DO UPDATE SET "
+            "type_label=excluded.type_label, notes=excluded.notes, updated_at=excluded.updated_at",
+            (
+                str(uuid.uuid4()),
+                campaign_id,
+                source_key,
+                target_key,
+                type_key,
+                type_label,
+                notes,
+                now,
+                now,
+            ),
+        )
+
+    async def _rewrite_relationship_entity_keys(
+        self,
+        campaign_id: str,
+        key_mapping: dict[str, str],
+    ) -> None:
+        """Rewrite relationship source/target keys, collapsing duplicates safely."""
+        if not key_mapping:
+            return
+
+        keys = list(key_mapping.keys())
+        placeholders = ", ".join("?" for _ in keys)
+        cursor = await self.conn.execute(
+            "SELECT * FROM character_relationships "
+            f"WHERE campaign_id = ? AND (source_key IN ({placeholders}) OR target_key IN ({placeholders}))",
+            [campaign_id, *keys, *keys],
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+        if not rows:
+            return
+
+        for row in rows:
+            source_key = str(row.get("source_key", ""))
+            target_key = str(row.get("target_key", ""))
+            new_source = key_mapping.get(source_key, source_key)
+            new_target = key_mapping.get(target_key, target_key)
+            if new_source == source_key and new_target == target_key:
+                continue
+
+            await self.conn.execute(
+                "DELETE FROM character_relationships WHERE id = ?",
+                (row["id"],),
+            )
+            if new_source == new_target:
+                continue
+            await self._upsert_relationship_row(
+                campaign_id=campaign_id,
+                source_key=new_source,
+                target_key=new_target,
+                type_key=str(row.get("type_key", "")),
+                type_label=str(row.get("type_label", "")),
+                notes=str(row.get("notes", "") or ""),
+            )
+
+    async def merge_npcs(
+        self,
+        campaign_id: str,
+        source_name: str,
+        target_name: str,
+    ) -> None:
+        """Merge one NPC into another NPC of the same campaign."""
+        source = source_name.strip()
+        target = target_name.strip()
+        if not source or not target or source.casefold() == target.casefold():
+            raise ValueError("source_name and target_name must be different")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM npcs WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, source),
+        )
+        source_row = await cursor.fetchone()
+        cursor = await self.conn.execute(
+            "SELECT * FROM npcs WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, target),
+        )
+        target_row = await cursor.fetchone()
+        if source_row is None or target_row is None:
+            raise ValueError("NPC source or target not found")
+
+        target_desc = self._merge_text_fields(
+            str(target_row["description"] or ""),
+            str(source_row["description"] or ""),
+        )
+        await self.conn.execute(
+            "UPDATE npcs SET description = ? WHERE id = ?",
+            (target_desc, str(target_row["id"])),
+        )
+        await self.conn.execute(
+            "UPDATE npcs SET merged_into = ? WHERE id = ?",
+            (str(target_row["name"]), str(source_row["id"])),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {
+                f"npc:{source_row['name']}": f"npc:{target_row['name']}",
+            },
+        )
+        await self.conn.commit()
+
+    async def merge_locations(
+        self,
+        campaign_id: str,
+        source_name: str,
+        target_name: str,
+    ) -> None:
+        """Merge one location into another location of the same campaign."""
+        source = source_name.strip()
+        target = target_name.strip()
+        if not source or not target or source.casefold() == target.casefold():
+            raise ValueError("source_name and target_name must be different")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM locations WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, source),
+        )
+        source_row = await cursor.fetchone()
+        cursor = await self.conn.execute(
+            "SELECT * FROM locations WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, target),
+        )
+        target_row = await cursor.fetchone()
+        if source_row is None or target_row is None:
+            raise ValueError("Location source or target not found")
+
+        target_desc = self._merge_text_fields(
+            str(target_row["description"] or ""),
+            str(source_row["description"] or ""),
+        )
+        await self.conn.execute(
+            "UPDATE locations SET description = ? WHERE id = ?",
+            (target_desc, str(target_row["id"])),
+        )
+        await self.conn.execute(
+            "UPDATE locations SET merged_into = ? WHERE id = ?",
+            (str(target_row["name"]), str(source_row["id"])),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {
+                f"loc:{source_row['name']}": f"loc:{target_row['name']}",
+                f"location:{source_row['name']}": f"loc:{target_row['name']}",
+            },
+        )
+        await self.conn.commit()
+
+    async def merge_entities(
+        self,
+        campaign_id: str,
+        source_name: str,
+        target_name: str,
+    ) -> None:
+        """Merge one campaign entity into another entity of same campaign."""
+        source = source_name.strip()
+        target = target_name.strip()
+        if not source or not target or source.casefold() == target.casefold():
+            raise ValueError("source_name and target_name must be different")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_entities WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, source),
+        )
+        source_row = await cursor.fetchone()
+        cursor = await self.conn.execute(
+            "SELECT * FROM campaign_entities WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
+            (campaign_id, target),
+        )
+        target_row = await cursor.fetchone()
+        if source_row is None or target_row is None:
+            raise ValueError("Entity source or target not found")
+
+        target_desc = self._merge_text_fields(
+            str(target_row["description"] or ""),
+            str(source_row["description"] or ""),
+        )
+        await self.conn.execute(
+            "UPDATE campaign_entities SET description = ? WHERE id = ?",
+            (target_desc, str(target_row["id"])),
+        )
+        await self.conn.execute(
+            "UPDATE campaign_entities SET merged_into = ? WHERE id = ?",
+            (str(target_row["name"]), str(source_row["id"])),
+        )
+        await self._rewrite_relationship_entity_keys(
+            campaign_id,
+            {
+                f"ent:{source_row['name']}": f"ent:{target_row['name']}",
+                f"entity:{source_row['name']}": f"ent:{target_row['name']}",
+            },
         )
         await self.conn.commit()
 
@@ -726,6 +1190,94 @@ class Database:
             "updated_at": now,
         }
 
+    async def merge_relationship_types(
+        self,
+        campaign_id: str,
+        source_type_key: str,
+        target_type_key: str,
+    ) -> None:
+        """Merge one relationship type into another canonical relationship type."""
+        source_key = source_type_key.strip()
+        target_key = target_type_key.strip()
+        if not source_key or not target_key or source_key == target_key:
+            raise ValueError("source_type_key and target_type_key must be different")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM relationship_types WHERE campaign_id = ? AND canonical_key = ? LIMIT 1",
+            (campaign_id, source_key),
+        )
+        source = await cursor.fetchone()
+        cursor = await self.conn.execute(
+            "SELECT * FROM relationship_types WHERE campaign_id = ? AND canonical_key = ? LIMIT 1",
+            (campaign_id, target_key),
+        )
+        target = await cursor.fetchone()
+        if source is None or target is None:
+            raise ValueError("relationship type source or target not found")
+
+        source_aliases = []
+        target_aliases = []
+        try:
+            source_aliases = json.loads(str(source["aliases_json"] or "[]"))
+        except Exception:
+            source_aliases = []
+        try:
+            target_aliases = json.loads(str(target["aliases_json"] or "[]"))
+        except Exception:
+            target_aliases = []
+
+        merged_aliases = sorted(
+            set(
+                [str(source["label"])]
+                + [str(a) for a in source_aliases]
+                + [str(a) for a in target_aliases]
+            )
+        )
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM character_relationships WHERE campaign_id = ? AND type_key = ?",
+            (campaign_id, source_key),
+        )
+        source_relationships = [dict(r) for r in await cursor.fetchall()]
+        for rel in source_relationships:
+            source_rel_key = str(rel.get("source_key", ""))
+            target_rel_key = str(rel.get("target_key", ""))
+            source_notes = str(rel.get("notes", "") or "")
+            cursor = await self.conn.execute(
+                "SELECT notes FROM character_relationships "
+                "WHERE campaign_id = ? AND source_key = ? AND target_key = ? AND type_key = ? LIMIT 1",
+                (campaign_id, source_rel_key, target_rel_key, target_key),
+            )
+            existing_target = await cursor.fetchone()
+            merged_notes = source_notes
+            if existing_target is not None:
+                merged_notes = self._merge_text_fields(
+                    str(existing_target["notes"] or ""),
+                    source_notes,
+                )
+            await self.conn.execute(
+                "DELETE FROM character_relationships WHERE id = ?",
+                (rel["id"],),
+            )
+            await self._upsert_relationship_row(
+                campaign_id=campaign_id,
+                source_key=source_rel_key,
+                target_key=target_rel_key,
+                type_key=target_key,
+                type_label=str(target["label"]),
+                notes=merged_notes,
+            )
+        await self.conn.execute(
+            "UPDATE relationship_types SET aliases_json = ?, updated_at = ? "
+            "WHERE campaign_id = ? AND canonical_key = ?",
+            (json.dumps(merged_aliases), time.time(), campaign_id, target_key),
+        )
+        await self.conn.execute(
+            "DELETE FROM relationship_types WHERE campaign_id = ? AND canonical_key = ?",
+            (campaign_id, source_key),
+        )
+        await self._recompute_relationship_type_usage(campaign_id, target_key)
+
     async def save_character_relationship(
         self,
         campaign_id: str,
@@ -806,6 +1358,37 @@ class Database:
             "notes": notes.strip(),
             "type_category": relation_type.get("category", "general"),
         }
+
+    async def _recompute_relationship_type_usage(
+        self,
+        campaign_id: str,
+        type_key: str,
+    ) -> None:
+        """Recompute usage count for one relationship type key."""
+        await self.conn.execute(
+            "UPDATE relationship_types SET usage_count = ("
+            "SELECT COUNT(*) FROM character_relationships "
+            "WHERE campaign_id = ? AND type_key = ?"
+            "), updated_at = ? "
+            "WHERE campaign_id = ? AND canonical_key = ?",
+            (campaign_id, type_key, time.time(), campaign_id, type_key),
+        )
+        await self.conn.commit()
+
+    async def delete_character_relationship(
+        self,
+        campaign_id: str,
+        source_key: str,
+        target_key: str,
+        type_key: str,
+    ) -> None:
+        """Delete one relationship by its natural key triple."""
+        await self.conn.execute(
+            "DELETE FROM character_relationships "
+            "WHERE campaign_id = ? AND source_key = ? AND target_key = ? AND type_key = ?",
+            (campaign_id, source_key, target_key, type_key),
+        )
+        await self._recompute_relationship_type_usage(campaign_id, type_key)
     async def get_character_relationships(self, campaign_id: str) -> list[dict[str, Any]]:
         """List character relationships for a campaign."""
         cursor = await self.conn.execute(

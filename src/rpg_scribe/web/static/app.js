@@ -80,9 +80,12 @@
   var relTargetSelect = document.getElementById("new-rel-target");
   var relSourceSearch = document.getElementById("new-rel-source-search");
   var relTargetSearch = document.getElementById("new-rel-target-search");
+  var relSourceKind = document.getElementById("new-rel-source-kind");
+  var relTargetKind = document.getElementById("new-rel-target-kind");
   var relTypeInput = document.getElementById("new-rel-type");
   var relCategoryInput = document.getElementById("new-rel-category");
   var relNotesInput = document.getElementById("new-rel-notes");
+  var relationshipEditParentsPanel = document.getElementById("relationship-edit-parents");
   var toggleRelationshipGraphBtn = document.getElementById("toggle-relationship-graph-btn");
   var relationshipGraphPanel = document.getElementById("relationship-graph-panel");
   var relationshipGraphSvg = document.getElementById("relationship-graph-svg");
@@ -119,6 +122,7 @@
   var pinnedNodeTooltipKey = null;
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
+  var relationshipEditOriginal = null;
 
   // WebSocket
 
@@ -297,6 +301,300 @@
   function entityDescription(entity) {
     if (entity && typeof entity === "object") return String(entity.description || "").trim();
     return "";
+  }
+
+  function mergedParentOptionsHtml(parentNames, currentParent, currentChildName) {
+    var options = '<option value="">Unmerge (show separately)</option>';
+    (parentNames || []).forEach(function (parentName) {
+      if (!parentName || parentName === currentChildName) return;
+      options += '<option value="' + escapeAttr(parentName) + '"' +
+        (parentName === (currentParent || "") ? " selected" : "") +
+        ">" + escapeHtml(parentName) + "</option>";
+    });
+    return options;
+  }
+
+  function renderMergedChildrenEditor(kind, mergedChildren, parentNames) {
+    var children = mergedChildren || [];
+    if (!children.length) {
+      return (
+        '<div class="merged-children merged-children-empty">' +
+        "No merged aliases." +
+        "</div>"
+      );
+    }
+    var rows = children.map(function (child) {
+      var childName = String(child.name || "");
+      var childDesc = String(child.description || "");
+      var childParent = String(child.merged_into || "");
+      var childType = String(child.entity_type || "group");
+      return (
+        '<div class="merged-child-item" data-merged-kind="' + escapeAttr(kind) + '" data-merged-id="' + escapeAttr(String(child.id || "")) + '">' +
+          '<div class="merged-child-grid">' +
+            '<input type="text" class="merged-child-name" value="' + escapeAttr(childName) + '" placeholder="Alias name" />' +
+            (kind === "entities"
+              ? ('<input type="text" class="merged-child-type" value="' + escapeAttr(childType) + '" placeholder="Type" />')
+              : "") +
+            '<select class="merged-child-parent">' +
+              mergedParentOptionsHtml(parentNames || [], childParent, childName) +
+            "</select>" +
+            '<button type="button" class="btn-small btn-save-merged-child">Save Alias</button>' +
+          "</div>" +
+          '<textarea class="merged-child-desc" rows="2" placeholder="Alias description...">' + escapeHtml(childDesc) + "</textarea>" +
+        "</div>"
+      );
+    }).join("");
+
+    return (
+      '<div class="merged-children">' +
+        '<div class="merged-children-title">Merged aliases</div>' +
+        rows +
+      "</div>"
+    );
+  }
+
+  function entityRelationshipKeyVariants(kind, name) {
+    var rawName = String(name || "").trim();
+    if (!rawName) return [];
+    if (kind === "npcs") return [normalizeEntityKey("npc:" + rawName)];
+    if (kind === "locations") {
+      return [
+        normalizeEntityKey("loc:" + rawName),
+        normalizeEntityKey("location:" + rawName),
+      ];
+    }
+    if (kind === "entities") {
+      return [
+        normalizeEntityKey("ent:" + rawName),
+        normalizeEntityKey("entity:" + rawName),
+      ];
+    }
+    return [];
+  }
+
+  function renderRelatedRelationshipsEditor(kind, parentName, mergedChildren, campaign) {
+    var keySet = {};
+    entityRelationshipKeyVariants(kind, parentName).forEach(function (k) { keySet[k] = true; });
+    (mergedChildren || []).forEach(function (child) {
+      entityRelationshipKeyVariants(kind, child && child.name).forEach(function (k) { keySet[k] = true; });
+    });
+
+    var keys = Object.keys(keySet);
+    if (!keys.length) {
+      return (
+        '<div class="related-relationships related-relationships-empty">' +
+        "No relationships for this entity." +
+        "</div>"
+      );
+    }
+
+    var rows = [];
+    ((campaign && campaign.relationships) || []).forEach(function (rel) {
+      var sourceKey = normalizeEntityKey(rel.source_key || "");
+      var targetKey = normalizeEntityKey(rel.target_key || "");
+      var matchSource = !!keySet[sourceKey];
+      var matchTarget = !!keySet[targetKey];
+      if (!matchSource && !matchTarget) return;
+
+      var otherKey = matchSource ? targetKey : sourceKey;
+      var relationLabel = relationTypeLabel(rel);
+      var otherLabel = entityLabelFromKey(campaign || {}, otherKey || "");
+      var direction = matchSource ? "->" : "<-";
+      var notes = String(rel.notes || "").trim();
+      rows.push(
+        '<div class="related-rel-item">' +
+          '<span class="related-rel-main">' + escapeHtml(relationLabel) + " " + direction + " " + escapeHtml(otherLabel) + "</span>" +
+          (notes ? ('<span class="related-rel-notes">' + escapeHtml(notes) + "</span>") : "") +
+        "</div>"
+      );
+    });
+
+    if (!rows.length) {
+      return (
+        '<div class="related-relationships related-relationships-empty">' +
+        "No relationships for this entity." +
+        "</div>"
+      );
+    }
+
+    return (
+      '<div class="related-relationships">' +
+        '<div class="merged-children-title">Related relationships</div>' +
+        rows.join("") +
+      "</div>"
+    );
+  }
+
+  function relationshipParentFromKey(key) {
+    var normalized = normalizeEntityKey(key || "");
+    if (!normalized) return null;
+    if (normalized.indexOf("npc:") === 0) {
+      return { kind: "npc", name: normalized.slice("npc:".length) };
+    }
+    if (normalized.indexOf("loc:") === 0) {
+      return { kind: "location", name: normalized.slice("loc:".length) };
+    }
+    if (normalized.indexOf("ent:") === 0) {
+      return { kind: "entity", name: normalized.slice("ent:".length) };
+    }
+    return null;
+  }
+
+  function mergedAliasesByParent(kind, parentName, campaign) {
+    if (!parentName) return [];
+    if (kind === "npc") return (((campaign || {}).merged_npcs_by_parent || {})[parentName] || []);
+    if (kind === "location") return (((campaign || {}).merged_locations_by_parent || {})[parentName] || []);
+    if (kind === "entity") return (((campaign || {}).merged_entities_by_parent || {})[parentName] || []);
+    return [];
+  }
+
+  function renderRelationshipEditParents(rel, campaign) {
+    var relObj = rel || {};
+    var descriptors = [];
+    var sourceDesc = relationshipParentFromKey(relObj.source_key || "");
+    var targetDesc = relationshipParentFromKey(relObj.target_key || "");
+    if (sourceDesc) descriptors.push(sourceDesc);
+    if (targetDesc && (!sourceDesc || sourceDesc.kind !== targetDesc.kind || sourceDesc.name !== targetDesc.name)) {
+      descriptors.push(targetDesc);
+    }
+
+    if (!descriptors.length) {
+      return '<div class="related-relationships-empty">No parent aliases for this relationship.</div>';
+    }
+
+    var npcParents = ((campaign || {}).npcs || []).map(function (n) { return n.name || ""; }).filter(function (v) { return !!v; });
+    var locationParents = ((campaign || {}).locations || []).map(function (l) { return locationName(l); }).filter(function (v) { return !!v; });
+    var entityParents = ((campaign || {}).entities || []).map(function (e) { return e.name || ""; }).filter(function (v) { return !!v; });
+
+    var sections = descriptors.map(function (desc) {
+      var kindLabel = desc.kind === "npc" ? "NPC" : (desc.kind === "location" ? "Location" : "Entity");
+      var kindPlural = desc.kind === "npc" ? "npcs" : (desc.kind === "location" ? "locations" : "entities");
+      var parentNames = desc.kind === "npc" ? npcParents : (desc.kind === "location" ? locationParents : entityParents);
+      var aliases = mergedAliasesByParent(desc.kind, desc.name, campaign);
+      if (!aliases.length) {
+        return (
+          '<div class="merged-children merged-children-empty">' +
+          escapeHtml(kindLabel + " parent: " + desc.name + " (no aliases merged)") +
+          "</div>"
+        );
+      }
+      var parentMap = {};
+      parentMap[desc.name] = aliases;
+      return renderMergedChildrenGlobalSection(
+        kindPlural,
+        kindLabel + " parent: " + desc.name,
+        parentMap,
+        parentNames
+      );
+    }).join("");
+
+    return (
+      '<div class="merged-children-title">Entities merged into relationship parents</div>' +
+      sections
+    );
+  }
+
+  function renderMergedChildrenGlobalSection(kind, title, mergedByParent, parentNames) {
+    var keys = Object.keys(mergedByParent || {});
+    var items = [];
+    keys.forEach(function (parent) {
+      var children = mergedByParent[parent] || [];
+      children.forEach(function (child) {
+        items.push({
+          id: child.id || "",
+          name: child.name || "",
+          description: child.description || "",
+          entity_type: child.entity_type || "group",
+          merged_into: child.merged_into || parent || "",
+        });
+      });
+    });
+    if (!items.length) {
+      return (
+        '<div class="merged-children merged-children-empty">' +
+        escapeHtml(title + ": no merged aliases.") +
+        "</div>"
+      );
+    }
+
+    var rows = items.map(function (child) {
+      return (
+        '<div class="merged-child-item" data-merged-kind="' + escapeAttr(kind) + '" data-merged-id="' + escapeAttr(String(child.id || "")) + '">' +
+          '<div class="merged-child-grid">' +
+            '<input type="text" class="merged-child-name" value="' + escapeAttr(String(child.name || "")) + '" placeholder="Alias name" />' +
+            (kind === "entities"
+              ? ('<input type="text" class="merged-child-type" value="' + escapeAttr(String(child.entity_type || "group")) + '" placeholder="Type" />')
+              : "") +
+            '<select class="merged-child-parent">' +
+              mergedParentOptionsHtml(parentNames || [], String(child.merged_into || ""), String(child.name || "")) +
+            "</select>" +
+            '<button type="button" class="btn-small btn-save-merged-child-global">Save Alias</button>' +
+          "</div>" +
+          '<textarea class="merged-child-desc" rows="2" placeholder="Alias description...">' + escapeHtml(String(child.description || "")) + "</textarea>" +
+        "</div>"
+      );
+    }).join("");
+
+    return (
+      '<div class="merged-children">' +
+        '<div class="merged-children-title">' + escapeHtml(title) + "</div>" +
+        rows +
+      "</div>"
+    );
+  }
+
+  function bindGlobalMergedAliasEditor(container) {
+    if (!container) return;
+    var buttons = container.querySelectorAll(".btn-save-merged-child-global");
+    buttons.forEach(function (btn) {
+      if (btn.dataset.boundMergedEditor === "1") return;
+      btn.dataset.boundMergedEditor = "1";
+      btn.addEventListener("click", function () {
+        if (appMode !== "live" || !activeCampaignId) return;
+        var row = btn.closest(".merged-child-item");
+        if (!row) return;
+        var kind = row.getAttribute("data-merged-kind") || "";
+        var id = row.getAttribute("data-merged-id") || "";
+        var nameInput = row.querySelector(".merged-child-name");
+        var descInput = row.querySelector(".merged-child-desc");
+        var parentSelect = row.querySelector(".merged-child-parent");
+        var typeInput = row.querySelector(".merged-child-type");
+        var body = {
+          name: ((nameInput || {}).value || "").trim(),
+          description: ((descInput || {}).value || "").trim(),
+          merged_into: ((parentSelect || {}).value || "").trim(),
+        };
+        if (kind === "entities") body.entity_type = ((typeInput || {}).value || "").trim() || "group";
+        if (!id || !body.name || !kind) {
+          alert("Alias name is required.");
+          return;
+        }
+
+        var endpoint = "";
+        if (kind === "npcs") endpoint = "/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(id);
+        else if (kind === "locations") endpoint = "/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(id);
+        else if (kind === "entities") endpoint = "/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(id);
+        if (!endpoint) return;
+
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+        fetch(endpoint, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) fetchCampaignInfo();
+            else alert("Error: " + (data.error || "Unknown error"));
+          })
+          .catch(function () { alert("Failed to update merged alias."); })
+          .finally(function () {
+            btn.disabled = false;
+            btn.textContent = "Save Alias";
+          });
+      });
+    });
   }
 
   // Campaign info
@@ -576,8 +874,14 @@
     npcsSection.classList.remove("hidden");
     npcsCount.textContent = "(" + npcs.length + ")";
     npcsList.innerHTML = "";
+    var mergedByParent = (currentCampaign && currentCampaign.merged_npcs_by_parent) || {};
+    var npcParentNames = npcs.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
 
     npcs.forEach(function (n) {
+      var mergedChildren = mergedByParent[n.name] || [];
+      var mergeTargetValues = npcs
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== n.name; })
+        .map(function (candidate) { return candidate.name; });
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -593,6 +897,15 @@
             '<input type="text" class="edit-npc-name" value="' + escapeAttr(n.name) + '" required /></div>' +
           '<div class="edit-row"><label>Description</label>' +
             '<textarea class="edit-npc-desc" rows="2">' + escapeHtml(n.description) + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<div class="merge-select-tools">' +
+              '<input type="text" class="merge-target-search" placeholder="Search target..." />' +
+              '<select class="merge-npc-target"></select>' +
+            '</div>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetValues.length ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
+          renderMergedChildrenEditor("npcs", mergedChildren, npcParentNames) +
+          renderRelatedRelationshipsEditor("npcs", n.name, mergedChildren, currentCampaign || {}) +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
@@ -640,6 +953,87 @@
           });
       });
 
+      var mergeNpcBtn = formEl.querySelector(".btn-merge-entity");
+      var mergeNpcTarget = formEl.querySelector(".merge-npc-target");
+      var mergeNpcSearch = formEl.querySelector(".merge-target-search");
+      if (mergeNpcTarget) {
+        setMergeTargetOptions(mergeNpcTarget, mergeTargetValues);
+      }
+      if (mergeNpcSearch && mergeNpcTarget) {
+        mergeNpcSearch.addEventListener("input", function () {
+          filterMergeTargetOptions(mergeNpcTarget, mergeNpcSearch.value);
+        });
+      }
+      if (mergeNpcBtn && mergeNpcTarget) {
+        mergeNpcBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeNpcTarget.value || "").trim();
+          if (!targetName) {
+            alert("Select a merge target first.");
+            return;
+          }
+          mergeNpcBtn.disabled = true;
+          mergeNpcBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: n.name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge NPC."); })
+            .finally(function () {
+              mergeNpcBtn.disabled = false;
+              mergeNpcBtn.textContent = "Merge";
+            });
+        });
+      }
+
+      var mergedNpcButtons = formEl.querySelectorAll(".btn-save-merged-child");
+      mergedNpcButtons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var row = btn.closest(".merged-child-item");
+          if (!row) return;
+          var mergedId = row.getAttribute("data-merged-id") || "";
+          var nameInput = row.querySelector(".merged-child-name");
+          var descInput = row.querySelector(".merged-child-desc");
+          var parentSelect = row.querySelector(".merged-child-parent");
+          var reqBody = {
+            name: ((nameInput || {}).value || "").trim(),
+            description: ((descInput || {}).value || "").trim(),
+            merged_into: ((parentSelect || {}).value || "").trim(),
+          };
+          if (!mergedId || !reqBody.name) {
+            alert("Alias name is required.");
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Saving...";
+          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(mergedId), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to update merged alias."); })
+            .finally(function () {
+              btn.disabled = false;
+              btn.textContent = "Save Alias";
+            });
+        });
+      });
+
       if (appMode !== "live") {
         var editBtnNpc = card.querySelector(".btn-edit-entity");
         if (editBtnNpc) editBtnNpc.classList.add("hidden");
@@ -654,11 +1048,16 @@
     if (!locationsSection) return;
 
     var items = (locations || []).map(function (loc) {
-      return locationName(loc);
-    }).filter(function (name) { return !!name; });
+      return {
+        name: locationName(loc),
+        description: locationDescription(loc),
+      };
+    }).filter(function (loc) { return !!loc.name; });
 
     locationsSection.classList.remove("hidden");
     locationsCount.textContent = "(" + items.length + ")";
+    var mergedByParent = (currentCampaign && currentCampaign.merged_locations_by_parent) || {};
+    var locationParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
 
     if (!items.length) {
       locationsList.innerHTML = '<p class="placeholder">No locations yet.</p>';
@@ -666,7 +1065,13 @@
     }
 
     locationsList.innerHTML = "";
-    items.forEach(function (name) {
+    items.forEach(function (loc) {
+      var name = loc.name;
+      var description = loc.description;
+      var mergedChildren = mergedByParent[name] || [];
+      var mergeTargetValues = items
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== name; })
+        .map(function (candidate) { return candidate.name; });
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -674,11 +1079,23 @@
           '<div class="entity-info">' +
             '<strong class="entity-name">' + escapeHtml(name) + '</strong>' +
           '</div>' +
+          '<span class="entity-desc">' + escapeHtml(description || "") + '</span>' +
           '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
         '</div>' +
         '<form class="entity-edit-form hidden">' +
           '<div class="edit-row"><label>Name</label>' +
             '<input type="text" class="edit-location-name" value="' + escapeAttr(name) + '" required /></div>' +
+          '<div class="edit-row"><label>Description</label>' +
+            '<textarea class="edit-location-desc" rows="2">' + escapeHtml(description || "") + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<div class="merge-select-tools">' +
+              '<input type="text" class="merge-target-search" placeholder="Search target..." />' +
+              '<select class="merge-location-target"></select>' +
+            '</div>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetValues.length ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
+          renderMergedChildrenEditor("locations", mergedChildren, locationParentNames) +
+          renderRelatedRelationshipsEditor("locations", name, mergedChildren, currentCampaign || {}) +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel entity-edit-cancel">Cancel</button>' +
@@ -703,7 +1120,9 @@
         var reqBody = {
           old_name: name,
           name: formEl.querySelector(".edit-location-name").value.trim(),
+          description: ((formEl.querySelector(".edit-location-desc") || {}).value || "").trim(),
         };
+        if (!reqBody.name) return;
         var saveBtn = formEl.querySelector(".btn-save");
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
@@ -725,6 +1144,87 @@
           });
       });
 
+      var mergeLocBtn = formEl.querySelector(".btn-merge-entity");
+      var mergeLocTarget = formEl.querySelector(".merge-location-target");
+      var mergeLocSearch = formEl.querySelector(".merge-target-search");
+      if (mergeLocTarget) {
+        setMergeTargetOptions(mergeLocTarget, mergeTargetValues);
+      }
+      if (mergeLocSearch && mergeLocTarget) {
+        mergeLocSearch.addEventListener("input", function () {
+          filterMergeTargetOptions(mergeLocTarget, mergeLocSearch.value);
+        });
+      }
+      if (mergeLocBtn && mergeLocTarget) {
+        mergeLocBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeLocTarget.value || "").trim();
+          if (!targetName) {
+            alert("Select a merge target first.");
+            return;
+          }
+          mergeLocBtn.disabled = true;
+          mergeLocBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge location."); })
+            .finally(function () {
+              mergeLocBtn.disabled = false;
+              mergeLocBtn.textContent = "Merge";
+            });
+        });
+      }
+
+      var mergedLocButtons = formEl.querySelectorAll(".btn-save-merged-child");
+      mergedLocButtons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var row = btn.closest(".merged-child-item");
+          if (!row) return;
+          var mergedId = row.getAttribute("data-merged-id") || "";
+          var nameInput = row.querySelector(".merged-child-name");
+          var descInput = row.querySelector(".merged-child-desc");
+          var parentSelect = row.querySelector(".merged-child-parent");
+          var reqBody = {
+            name: ((nameInput || {}).value || "").trim(),
+            description: ((descInput || {}).value || "").trim(),
+            merged_into: ((parentSelect || {}).value || "").trim(),
+          };
+          if (!mergedId || !reqBody.name) {
+            alert("Alias name is required.");
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Saving...";
+          fetch("/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(mergedId), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to update merged alias."); })
+            .finally(function () {
+              btn.disabled = false;
+              btn.textContent = "Save Alias";
+            });
+        });
+      });
+
       if (appMode !== "live") {
         var editBtnLoc = card.querySelector(".btn-edit-entity");
         if (editBtnLoc) editBtnLoc.classList.add("hidden");
@@ -743,6 +1243,8 @@
 
     entitiesSection.classList.remove("hidden");
     entitiesCount.textContent = "(" + items.length + ")";
+    var mergedByParent = (currentCampaign && currentCampaign.merged_entities_by_parent) || {};
+    var entityParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
 
     if (!items.length) {
       entitiesList.innerHTML = '<p class="placeholder">No entities yet.</p>';
@@ -751,6 +1253,10 @@
 
     entitiesList.innerHTML = "";
     items.forEach(function (ent) {
+      var mergedChildren = mergedByParent[ent.name] || [];
+      var mergeTargetValues = items
+        .filter(function (candidate) { return candidate && candidate.name && candidate.name !== ent.name; })
+        .map(function (candidate) { return candidate.name; });
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -769,6 +1275,15 @@
             '<input type="text" class="edit-entity-type" value="' + escapeAttr(entityType(ent)) + '" /></div>' +
           '<div class="edit-row"><label>Description</label>' +
             '<textarea class="edit-entity-desc" rows="2">' + escapeHtml(entityDescription(ent)) + '</textarea></div>' +
+          '<div class="edit-row merge-row"><label>Merge into</label>' +
+            '<div class="merge-select-tools">' +
+              '<input type="text" class="merge-target-search" placeholder="Search target..." />' +
+              '<select class="merge-entity-target"></select>' +
+            '</div>' +
+            '<button type="button" class="btn-small btn-merge-entity" ' + (mergeTargetValues.length ? "" : "disabled") + '>Merge</button>' +
+          '</div>' +
+          renderMergedChildrenEditor("entities", mergedChildren, entityParentNames) +
+          renderRelatedRelationshipsEditor("entities", ent.name, mergedChildren, currentCampaign || {}) +
           '<div class="edit-actions">' +
             '<button type="submit" class="btn-small btn-save">Save</button>' +
             '<button type="button" class="btn-small btn-cancel">Cancel</button>' +
@@ -831,6 +1346,89 @@
             });
         });
       }
+
+      var mergeEntBtn = form.querySelector(".btn-merge-entity");
+      var mergeEntTarget = form.querySelector(".merge-entity-target");
+      var mergeEntSearch = form.querySelector(".merge-target-search");
+      if (mergeEntTarget) {
+        setMergeTargetOptions(mergeEntTarget, mergeTargetValues);
+      }
+      if (mergeEntSearch && mergeEntTarget) {
+        mergeEntSearch.addEventListener("input", function () {
+          filterMergeTargetOptions(mergeEntTarget, mergeEntSearch.value);
+        });
+      }
+      if (mergeEntBtn && mergeEntTarget) {
+        mergeEntBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var targetName = (mergeEntTarget.value || "").trim();
+          if (!targetName) {
+            alert("Select a merge target first.");
+            return;
+          }
+          mergeEntBtn.disabled = true;
+          mergeEntBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_name: ent.name,
+              target_name: targetName,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge entity."); })
+            .finally(function () {
+              mergeEntBtn.disabled = false;
+              mergeEntBtn.textContent = "Merge";
+            });
+        });
+      }
+
+      var mergedEntButtons = form.querySelectorAll(".btn-save-merged-child");
+      mergedEntButtons.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId) return;
+          var row = btn.closest(".merged-child-item");
+          if (!row) return;
+          var mergedId = row.getAttribute("data-merged-id") || "";
+          var nameInput = row.querySelector(".merged-child-name");
+          var typeInput = row.querySelector(".merged-child-type");
+          var descInput = row.querySelector(".merged-child-desc");
+          var parentSelect = row.querySelector(".merged-child-parent");
+          var reqBody = {
+            name: ((nameInput || {}).value || "").trim(),
+            entity_type: ((typeInput || {}).value || "").trim() || "group",
+            description: ((descInput || {}).value || "").trim(),
+            merged_into: ((parentSelect || {}).value || "").trim(),
+          };
+          if (!mergedId || !reqBody.name) {
+            alert("Alias name is required.");
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = "Saving...";
+          fetch("/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(mergedId), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to update merged alias."); })
+            .finally(function () {
+              btn.disabled = false;
+              btn.textContent = "Save Alias";
+            });
+        });
+      });
 
       if (appMode !== "live") {
         if (editBtn) editBtn.classList.add("hidden");
@@ -1204,20 +1802,22 @@
     var entities = buildRelationshipEntities(campaign);
     setRelationshipEntityOptions(relSourceSelect, entities);
     setRelationshipEntityOptions(relTargetSelect, entities);
-    filterRelationshipEntityOptions(relSourceSelect, relSourceSearch ? relSourceSearch.value : "");
-    filterRelationshipEntityOptions(relTargetSelect, relTargetSearch ? relTargetSearch.value : "");
+    applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+    applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
 
     relSourceSelect.disabled = entities.length < 2;
     relTargetSelect.disabled = entities.length < 2;
     if (relSourceSearch) relSourceSearch.disabled = entities.length < 2;
     if (relTargetSearch) relTargetSearch.disabled = entities.length < 2;
+    if (relSourceKind) relSourceKind.disabled = entities.length < 2;
+    if (relTargetKind) relTargetKind.disabled = entities.length < 2;
   }
 
   function setRelationshipEntityOptions(selectEl, entities) {
     if (!selectEl) return;
     var previous = selectEl.value;
     selectEl.__allEntityOptions = (entities || []).map(function (e) {
-      return { value: e.key, label: e.label };
+      return { value: e.key, label: e.label, kind: e.kind || "unknown" };
     });
 
     selectEl.innerHTML = "";
@@ -1233,14 +1833,20 @@
     }
   }
 
-  function filterRelationshipEntityOptions(selectEl, query) {
+  function filterRelationshipEntityOptions(selectEl, query, kindFilter) {
     if (!selectEl) return;
     var allItems = selectEl.__allEntityOptions || [];
     var previous = selectEl.value;
     var q = (query || "").trim().toLowerCase();
+    var kind = (kindFilter || "all").trim().toLowerCase();
     var filtered = !q ? allItems : allItems.filter(function (item) {
       return item.label.toLowerCase().indexOf(q) >= 0 || item.value.toLowerCase().indexOf(q) >= 0;
     });
+    if (kind && kind !== "all") {
+      filtered = filtered.filter(function (item) {
+        return (item.kind || "").toLowerCase() === kind;
+      });
+    }
 
     selectEl.innerHTML = "";
     filtered.forEach(function (item) {
@@ -1272,6 +1878,39 @@
     }
     return String(value).replace(/["\\]/g, "\\$&");
   }
+
+  function setMergeTargetOptions(selectEl, values) {
+    if (!selectEl) return;
+    selectEl.__allMergeValues = (values || []).slice();
+    filterMergeTargetOptions(selectEl, "");
+  }
+
+  function filterMergeTargetOptions(selectEl, query) {
+    if (!selectEl) return;
+    var previous = selectEl.value || "";
+    var allValues = selectEl.__allMergeValues || [];
+    var q = (query || "").trim().toLowerCase();
+    var filtered = !q
+      ? allValues
+      : allValues.filter(function (value) {
+          return String(value).toLowerCase().indexOf(q) >= 0;
+        });
+
+    selectEl.innerHTML = "";
+    var firstOpt = document.createElement("option");
+    firstOpt.value = "";
+    firstOpt.textContent = filtered.length ? "Select target..." : "No matches";
+    selectEl.appendChild(firstOpt);
+    filtered.forEach(function (value) {
+      var opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      selectEl.appendChild(opt);
+    });
+
+    if (previous && filtered.indexOf(previous) >= 0) selectEl.value = previous;
+    else selectEl.value = "";
+  }
   function renderRelationships(relationships, campaign) {
     if (!relationshipsSection) return;
     relationshipsSection.classList.remove("hidden");
@@ -1290,12 +1929,26 @@
     }
 
     relationshipsList.innerHTML = "";
+    var relationshipTypes = ((campaign || {}).relationship_types || []).filter(function (row) {
+      return !!(row && row.canonical_key);
+    });
     items.forEach(function (rel) {
       var source = entityLabelFromKey(campaign, rel.source_key || "");
       var target = entityLabelFromKey(campaign, rel.target_key || "");
       var typeLabel = rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "(unknown)";
       var category = rel.type_category || "general";
-
+      var typeKey = rel.type_key || rel.relation_type_key || "";
+      var mergeTypeOptions = relationshipTypes
+        .filter(function (candidate) {
+          return candidate.canonical_key && candidate.canonical_key !== typeKey;
+        })
+        .map(function (candidate) {
+          var label = candidate.label || candidate.canonical_key;
+          return '<option value="' + escapeAttr(candidate.canonical_key) + '">' +
+            escapeHtml(label + " [" + (candidate.category || "general") + "]") +
+            "</option>";
+        })
+        .join("");
       var card = document.createElement("div");
       card.className = "entity-card";
       card.innerHTML =
@@ -1305,7 +1958,104 @@
             '<span class="entity-meta">' + escapeHtml(typeLabel) + ' [' + escapeHtml(category) + ']</span>' +
           '</div>' +
           '<span class="entity-desc">' + escapeHtml(rel.notes || "") + '</span>' +
-        '</div>';
+          '<div class="entity-actions">' +
+            '<button class="btn-small btn-edit-entity" title="Edit">Edit</button>' +
+            '<button class="btn-small btn-merge-reltype" title="Merge relationship type" ' +
+              ((typeKey && mergeTypeOptions) ? "" : "disabled") +
+            '>Merge Type</button>' +
+          '</div>' +
+        '</div>' +
+        '<form class="entity-edit-form hidden merge-reltype-form">' +
+          '<div class="edit-row merge-row"><label>Type parent</label>' +
+            '<select class="merge-reltype-target">' +
+              (mergeTypeOptions ? ('<option value="">Select target...</option>' + mergeTypeOptions) : '<option value="">No compatible target</option>') +
+            '</select>' +
+            '<button type="button" class="btn-small btn-confirm-reltype-merge" ' +
+              ((typeKey && mergeTypeOptions) ? "" : "disabled") +
+            '>Merge</button>' +
+            '<button type="button" class="btn-small btn-cancel-reltype-merge">Cancel</button>' +
+          '</div>' +
+        '</form>';
+      var editBtn = card.querySelector(".btn-edit-entity");
+      if (editBtn) {
+        editBtn.addEventListener("click", function () {
+          if (appMode !== "live") return;
+          relationshipEditOriginal = {
+            source_key: rel.source_key || "",
+            target_key: rel.target_key || "",
+            type_key: rel.type_key || rel.relation_type_key || "",
+          };
+          if (relSourceSearch) relSourceSearch.value = "";
+          if (relTargetSearch) relTargetSearch.value = "";
+          if (relSourceKind) relSourceKind.value = "all";
+          if (relTargetKind) relTargetKind.value = "all";
+          applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+          applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
+          if (relSourceSelect) relSourceSelect.value = normalizeEntityKey(rel.source_key || "");
+          if (relTargetSelect) relTargetSelect.value = normalizeEntityKey(rel.target_key || "");
+          if (relTypeInput) relTypeInput.value = typeLabel;
+          if (relCategoryInput) relCategoryInput.value = category;
+          if (relNotesInput) relNotesInput.value = rel.notes || "";
+          if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
+          if (addRelationshipForm) addRelationshipForm.classList.remove("hidden");
+          if (relationshipEditParentsPanel) {
+            relationshipEditParentsPanel.innerHTML = renderRelationshipEditParents(rel, campaign || {});
+            relationshipEditParentsPanel.classList.remove("hidden");
+            bindGlobalMergedAliasEditor(relationshipEditParentsPanel);
+          }
+          if (relTypeInput) relTypeInput.focus();
+        });
+      }
+      var mergeTypeBtn = card.querySelector(".btn-merge-reltype");
+      var mergeTypeForm = card.querySelector(".merge-reltype-form");
+      var mergeTypeCancelBtn = card.querySelector(".btn-cancel-reltype-merge");
+      var mergeTypeConfirmBtn = card.querySelector(".btn-confirm-reltype-merge");
+      var mergeTypeTarget = card.querySelector(".merge-reltype-target");
+      if (mergeTypeBtn && mergeTypeForm) {
+        mergeTypeBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !typeKey) return;
+          mergeTypeForm.classList.remove("hidden");
+        });
+      }
+      if (mergeTypeCancelBtn && mergeTypeForm) {
+        mergeTypeCancelBtn.addEventListener("click", function () {
+          mergeTypeForm.classList.add("hidden");
+        });
+      }
+      if (mergeTypeConfirmBtn && mergeTypeTarget) {
+        mergeTypeConfirmBtn.addEventListener("click", function () {
+          if (appMode !== "live" || !activeCampaignId || !typeKey) return;
+          var targetTypeKey = (mergeTypeTarget.value || "").trim();
+          if (!targetTypeKey) {
+            alert("Select a merge target first.");
+            return;
+          }
+          mergeTypeConfirmBtn.disabled = true;
+          mergeTypeConfirmBtn.textContent = "Merging...";
+          fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_type_key: typeKey,
+              target_type_key: targetTypeKey,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to merge relationship type."); })
+            .finally(function () {
+              mergeTypeConfirmBtn.disabled = false;
+              mergeTypeConfirmBtn.textContent = "Merge";
+            });
+        });
+      }
+      if (appMode !== "live") {
+        if (editBtn) editBtn.classList.add("hidden");
+        if (mergeTypeBtn) mergeTypeBtn.classList.add("hidden");
+      }
       relationshipsList.appendChild(card);
     });
   }
@@ -1325,18 +2075,34 @@
     renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
   }
 
+  function applyRelationshipEntityFilters(selectEl, searchEl, kindEl) {
+    var query = searchEl ? searchEl.value : "";
+    var kind = kindEl ? kindEl.value : "all";
+    filterRelationshipEntityOptions(selectEl, query, kind);
+  }
+
   if (graphFilterPlayers) graphFilterPlayers.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterNpcs) graphFilterNpcs.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterLocations) graphFilterLocations.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterEntities) graphFilterEntities.addEventListener("change", onGraphFiltersChanged);
   if (relSourceSearch) {
     relSourceSearch.addEventListener("input", function () {
-      filterRelationshipEntityOptions(relSourceSelect, relSourceSearch.value);
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
     });
   }
   if (relTargetSearch) {
     relTargetSearch.addEventListener("input", function () {
-      filterRelationshipEntityOptions(relTargetSelect, relTargetSearch.value);
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
+    });
+  }
+  if (relSourceKind) {
+    relSourceKind.addEventListener("change", function () {
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+    });
+  }
+  if (relTargetKind) {
+    relTargetKind.addEventListener("change", function () {
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
     });
   }
 
@@ -1393,7 +2159,11 @@
       if (!activeCampaignId || appMode !== "live") return;
 
       var nameInput = document.getElementById("new-location-name");
-      var reqBody = { name: nameInput ? nameInput.value.trim() : "" };
+      var descInput = document.getElementById("new-location-desc");
+      var reqBody = {
+        name: nameInput ? nameInput.value.trim() : "",
+        description: descInput ? descInput.value.trim() : "",
+      };
       if (!reqBody.name) return;
 
       var saveBtn = addLocationForm.querySelector(".btn-save");
@@ -1409,6 +2179,7 @@
         .then(function (data) {
           if (data.ok) {
             if (nameInput) nameInput.value = "";
+            if (descInput) descInput.value = "";
             addLocationForm.classList.add("hidden");
             addLocationBtn.classList.remove("hidden");
             fetchCampaignInfo();
@@ -1536,8 +2307,13 @@
   // Add Relationship form
   if (addRelationshipBtn) {
     addRelationshipBtn.addEventListener("click", function () {
+      relationshipEditOriginal = null;
       addRelationshipBtn.classList.add("hidden");
       addRelationshipForm.classList.remove("hidden");
+      if (relationshipEditParentsPanel) {
+        relationshipEditParentsPanel.classList.add("hidden");
+        relationshipEditParentsPanel.innerHTML = "";
+      }
       if (relTypeInput) relTypeInput.focus();
     });
   }
@@ -1545,6 +2321,17 @@
     addRelationshipCancel.addEventListener("click", function () {
       addRelationshipForm.classList.add("hidden");
       addRelationshipBtn.classList.remove("hidden");
+      relationshipEditOriginal = null;
+      if (relationshipEditParentsPanel) {
+        relationshipEditParentsPanel.classList.add("hidden");
+        relationshipEditParentsPanel.innerHTML = "";
+      }
+      if (relSourceSearch) relSourceSearch.value = "";
+      if (relTargetSearch) relTargetSearch.value = "";
+      if (relSourceKind) relSourceKind.value = "all";
+      if (relTargetKind) relTargetKind.value = "all";
+      applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
+      applyRelationshipEntityFilters(relTargetSelect, relTargetSearch, relTargetKind);
     });
   }
   if (addRelationshipForm) {
@@ -1566,9 +2353,17 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving...";
 
+      var isEditing = !!relationshipEditOriginal;
+      var url = "/api/campaigns/" + activeCampaignId + "/relationships";
+      if (isEditing) {
+        reqBody.old_source_key = relationshipEditOriginal.source_key;
+        reqBody.old_target_key = relationshipEditOriginal.target_key;
+        reqBody.old_type_key = relationshipEditOriginal.type_key;
+      }
+
       if (appMode !== "live") return;
-      fetch("/api/campaigns/" + activeCampaignId + "/relationships", {
-        method: "POST",
+      fetch(url, {
+        method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reqBody),
       })
@@ -1577,8 +2372,14 @@
           if (data.ok) {
             if (relTypeInput) relTypeInput.value = "";
             if (relNotesInput) relNotesInput.value = "";
+            if (relCategoryInput) relCategoryInput.value = "general";
             addRelationshipForm.classList.add("hidden");
             addRelationshipBtn.classList.remove("hidden");
+            relationshipEditOriginal = null;
+            if (relationshipEditParentsPanel) {
+              relationshipEditParentsPanel.classList.add("hidden");
+              relationshipEditParentsPanel.innerHTML = "";
+            }
             fetchCampaignInfo();
           } else {
             alert("Error: " + (data.error || "Unknown error"));
@@ -1712,6 +2513,10 @@
       if (addLocationForm) addLocationForm.classList.add("hidden");
       if (addEntityForm) addEntityForm.classList.add("hidden");
       if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
+      if (relationshipEditParentsPanel) {
+        relationshipEditParentsPanel.classList.add("hidden");
+        relationshipEditParentsPanel.innerHTML = "";
+      }
       fetchBrowseCampaigns();
     } else {
       viewingHistorical = false;
@@ -1827,6 +2632,10 @@
         if (addLocationForm) addLocationForm.classList.add("hidden");
         if (addEntityForm) addEntityForm.classList.add("hidden");
         addRelationshipForm.classList.add("hidden");
+        if (relationshipEditParentsPanel) {
+          relationshipEditParentsPanel.classList.add("hidden");
+          relationshipEditParentsPanel.innerHTML = "";
+        }
         renderBrowseCampaignList(browseCampaignsCache);
         fetchSessionList();
       })
