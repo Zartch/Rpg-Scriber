@@ -165,7 +165,6 @@ language = "en"
 max_concurrent_requests = 8
 
 [summarizer]
-update_interval_s = 60.0
 model = "claude-opus-4-20250514"
 
 [web]
@@ -196,7 +195,6 @@ class TestDefaultTomlLoading:
         assert config.listener.vad_aggressiveness == 3
         assert config.transcriber.language == "en"
         assert config.transcriber.max_concurrent_requests == 8
-        assert config.summarizer.update_interval_s == 60.0
         assert config.summarizer.model == "claude-opus-4-20250514"
         assert config.web_host == "0.0.0.0"
         assert config.web_port == 9090

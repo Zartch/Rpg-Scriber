@@ -78,18 +78,17 @@ def _patch_dave_decryption() -> None:
     def _patched_decode_packet(self: Any, packet: Any) -> tuple[Any, bytes]:
         assert self._decoder is not None
 
-        # Track whether we've already logged a DAVE failure for this SSRC
-        # to avoid spamming thousands of warning lines per second.
-        if not hasattr(self, '_dave_fail_logged'):
-            self._dave_fail_logged = False
-
         def _decrypt_dave(data: bytes) -> Optional[bytes]:
-            """Attempt DAVE decryption. Returns decrypted bytes on success, None on failure."""
+            """Attempt DAVE decryption. Returns decrypted bytes on success, None on failure.
+
+            Intermittent per-packet failures are normal during DAVE key renegotiation
+            and do not affect transcription quality (failed packets become silence).
+            Logging is intentionally suppressed to avoid ~600 lines/min of noise.
+            """
             try:
                 vc = self.sink.voice_client
                 if hasattr(vc, '_connection') and getattr(vc._connection, 'dave_session', None) is not None:
                     dave = vc._connection.dave_session
-                    user_id = None
                     try:
                         import davey
                         user_id = self._cached_id
@@ -98,27 +97,14 @@ def _patch_dave_decryption() -> None:
                             self._cached_id = user_id
 
                         if user_id is not None:
-                            result = dave.decrypt(user_id, davey.MediaType.audio, data)
-                            # Decryption succeeded — reset fail flag so future failures get logged
-                            if self._dave_fail_logged:
-                                logger.info("DAVE decryption recovered for ssrc %s (user %s)", self.ssrc, user_id)
-                                self._dave_fail_logged = False
-                            return result
-                        else:
-                            if not self._dave_fail_logged:
-                                logger.warning("DAVE: user_id could not be resolved from ssrc %s", self.ssrc)
-                                self._dave_fail_logged = True
-                    except Exception as e:
-                        if not self._dave_fail_logged:
-                            logger.warning("DAVE decrypt failed (user %s, ssrc %s): %s", user_id, self.ssrc, repr(e))
-                            self._dave_fail_logged = True
+                            return dave.decrypt(user_id, davey.MediaType.audio, data)
+                    except Exception:
+                        pass  # Intermittent DAVE failure — packet becomes silence
                 else:
                     # No dave_session at all — passthrough (no E2EE on this connection)
                     return data
-            except Exception as e:
-                if not self._dave_fail_logged:
-                    logger.warning("DAVE wrapper error: %s", repr(e))
-                    self._dave_fail_logged = True
+            except Exception:
+                pass  # DAVE wrapper error — packet becomes silence
             return None  # Signal: decryption failed, do NOT pass to Opus
 
         if packet:

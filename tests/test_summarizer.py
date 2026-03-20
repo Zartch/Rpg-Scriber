@@ -72,8 +72,6 @@ def _make_campaign(**overrides) -> CampaignContext:
 
 def _make_config(**overrides) -> SummarizerConfig:
     defaults = dict(
-        update_interval_s=120.0,
-        max_pending_transcriptions=20,
         model="claude-sonnet-4-20250514",
         max_tokens=4096,
         api_timeout_s=60.0,
@@ -216,30 +214,6 @@ class TestBaseSummarizer:
         await bus.publish(event)
         assert len(summarizer.processed) == 1
         assert summarizer.processed[0].text == "Hello world"
-
-    @pytest.mark.asyncio
-    async def test_should_update_max_pending(self, summarizer):
-        summarizer.config.max_pending_transcriptions = 3
-        for i in range(3):
-            summarizer._pending.append(
-                TranscriptionEntry(
-                    speaker_id="u", speaker_name="N", text=f"t{i}", timestamp=0
-                )
-            )
-        assert summarizer._should_update() is True
-
-    @pytest.mark.asyncio
-    async def test_should_update_time_elapsed(self, summarizer):
-        summarizer.config.update_interval_s = 0.0  # immediate
-        summarizer._pending.append(
-            TranscriptionEntry(speaker_id="u", speaker_name="N", text="t", timestamp=0)
-        )
-        summarizer._last_update_time = 0.0
-        assert summarizer._should_update() is True
-
-    @pytest.mark.asyncio
-    async def test_should_update_empty_pending(self, summarizer):
-        assert summarizer._should_update() is False
 
     @pytest.mark.asyncio
     async def test_publish_summary(self, summarizer, bus):
@@ -448,22 +422,21 @@ class TestClaudeSummarizer:
         assert summarizer._pending[0].speaker_name == "Mystery"
 
     @pytest.mark.asyncio
-    async def test_process_transcription_triggers_update(self, summarizer, mock_client):
-        """When max_pending_transcriptions is reached, update is triggered."""
-        summarizer.config.max_pending_transcriptions = 2
+    async def test_process_transcription_buffers_only(self, summarizer, mock_client):
+        """process_transcription only buffers, does not auto-trigger update."""
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response("Updated summary")
         )
         await summarizer.start("session-1")
 
-        for i in range(2):
+        for i in range(5):
             event = _make_transcription(
                 session_id="session-1", text=f"Line {i}"
             )
             await summarizer.process_transcription(event)
 
-        assert summarizer._session_summary == "Updated summary"
-        assert len(summarizer._pending) == 0
+        assert summarizer._session_summary == ""
+        assert len(summarizer._pending) == 5
 
     @pytest.mark.asyncio
     async def test_update_summary_publishes_event(self, summarizer, bus, mock_client):
@@ -570,8 +543,7 @@ class TestClaudeSummarizer:
 
     @pytest.mark.asyncio
     async def test_full_flow_via_event_bus(self, summarizer, bus, mock_client):
-        """End-to-end: publish TranscriptionEvents â†’ trigger update â†’ SummaryUpdateEvent."""
-        summarizer.config.max_pending_transcriptions = 3
+        """End-to-end: publish TranscriptionEvents → buffer only, no auto-update."""
         mock_client.messages.create = AsyncMock(
             return_value=_mock_anthropic_response("Integrated summary")
         )
@@ -581,12 +553,13 @@ class TestClaudeSummarizer:
 
         await summarizer.start("session-1")
 
-        for i in range(3):
+        for i in range(5):
             event = _make_transcription(session_id="session-1", text=f"Turn {i}")
             await bus.publish(event)
 
-        assert len(summaries) == 1
-        assert summaries[0].session_summary == "Integrated summary"
+        # No auto-update — summaries only generated on-demand or finalization
+        assert len(summaries) == 0
+        assert len(summarizer._pending) == 5
 
     @pytest.mark.asyncio
     async def test_error_in_process_publishes_error_status(self, bus, config, campaign):
@@ -1040,8 +1013,6 @@ class TestTranscriptionEntry:
 class TestSummarizerConfig:
     def test_defaults(self):
         cfg = SummarizerConfig()
-        assert cfg.update_interval_s == 120.0
-        assert cfg.max_pending_transcriptions == 20
         assert cfg.model == "claude-sonnet-4-20250514"
         assert cfg.max_tokens == 4096
         assert cfg.max_retries == 3

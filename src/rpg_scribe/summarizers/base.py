@@ -130,17 +130,6 @@ class BaseSummarizer(ABC):
                 )
             )
 
-    def _should_update(self) -> bool:
-        """Check whether we should trigger a summary update."""
-        if not self._pending:
-            return False
-        if len(self._pending) >= self.config.max_pending_transcriptions:
-            return True
-        elapsed = time.time() - self._last_update_time
-        if elapsed >= self.config.update_interval_s and len(self._pending) > 0:
-            return True
-        return False
-
     async def _publish_summary(self, update_type: str = "incremental") -> None:
         """Publish a SummaryUpdateEvent to the bus."""
         event = SummaryUpdateEvent(

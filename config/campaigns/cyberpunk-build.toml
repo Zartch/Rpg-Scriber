@@ -1,0 +1,65 @@
+[campaign]
+id = "cyberpunk-build-lab"
+name = "Cyberpunk Build Lab"
+game_system = "Cyberpunk RED"
+language = "es"
+description = """
+Sesion de charla casual para ayudar a Miquel a decidir que personaje crear
+para la proxima partida de Cyberpunk. El tono es de colegas: bromas, propuestas
+de builds y comparaciones de roles.
+"""
+campaign_summary = """
+"""
+
+[[campaign.locations]]
+name = "Afterlife"
+
+[[campaign.locations]]
+name = "Taller de Ripperdoc"
+
+[[campaign.locations]]
+name = "Mesa de teoria de builds"
+
+[campaign.dm]
+discord_id = "432635509899001877"
+
+[[campaign.players]]
+discord_id = "301071912292057088"
+discord_name = "@Zartch"
+character_name = "Zartch"
+character_description = "Posible Fixer, acanando la ficha"
+
+[[campaign.players]]
+discord_id = "341205872615096321"
+discord_name = "Bateman"
+character_name = "Bateman"
+character_description = "Posible personaje de combate, esta en ello."
+
+[[campaign.players]]
+discord_id = "432635509899001877"
+discord_name = "Escalopo"
+character_name = "Escalopo"
+character_description = "Es el master, Aporta equilibrio de grupo, sinergias y contras de cada build."
+
+[[campaign.players]]
+discord_id = "321011002856701972"
+discord_name = "Miquel"
+character_name = "Miquel"
+character_description = "Posible técnico, haciendo la ficha."
+
+[[campaign.players]]
+discord_id = "438410726298746891"
+discord_name = "Davidus"
+character_name = "David"
+character_description = "Posible netruner haciendose la ficha"
+
+
+[campaign.custom_instructions]
+text = """
+- Esta campana es una sesion de pre-juego y decision de build, no una aventura activa.
+- Prioriza capturar argumentos utiles para decidir el personaje de Miquel.
+- Separa claramente propuestas serias de bromas internas.
+- Si hay consenso o decision final, dejalo explicito con pros y contras.
+- Mantener tono informal y natural del grupo sin perder informacion clave.
+- El transcriptor trascribe cosas sin sentido a veces, si algo no tiene sentido simplemente descarta
+"""

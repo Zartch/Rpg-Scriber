@@ -499,7 +499,7 @@ class ClaudeSummarizer(BaseSummarizer):
     # ------------------------------------------------------------------
 
     async def process_transcription(self, event: TranscriptionEvent) -> None:
-        """Buffer the transcription and trigger update if thresholds met."""
+        """Buffer the transcription for on-demand or finalization summary."""
         if self.campaign.is_generic:
             character_name = event.speaker_name
         else:
@@ -514,9 +514,6 @@ class ClaudeSummarizer(BaseSummarizer):
                 timestamp=event.timestamp,
             )
         )
-
-        if self._should_update():
-            await self._update_summary()
 
     async def get_session_summary(self) -> str:
         return self._session_summary

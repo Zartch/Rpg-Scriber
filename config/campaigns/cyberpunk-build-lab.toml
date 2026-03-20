@@ -72,13 +72,13 @@ discord_id = "432635509899001877"
 discord_id = "301071912292057088"
 discord_name = "@Zartch"
 character_name = "Zartch"
-character_description = "esta buscando su personaje"
+character_description = "Posible Fixer, acanando la ficha"
 
 [[campaign.players]]
 discord_id = "341205872615096321"
 discord_name = "Bateman"
 character_name = "Bateman"
-character_description = "Lanza propuestas agresivas o raras para testear limites del personaje."
+character_description = "Posible personaje de combate, esta en ello."
 
 [[campaign.players]]
 discord_id = "432635509899001877"
@@ -90,7 +90,13 @@ character_description = "Es el master, Aporta equilibrio de grupo, sinergias y c
 discord_id = "321011002856701972"
 discord_name = "Miquel"
 character_name = "Miquel"
-character_description = "Jugador en foco: esta eligiendo concepto y rol para la siguiente partida."
+character_description = "Posible técnico, haciendo la ficha."
+
+[[campaign.players]]
+discord_id = "438410726298746891"
+discord_name = "Davidus"
+character_name = "David"
+character_description = "Posible netruner haciendose la ficha"
 
 [[campaign.npcs]]
 name = "Ejecutiva poliooperada"
