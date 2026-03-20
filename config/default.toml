@@ -36,8 +36,6 @@ audio_debug_log_dir = "logs/audio/discarded"
 verbose_logging = false
 
 [summarizer]
-update_interval_s = 120.0
-max_pending_transcriptions = 20
 model = "claude-sonnet-4-20250514"
 max_tokens = 4096
 api_timeout_s = 60.0

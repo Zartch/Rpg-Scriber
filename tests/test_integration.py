@@ -61,12 +61,6 @@ class FakeSummarizer(BaseSummarizer):
                 timestamp=event.timestamp,
             )
         )
-        if self._should_update():
-            lines = [f"{e.speaker_name}: {e.text}" for e in self._pending]
-            self._session_summary += "\n".join(lines) + "\n"
-            self._pending.clear()
-            self._last_update_time = time.time()
-            await self._publish_summary("incremental")
 
     async def get_session_summary(self) -> str:
         return self._session_summary
@@ -138,10 +132,7 @@ class TestFullPipelineIntegration:
         await transcriber.start()
 
         # Set up summarizer with low thresholds for testing
-        summarizer_config = SummarizerConfig(
-            max_pending_transcriptions=2,
-            update_interval_s=0.1,
-        )
+        summarizer_config = SummarizerConfig()
         summarizer = FakeSummarizer(event_bus, summarizer_config, campaign)
         await summarizer.start("test-session")
 
@@ -169,12 +160,10 @@ class TestFullPipelineIntegration:
         ]
         assert len(running_statuses) >= 2  # transcriber + summarizer
 
-        # Verify summary was produced (2 transcriptions trigger update)
-        assert len(collected_summaries) >= 1
-        summary_text = collected_summaries[0].session_summary
-        assert "Transcribed from" in summary_text
+        # No auto-update — transcriptions are buffered only
+        assert len(collected_summaries) == 0
 
-        # Finalize
+        # Finalize produces the summary
         final = await summarizer.finalize_session()
         assert "Transcribed from" in final
 

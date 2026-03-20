@@ -167,10 +167,6 @@ class SessionInfo:
 class SummarizerConfig:
     """Configuration for a summarizer."""
 
-    # Trigger thresholds
-    update_interval_s: float = 120.0  # ~2 minutes between updates
-    max_pending_transcriptions: int = 20  # Or trigger after N transcriptions
-
     # Claude API settings
     model: str = "claude-sonnet-4-20250514"
     max_tokens: int = 4096
