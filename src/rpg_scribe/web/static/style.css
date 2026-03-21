@@ -328,13 +328,71 @@ header h1 { font-size: 1.25rem; }
 }
 .feed-entry.partial { opacity: 0.6; border-left-color: var(--text-muted); }
 
+/* Editable words in transcriptions */
+.editable-word { cursor: pointer; border-radius: 2px; transition: background 0.15s; }
+.editable-word:hover { background: rgba(124, 58, 237, 0.15); }
+.word-edit-input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--accent);
+  border-radius: 3px; font-size: 0.85rem; padding: 0 0.25rem;
+  font-family: inherit; outline: none;
+}
+.word-edit-actions { display: inline-flex; gap: 0.2rem; margin-left: 0.25rem; vertical-align: middle; }
+.word-edit-actions button {
+  font-size: 0.7rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.4;
+}
+.word-edit-actions .word-confirm { background: var(--accent); color: #fff; }
+.word-edit-actions .word-cancel { background: var(--border); color: var(--text-muted); }
+.word-replace-option {
+  display: block; font-size: 0.7rem; color: var(--text-muted);
+  margin-top: 0.2rem; padding-left: 0.5rem;
+}
+.word-replace-option input[type="checkbox"] { margin-right: 0.25rem; vertical-align: middle; }
+
 /* Summary */
 .summary-content {
   font-size: 0.9rem;
-  white-space: pre-wrap;
   max-height: 400px;
   overflow-y: auto;
 }
+
+/* Editable paragraphs in summaries */
+.editable-paragraph {
+  cursor: pointer; padding: 0.35rem 0.25rem; border-radius: 4px;
+  transition: background 0.15s; white-space: pre-wrap;
+  margin-bottom: 0.5rem; line-height: 1.5;
+}
+.editable-paragraph:hover { background: rgba(124, 58, 237, 0.1); }
+.paragraph-edit-wrap { margin-bottom: 0.5rem; }
+.paragraph-edit-textarea {
+  width: 100%; min-height: 80px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 4px; font-size: 0.9rem;
+  padding: 0.5rem; resize: vertical; font-family: inherit; line-height: 1.5;
+  outline: none; box-sizing: border-box;
+}
+.paragraph-edit-actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; justify-content: flex-end; }
+.paragraph-edit-actions button {
+  font-size: 0.8rem; padding: 0.25rem 0.75rem; border-radius: 4px;
+  cursor: pointer; border: none;
+}
+.paragraph-edit-actions .para-save { background: var(--accent); color: #fff; }
+.paragraph-edit-actions .para-cancel { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Word replacements section */
+.replacements-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.replacement-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.3rem 0.5rem; font-size: 0.8rem;
+  background: var(--bg); border-radius: 4px;
+}
+.replacement-original { color: var(--text-muted); text-decoration: line-through; }
+.replacement-arrow { color: var(--text-muted); }
+.replacement-new { color: var(--text); }
+.replacement-delete {
+  margin-left: auto; background: transparent; border: none;
+  color: var(--text-muted); cursor: pointer; font-size: 0.8rem;
+}
+.replacement-delete:hover { color: #ef4444; }
 
 .placeholder { color: var(--text-muted); font-style: italic; }
 

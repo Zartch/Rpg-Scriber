@@ -112,6 +112,11 @@ def _get_event_bus():
     return getattr(router, "event_bus", None)
 
 
+def _get_application():
+    """Access the optional Application attached to the router."""
+    return getattr(router, "application", None)
+
+
 def _persist_campaign_toml(config: Any) -> None:
     """Persist in-memory campaign config back to its TOML file if configured."""
     if not config or not getattr(config, "campaign", None):
@@ -410,6 +415,148 @@ async def get_summary(session_id: str) -> dict[str, Any]:
         "campaign_summary": "",
         "last_updated": 0,
     }
+
+
+# ── Transcription editing ─────────────────────────────────────
+
+
+@router.put("/api/transcriptions/{transcription_id}")
+async def update_transcription(
+    transcription_id: int, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Update a transcription's text and record word-level edits."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    new_text = body.get("text", "")
+    if not new_text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    ok = await db.update_transcription_text(transcription_id, new_text)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Transcription not found")
+
+    edits = body.get("edits", [])
+    for edit in edits:
+        await db.save_transcription_edit(
+            transcription_id=transcription_id,
+            original_word=edit.get("original", ""),
+            new_word=edit.get("new", ""),
+            position=edit.get("position", 0),
+        )
+
+    state = _get_state()
+    for t in state.transcriptions:
+        if t.get("id") == transcription_id:
+            t["text"] = new_text
+            break
+
+    return {"ok": True, "id": transcription_id}
+
+
+# ── Word replacements ─────────────────────────────────────────
+
+
+@router.get("/api/campaigns/{campaign_id}/word-replacements")
+async def get_word_replacements(campaign_id: str) -> dict[str, Any]:
+    """List all word replacement rules for a campaign."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    replacements = await db.get_word_replacements(campaign_id)
+    return {"replacements": replacements}
+
+
+@router.post("/api/campaigns/{campaign_id}/word-replacements")
+async def create_word_replacement(
+    campaign_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Create a word replacement rule."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    original = body.get("original_word", "").strip()
+    replacement = body.get("replacement_word", "").strip()
+    if not original or not replacement:
+        raise HTTPException(
+            status_code=400, detail="Both original_word and replacement_word are required"
+        )
+    rule_id = await db.save_word_replacement(campaign_id, original, replacement)
+    app = _get_application()
+    if app and hasattr(app, "reload_word_replacements"):
+        await app.reload_word_replacements()
+    return {"ok": True, "id": rule_id}
+
+
+@router.delete("/api/campaigns/{campaign_id}/word-replacements/{replacement_id}")
+async def delete_word_replacement(
+    campaign_id: str, replacement_id: int
+) -> dict[str, Any]:
+    """Delete a word replacement rule."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    ok = await db.delete_word_replacement(replacement_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Replacement rule not found")
+    app = _get_application()
+    if app and hasattr(app, "reload_word_replacements"):
+        await app.reload_word_replacements()
+    return {"ok": True}
+
+
+@router.post("/api/campaigns/{campaign_id}/word-replacements/apply")
+async def apply_word_replacements(campaign_id: str) -> dict[str, Any]:
+    """Apply all word replacement rules retroactively to existing transcriptions."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    modified = await db.apply_word_replacements(campaign_id)
+    return {"ok": True, "modified_count": modified}
+
+
+# ── Summary editing ───────────────────────────────────────────
+
+
+@router.put("/api/sessions/{session_id}/summary")
+async def update_session_summary(
+    session_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Update the session summary text (overwrite, no history)."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    text = body.get("session_summary", "")
+    ok = await db.update_session_summary(session_id, text)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _get_state()
+    if session_id == state.active_session_id:
+        state.session_summary = text
+
+    return {"ok": True}
+
+
+@router.put("/api/campaigns/{campaign_id}/campaign-summary")
+async def update_campaign_summary_text(
+    campaign_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Update the campaign summary cache text (overwrite, no history)."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    text = body.get("campaign_summary", "")
+    await db.update_campaign_summary(campaign_id, text)
+
+    state = _get_state()
+    state.campaign_summary = text
+    if state.active_campaign and state.active_campaign.get("id") == campaign_id:
+        state.active_campaign["campaign_summary"] = text
+
+    return {"ok": True}
+
 
 @router.get("/api/questions")
 async def get_questions() -> dict[str, Any]:

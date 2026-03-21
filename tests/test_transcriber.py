@@ -719,7 +719,7 @@ class TestAudioDebugLogging:
 
         await transcriber.stop()
 
-        saved = list(log_dir.glob("*.wav"))
+        saved = list(log_dir.glob("**/*.wav"))
         assert len(saved) == 1, f"Expected 1 WAV file, got {saved}"
         assert "_AUDIO_" in saved[0].name
         assert saved[0].stat().st_size > 0
@@ -743,7 +743,7 @@ class TestAudioDebugLogging:
 
         await transcriber.stop()
 
-        saved = list(log_dir.glob("*.wav"))
+        saved = list(log_dir.glob("**/*.wav"))
         assert len(saved) == 1, f"Expected 1 WAV file, got {saved}"
         assert "_HALLU_" in saved[0].name
         assert saved[0].stat().st_size > 0
@@ -784,7 +784,7 @@ class TestAudioDebugLogging:
 
         await transcriber.stop()
 
-        saved = list(log_dir.glob("*.wav"))
+        saved = list(log_dir.glob("**/*.wav"))
         assert len(saved) == 1
         name = saved[0].name
         assert "Gandalf" in name

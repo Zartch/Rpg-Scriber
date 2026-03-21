@@ -32,6 +32,7 @@ def create_app(
     event_bus: EventBus,
     database: object | None = None,
     config: object | None = None,
+    application: object | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -125,6 +126,7 @@ def create_app(
     router.database = database  # type: ignore[attr-defined]
     router.config = config  # type: ignore[attr-defined]
     router.event_bus = event_bus  # type: ignore[attr-defined]
+    router.application = application  # type: ignore[attr-defined]
 
     # Populate campaign info in WebState from config
     if config and hasattr(config, "campaign") and config.campaign:
