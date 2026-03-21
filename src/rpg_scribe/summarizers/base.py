@@ -26,6 +26,7 @@ class TranscriptionEntry:
     speaker_name: str
     text: str
     timestamp: float
+    is_ingame: bool = True
 
 
 class BaseSummarizer(ABC):

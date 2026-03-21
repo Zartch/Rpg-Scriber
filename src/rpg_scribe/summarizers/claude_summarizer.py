@@ -349,7 +349,8 @@ class ClaudeSummarizer(BaseSummarizer):
             speaker = e.speaker_name
             if dm_id and e.speaker_id == dm_id:
                 speaker = f"{speaker} [MASTER]"
-            lines.append(f"[{speaker}]: {e.text}")
+            prefix = "[META]" if not e.is_ingame else ""
+            lines.append(f"{prefix}[{speaker}]: {e.text}")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -712,6 +713,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 speaker_name=r.get("speaker_name", "") or r.get("speaker_id", ""),
                 text=r.get("text", ""),
                 timestamp=r.get("timestamp", 0.0),
+                is_ingame=r.get("is_ingame", True) if r.get("is_ingame") is not None else True,
             )
             for r in transcription_rows
             if r.get("text", "").strip()

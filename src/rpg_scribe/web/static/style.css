@@ -328,6 +328,26 @@ header h1 { font-size: 1.25rem; }
 }
 .feed-entry.partial { opacity: 0.6; border-left-color: var(--text-muted); }
 
+/* Action buttons on transcriptions (hover-visible) */
+.entry-actions { display: none; float: right; gap: 0.2rem; }
+.feed-entry:hover .entry-actions { display: inline-flex; }
+.entry-actions button {
+  font-size: 0.7rem; padding: 0 0.35rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+}
+.entry-actions .btn-delete:hover { background: #e53e3e; color: #fff; }
+.entry-actions .btn-meta:hover { background: var(--accent); color: #fff; }
+
+/* META transcription state */
+.feed-entry.meta { border-left-color: var(--text-muted); opacity: 0.7; }
+.feed-entry.meta .btn-meta { background: var(--accent); color: #fff; }
+.meta-badge {
+  display: none; font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+  background: var(--border); padding: 0.05rem 0.3rem; border-radius: 3px;
+  margin-right: 0.3rem;
+}
+.feed-entry.meta .meta-badge { display: inline; }
+
 /* Editable words in transcriptions */
 .editable-word { cursor: pointer; border-radius: 2px; transition: background 0.15s; }
 .editable-word:hover { background: rgba(124, 58, 237, 0.15); }

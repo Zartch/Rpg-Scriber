@@ -455,6 +455,47 @@ async def update_transcription(
     return {"ok": True, "id": transcription_id}
 
 
+@router.delete("/api/transcriptions/{transcription_id}")
+async def delete_transcription(transcription_id: int) -> dict[str, Any]:
+    """Delete a transcription by ID."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    ok = await db.delete_transcription(transcription_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Transcription not found")
+
+    state = _get_state()
+    state.transcriptions = [
+        t for t in state.transcriptions if t.get("id") != transcription_id
+    ]
+
+    return {"ok": True, "id": transcription_id}
+
+
+@router.patch("/api/transcriptions/{transcription_id}/meta")
+async def toggle_transcription_meta(
+    transcription_id: int, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Toggle the is_ingame flag on a transcription."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    is_ingame = body.get("is_ingame", True)
+    ok = await db.update_transcription_is_ingame(transcription_id, is_ingame)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Transcription not found")
+
+    state = _get_state()
+    for t in state.transcriptions:
+        if t.get("id") == transcription_id:
+            t["is_ingame"] = is_ingame
+            break
+
+    return {"ok": True, "id": transcription_id, "is_ingame": is_ingame}
+
+
 # ── Word replacements ─────────────────────────────────────────
 
 

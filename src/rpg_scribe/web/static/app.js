@@ -212,7 +212,8 @@
     if (ph) ph.remove();
 
     var entry = document.createElement("div");
-    entry.className = "feed-entry" + (data.is_partial ? " partial" : "");
+    var isIngame = data.is_ingame !== false && data.is_ingame !== 0;
+    entry.className = "feed-entry" + (data.is_partial ? " partial" : "") + (isIngame ? "" : " meta");
 
     // Wrap each word in a span for inline editing
     var tokens = (data.text || "").split(/(\s+)/);
@@ -226,6 +227,11 @@
     }).join("");
 
     entry.innerHTML =
+      '<span class="entry-actions">' +
+        '<button class="btn-meta" title="Marcar como META">M</button>' +
+        '<button class="btn-delete" title="Eliminar">\u00d7</button>' +
+      '</span>' +
+      '<span class="meta-badge">[META]</span>' +
       '<span class="speaker">' + escapeHtml(data.speaker_name) + ":</span>" +
       '<span class="transcription-text">' + wordHtml + "</span>" +
       '<span class="ts">' + formatTime(data.timestamp) + "</span>";
@@ -234,6 +240,7 @@
     entry.dataset.timestamp = data.timestamp || "";
     entry.dataset.speakerId = data.speaker_id || "";
     entry.dataset.sessionId = data.session_id || "";
+    entry.dataset.isIngame = isIngame ? "true" : "false";
     if (data.id) entry.dataset.transcriptionId = data.id;
 
     transcriptionFeed.appendChild(entry);
@@ -258,6 +265,49 @@
     if (!wordSpan) return;
     if (wordSpan.querySelector("input")) return; // already editing
     startWordEdit(wordSpan);
+  });
+
+  // ── Delete transcription ──────────────────────────────────
+
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-delete");
+    if (!btn) return;
+    var entry = btn.closest(".feed-entry");
+    if (!entry) return;
+    if (!confirm("¿Eliminar esta transcripción?")) return;
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) return;
+      fetch("/api/transcriptions/" + id, { method: "DELETE" })
+        .then(function (r) { if (r.ok) entry.remove(); });
+    });
+  });
+
+  // ── META toggle ───────────────────────────────────────────
+
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-meta");
+    if (!btn) return;
+    var entry = btn.closest(".feed-entry");
+    if (!entry) return;
+    var currentlyIngame = entry.dataset.isIngame !== "false";
+    var newIngame = !currentlyIngame;
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) return;
+      fetch("/api/transcriptions/" + id + "/meta", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_ingame: newIngame }),
+      }).then(function (r) {
+        if (r.ok) {
+          entry.dataset.isIngame = newIngame ? "true" : "false";
+          if (newIngame) {
+            entry.classList.remove("meta");
+          } else {
+            entry.classList.add("meta");
+          }
+        }
+      });
+    });
   });
 
   function resolveTranscriptionId(entry) {

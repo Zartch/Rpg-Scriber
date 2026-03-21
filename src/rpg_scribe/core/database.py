@@ -1516,6 +1516,26 @@ class Database:
         await self.conn.commit()
         return cursor.rowcount > 0
 
+    async def delete_transcription(self, transcription_id: int) -> bool:
+        """Delete a transcription by ID. Returns True if a row was deleted."""
+        cursor = await self.conn.execute(
+            "DELETE FROM transcriptions WHERE id = ?",
+            (transcription_id,),
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def update_transcription_is_ingame(
+        self, transcription_id: int, is_ingame: bool
+    ) -> bool:
+        """Toggle the is_ingame flag. Returns True if a row was updated."""
+        cursor = await self.conn.execute(
+            "UPDATE transcriptions SET is_ingame = ? WHERE id = ?",
+            (is_ingame, transcription_id),
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
     async def save_transcription_edit(
         self,
         transcription_id: int,
