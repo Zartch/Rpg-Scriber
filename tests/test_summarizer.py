@@ -1,4 +1,4 @@
-﻿"""Tests for the Summarizer module (Phase 3)."""
+"""Tests for the Summarizer module (Phase 3)."""
 
 from __future__ import annotations
 
@@ -430,9 +430,7 @@ class TestClaudeSummarizer:
         await summarizer.start("session-1")
 
         for i in range(5):
-            event = _make_transcription(
-                session_id="session-1", text=f"Line {i}"
-            )
+            event = _make_transcription(session_id="session-1", text=f"Line {i}")
             await summarizer.process_transcription(event)
 
         assert summarizer._session_summary == ""
@@ -461,9 +459,7 @@ class TestClaudeSummarizer:
     async def test_update_summary_restores_pending_on_failure(
         self, summarizer, mock_client
     ):
-        mock_client.messages.create = AsyncMock(
-            side_effect=RuntimeError("API down")
-        )
+        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API down"))
         summarizer.config.max_retries = 1
         summarizer.config.retry_base_delay_s = 0.001
 
@@ -504,7 +500,10 @@ class TestClaudeSummarizer:
         result = await summarizer.finalize_session()
 
         assert result == "The party defeated the dragon."
-        assert summarizer._campaign_summary == "After many adventures, the party defeated the dragon."
+        assert (
+            summarizer._campaign_summary
+            == "After many adventures, the party defeated the dragon."
+        )
         assert len(summaries) == 1
         assert summaries[0].update_type == "final"
 
@@ -625,7 +624,9 @@ class TestClaudeSummarizer:
         assert "\n\n\n" not in cleaned
 
     @pytest.mark.asyncio
-    async def test_questions_saved_to_database(self, bus, config, campaign, mock_client):
+    async def test_questions_saved_to_database(
+        self, bus, config, campaign, mock_client
+    ):
         """Questions extracted from LLM response are saved to the database."""
         db = AsyncMock(spec=Database)
         db.save_question = AsyncMock(return_value=1)
@@ -690,7 +691,11 @@ class TestClaudeSummarizer:
         db.save_question = AsyncMock(return_value=1)
         db.get_answered_unprocessed_questions = AsyncMock(
             return_value=[
-                {"id": 1, "question": "Â¿QuiÃ©n es el lÃ­der?", "answer": "Aelar es el lÃ­der"},
+                {
+                    "id": 1,
+                    "question": "Â¿QuiÃ©n es el lÃ­der?",
+                    "answer": "Aelar es el lÃ­der",
+                },
             ]
         )
         db.mark_questions_processed = AsyncMock()
@@ -791,7 +796,12 @@ class TestExtractionParsing:
     def test_parse_invalid_json(self):
         text = "Esto no es JSON vÃ¡lido"
         result = ClaudeSummarizer._parse_extraction_response(text)
-        assert result == {"npcs": [], "locations": [], "entities": [], "relationships": []}
+        assert result == {
+            "npcs": [],
+            "locations": [],
+            "entities": [],
+            "relationships": [],
+        }
 
     def test_parse_malformed_json(self):
         text = '{"npcs": "not a list", "locations": 42}'
@@ -852,9 +862,13 @@ class TestFinalizeSessionWithExtraction:
             '{"npcs": [{"name": "Gareth", "description": "Mercader ambulante"}], '
             '"locations": [{"name": "Cueva del DragÃ³n", "description": "Cueva peligrosa"}]}'
         )
+        chronology_response = (
+            "Los aventureros llegaron a la taberna y conocieron a Gareth."
+        )
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(chronology_response),
                 _mock_anthropic_response(extraction_response),
             ]
         )
@@ -871,9 +885,7 @@ class TestFinalizeSessionWithExtraction:
         )
 
     @pytest.mark.asyncio
-    async def test_finalize_skips_known_npcs(
-        self, bus, config, campaign, mock_client
-    ):
+    async def test_finalize_skips_known_npcs(self, bus, config, campaign, mock_client):
         """Known NPCs should not be saved again."""
         db = AsyncMock(spec=Database)
         db.npc_exists = AsyncMock(return_value=True)
@@ -886,12 +898,12 @@ class TestFinalizeSessionWithExtraction:
         finalize_response = (
             "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
-        extraction_response = (
-            '{"npcs": [{"name": "Tabernero", "description": "Ya conocido"}], "locations": []}'
-        )
+        extraction_response = '{"npcs": [{"name": "Tabernero", "description": "Ya conocido"}], "locations": []}'
+        chronology_response = "Los aventureros llegaron a algún lugar."
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(chronology_response),
                 _mock_anthropic_response(extraction_response),
             ]
         )
@@ -920,8 +932,8 @@ class TestFinalizeSessionWithExtraction:
         await summarizer.start("session-1")
         await summarizer.finalize_session()
 
-        # Only one API call (finalize), no extraction call
-        assert mock_client.messages.create.call_count == 1
+        # Two API calls (finalize + chronology), no extraction call
+        assert mock_client.messages.create.call_count == 2
 
     @pytest.mark.asyncio
     async def test_finalize_extraction_failure_does_not_crash(
@@ -937,9 +949,11 @@ class TestFinalizeSessionWithExtraction:
         finalize_response = (
             "---SESSION_SUMMARY---\nResumen.\n\n---CAMPAIGN_SUMMARY---\nCampaÃ±a."
         )
+        chronology_response = "Cronologia de prueba."
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(chronology_response),
                 RuntimeError("Extraction API failed"),
             ]
         )
@@ -972,9 +986,11 @@ class TestFinalizeSessionWithExtraction:
             '{"npcs": [{"name": "", "description": "Sin nombre"}, '
             '{"name": "Valida", "description": "NPC vÃ¡lida"}], "locations": []}'
         )
+        chronology_response = "Cronologia de prueba."
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
+                _mock_anthropic_response(chronology_response),
                 _mock_anthropic_response(extraction_response),
             ]
         )
@@ -1068,8 +1084,7 @@ class TestBatchHelpers:
 
         # Create entries that exceed 100 chars total
         entries = [
-            TranscriptionEntry("u1", "Alice", "A" * 40, float(i))
-            for i in range(5)
+            TranscriptionEntry("u1", "Alice", "A" * 40, float(i)) for i in range(5)
         ]
         batches = s._split_into_batches(entries, max_chars=100)
         assert len(batches) > 1
@@ -1127,8 +1142,8 @@ class TestBatchFinalization:
 
         assert result == "Final text"
         assert summarizer._campaign_summary == "Campaign update"
-        # Single API call
-        summarizer._get_client().messages.create.assert_called_once()
+        # Finalize + chronology = 2 API calls
+        assert summarizer._get_client().messages.create.call_count == 2
 
     async def test_finalize_multi_batch(self, summarizer):
         """Multi-batch: should make multiple API calls."""
@@ -1143,22 +1158,22 @@ class TestBatchFinalization:
         final_resp = _mock_anthropic_response(
             "---SESSION_SUMMARY---\nFinal multi-batch\n---CAMPAIGN_SUMMARY---\nUpdated campaign"
         )
+        chronology_resp = _mock_anthropic_response("Chronological timeline")
         summarizer._get_client().messages.create = AsyncMock(
-            side_effect=[intermediate_resp, final_resp]
+            side_effect=[intermediate_resp, final_resp, chronology_resp]
         )
 
         # Each entry formatted: "[Alice]: AAA...250A\n" â‰ˆ 260 chars
         # 5 entries â‰ˆ 1300 chars > 1000 minimum â†’ forces multi-batch
         summarizer._pending = [
-            TranscriptionEntry("u1", "Alice", "A" * 250, float(i))
-            for i in range(5)
+            TranscriptionEntry("u1", "Alice", "A" * 250, float(i)) for i in range(5)
         ]
         result = await summarizer.finalize_session()
 
         assert result == "Final multi-batch"
         assert summarizer._campaign_summary == "Updated campaign"
-        # Should have made at least 2 API calls
-        assert summarizer._get_client().messages.create.call_count >= 2
+        # Should have made at least 3 API calls (intermediate + final + chronology)
+        assert summarizer._get_client().messages.create.call_count >= 3
 
 
 # ---------------------------------------------------------------------------
@@ -1173,4 +1188,3 @@ def _collect(target: list):
         target.append(event)
 
     return handler
-

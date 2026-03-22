@@ -10,7 +10,11 @@ import time
 
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import EntitiesUpdatedEvent, SystemStatusEvent, TranscriptionEvent
+from rpg_scribe.core.events import (
+    EntitiesUpdatedEvent,
+    SystemStatusEvent,
+    TranscriptionEvent,
+)
 from rpg_scribe.core.models import (
     CampaignContext,
     CharacterRelationshipInfo,
@@ -170,6 +174,49 @@ Genera un resumen condensado de estas sesiones que preserve los eventos clave, \
 PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condensado.
 """
 
+CHRONOLOGY_SYSTEM_PROMPT = """\
+Eres un cronista de sesiones de rol. Tu trabajo es escribir una cronología \
+temporal: un timeline lineal de los eventos de la sesión, en orden estricto.
+
+CONTEXTO:
+- Sistema: {game_system}
+- Campaña: {name} — {description}
+
+JUGADORES:
+{players_block}
+
+LOCALIZACIONES CONOCIDAS:
+{locations_block}
+
+INSTRUCCIONES:
+1. Escribe en orden cronológico estricto, cubriendo TODAS las localizaciones \
+visitadas y escenas principales.
+2. Adapta el tono al setting de la campaña. Ejemplos: para ciberpunk usa un \
+estilo noir y directo con jerga urbana; para fantasía medieval usa tono de \
+crónica épica; para horror cósmico usa un tono inquietante y atmosférico. \
+Sé creativo con el tono pero mantén la claridad.
+3. Cuando los personajes están en distintos lugares simultáneamente, usa \
+cortes de escena creativos (ej. "Mientras tanto...", "En el otro extremo...").
+4. No necesitas cada detalle mínimo, pero sí cada zona/escena y los eventos \
+principales en cada una.
+5. Formato: párrafos cortos separados por escena/localización, con \
+marcadores temporales si aplican.
+6. NO incluyas meta-conversaciones de jugadores.
+7. Escribe la cronología redactada con fluidez, no como una lista de puntos.
+"""
+
+CHRONOLOGY_USER = """\
+A partir del siguiente resumen narrativo de la sesión y la transcripción \
+completa, genera una cronología temporal de lo que ocurrió.
+
+RESUMEN NARRATIVO:
+{session_summary}
+
+TRANSCRIPCIÓN:
+{transcriptions}
+
+Genera ÚNICAMENTE la cronología temporal, sin explicaciones adicionales."""
+
 EXTRACTION_USER = """\
 A partir del siguiente resumen de sesión, extrae:
 - PNJs nuevos
@@ -207,8 +254,6 @@ Si no hay nuevos elementos, devuelve listas vacías.
 """
 
 
-
-
 class ClaudeSummarizer(BaseSummarizer):
     """Summarizer that uses Anthropic's Claude API.
 
@@ -231,7 +276,9 @@ class ClaudeSummarizer(BaseSummarizer):
         self._client = client
         self._database = database
         self._update_lock = asyncio.Lock()
-        self._extraction_counter: int = 0  # Count of _update_summary() calls for periodic extraction
+        self._extraction_counter: int = (
+            0  # Count of _update_summary() calls for periodic extraction
+        )
 
     # ------------------------------------------------------------------
     # Lazy client
@@ -285,13 +332,15 @@ class ClaudeSummarizer(BaseSummarizer):
 
         entities_lines = [
             f"- {ent.name} [{ent.entity_type}]: {ent.description}"
-            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            if ent.description
+            else f"- {ent.name} [{ent.entity_type}]"
             for ent in c.entities
         ] or ["(ninguna conocida)"]
 
         entity_name_map: dict[str, str] = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
-            for p in c.players if p.discord_id
+            for p in c.players
+            if p.discord_id
         }
         for n in c.known_npcs:
             if n.name:
@@ -393,14 +442,8 @@ class ClaudeSummarizer(BaseSummarizer):
         for row in answered:
             lines.append(f"- Pregunta: {row['question']}\n  Respuesta: {row['answer']}")
         # Mark them as processed so they aren't injected again
-        await self._database.mark_questions_processed(
-            [row["id"] for row in answered]
-        )
-        return (
-            "\nRESPUESTAS DEL USUARIO:\n"
-            + "\n".join(lines)
-            + "\n\n"
-        )
+        await self._database.mark_questions_processed([row["id"] for row in answered])
+        return "\nRESPUESTAS DEL USUARIO:\n" + "\n".join(lines) + "\n\n"
 
     # ------------------------------------------------------------------
     # API call with retry
@@ -521,6 +564,7 @@ class ClaudeSummarizer(BaseSummarizer):
 
     async def get_campaign_summary(self) -> str:
         return self._campaign_summary
+
     async def refresh_summary_on_demand(self) -> bool:
         """Generate an on-demand summary snapshot from current pending entries."""
         if self._pending:
@@ -666,9 +710,7 @@ class ClaudeSummarizer(BaseSummarizer):
                         pending_transcriptions=batch_text,
                     )
                     result = await self._call_api(system, user_msg)
-                    session_part, campaign_part = self._parse_finalize_response(
-                        result
-                    )
+                    session_part, campaign_part = self._parse_finalize_response(result)
                 else:
                     # Intermediate batch: use SESSION_UPDATE_USER for incremental
                     user_msg = SESSION_UPDATE_USER.format(
@@ -689,11 +731,26 @@ class ClaudeSummarizer(BaseSummarizer):
         if campaign_part:
             self._campaign_summary = campaign_part
 
+        # Generate chronological timeline from the final summary + transcriptions
+        try:
+            all_text = (
+                pending_text or self._format_transcriptions(all_entries)
+                if all_entries
+                else ""
+            )
+            self._session_chronology = await self.generate_chronology(
+                session_summary=self._session_summary,
+                transcription_text=all_text or "(sin transcripciones)",
+            )
+            logger.info("Session chronology generated")
+        except Exception as exc:
+            logger.error("Chronology generation failed: %s", exc)
+            self._session_chronology = ""
+
         await self._publish_summary("final")
 
         # Extract structured entities/relationships from the final summary
         await self._extract_entities()
-
 
         logger.info("Session finalized")
         return self._session_summary
@@ -713,7 +770,9 @@ class ClaudeSummarizer(BaseSummarizer):
                 speaker_name=r.get("speaker_name", "") or r.get("speaker_id", ""),
                 text=r.get("text", ""),
                 timestamp=r.get("timestamp", 0.0),
-                is_ingame=r.get("is_ingame", True) if r.get("is_ingame") is not None else True,
+                is_ingame=r.get("is_ingame", True)
+                if r.get("is_ingame") is not None
+                else True,
             )
             for r in transcription_rows
             if r.get("text", "").strip()
@@ -765,6 +824,113 @@ class ClaudeSummarizer(BaseSummarizer):
         return session_part or ""
 
     # ------------------------------------------------------------------
+    # Chronology generation
+    # ------------------------------------------------------------------
+
+    def _build_chronology_system_prompt(self) -> str:
+        """Build a lightweight system prompt for chronological timeline generation.
+
+        Only includes game_system, description, player→character mapping,
+        and known locations — no NPCs, relationships, entities, or campaign summary.
+        """
+        c = self.campaign
+        if c.is_generic:
+            return CHRONOLOGY_SYSTEM_PROMPT.format(
+                game_system="(genérico)",
+                name="(sin campaña)",
+                description="Resumen genérico de conversación",
+                players_block="(desconocidos)",
+                locations_block="(ninguna conocida)",
+            )
+
+        players_lines = [
+            f"- {p.discord_name} juega como {p.character_name}"
+            + (f" ({p.character_description})" if p.character_description else "")
+            for p in c.players
+        ] or ["(ninguno registrado)"]
+
+        locations_lines = [
+            f"- {loc.name}: {loc.description}" if loc.description else f"- {loc.name}"
+            for loc in c.locations
+        ] or ["(ninguna conocida)"]
+
+        return CHRONOLOGY_SYSTEM_PROMPT.format(
+            game_system=c.game_system,
+            name=c.name,
+            description=c.description,
+            players_block="\n".join(players_lines),
+            locations_block="\n".join(locations_lines),
+        )
+
+    async def generate_chronology(
+        self, session_summary: str, transcription_text: str
+    ) -> str:
+        """Generate a chronological timeline from the session summary and transcriptions.
+
+        Uses batching if the transcription text exceeds max_input_chars.
+        """
+        system = self._build_chronology_system_prompt()
+        template_overhead = len(CHRONOLOGY_USER) + len(session_summary) + 200
+        max_chars = max(self.config.max_input_chars - template_overhead, 1000)
+
+        if len(transcription_text) <= max_chars:
+            result = await self._call_api(
+                system,
+                CHRONOLOGY_USER.format(
+                    session_summary=session_summary,
+                    transcriptions=transcription_text,
+                ),
+            )
+            return result.strip()
+
+        # Transcriptions too long: split and generate from summary + last batch
+        # For chronology, we rely heavily on the narrative summary for earlier parts
+        # and only feed the last chunk of transcriptions for detail
+        logger.info(
+            "Transcriptions too large for chronology (%d chars, max %d). Truncating.",
+            len(transcription_text),
+            max_chars,
+        )
+        truncated = transcription_text[-max_chars:]
+        result = await self._call_api(
+            system,
+            CHRONOLOGY_USER.format(
+                session_summary=session_summary,
+                transcriptions=f"(transcripción parcial, últimas secciones)\n{truncated}",
+            ),
+        )
+        return result.strip()
+
+    async def generate_chronology_from_transcriptions(
+        self, transcription_rows: list[dict], session_summary: str = ""
+    ) -> str:
+        """Generate a chronology from DB transcription rows (post-hoc).
+
+        Stateless: does not modify instance state.
+        """
+        entries = [
+            TranscriptionEntry(
+                speaker_id=r.get("speaker_id", ""),
+                speaker_name=r.get("speaker_name", "") or r.get("speaker_id", ""),
+                text=r.get("text", ""),
+                timestamp=r.get("timestamp", 0.0),
+                is_ingame=r.get("is_ingame", True)
+                if r.get("is_ingame") is not None
+                else True,
+            )
+            for r in transcription_rows
+            if r.get("text", "").strip()
+        ]
+        if not entries:
+            return ""
+
+        transcription_text = self._format_transcriptions(entries)
+        return await self.generate_chronology(
+            session_summary=session_summary or "(sin resumen narrativo)",
+            transcription_text=transcription_text,
+        )
+
+    # ------------------------------------------------------------------
     # Campaign summary generation
     # ------------------------------------------------------------------
 
@@ -784,13 +950,15 @@ class ClaudeSummarizer(BaseSummarizer):
 
         entities_lines = [
             f"- {ent.name} [{ent.entity_type}]: {ent.description}"
-            if ent.description else f"- {ent.name} [{ent.entity_type}]"
+            if ent.description
+            else f"- {ent.name} [{ent.entity_type}]"
             for ent in c.entities
         ] or ["(ninguna conocida)"]
 
         entity_name_map = {
             f"player:{p.discord_id}": p.character_name or p.discord_name
-            for p in c.players if p.discord_id
+            for p in c.players
+            if p.discord_id
         }
         for n in c.known_npcs:
             if n.name:
@@ -816,7 +984,11 @@ class ClaudeSummarizer(BaseSummarizer):
         if not relationships_lines:
             relationships_lines = ["(ninguna registrada)"]
 
-        custom = f"INSTRUCCIONES ADICIONALES:\n{c.custom_instructions}" if c.custom_instructions else ""
+        custom = (
+            f"INSTRUCCIONES ADICIONALES:\n{c.custom_instructions}"
+            if c.custom_instructions
+            else ""
+        )
 
         return CAMPAIGN_SUMMARY_SYSTEM.format(
             game_system=c.game_system,
@@ -861,7 +1033,14 @@ class ClaudeSummarizer(BaseSummarizer):
                 if started:
                     try:
                         import datetime
-                        date_str = " (" + datetime.datetime.fromtimestamp(float(started)).strftime("%Y-%m-%d") + ")"
+
+                        date_str = (
+                            " ("
+                            + datetime.datetime.fromtimestamp(float(started)).strftime(
+                                "%Y-%m-%d"
+                            )
+                            + ")"
+                        )
                     except Exception:
                         pass
                 sid = s.get("id", f"sesion-{i}")
@@ -913,7 +1092,9 @@ class ClaudeSummarizer(BaseSummarizer):
             if compressed_summary:
                 older_text = f"### Resumen comprimido previo\n{compressed_summary}\n\n{older_text}"
 
-            compress_user = CAMPAIGN_SUMMARY_COMPRESS_USER.format(sessions_block=older_text)
+            compress_user = CAMPAIGN_SUMMARY_COMPRESS_USER.format(
+                sessions_block=older_text
+            )
             compressed_summary = await self._call_api(system, compress_user)
             logger.info(
                 "Compressed %d older session(s) into %d chars",
@@ -936,7 +1117,9 @@ class ClaudeSummarizer(BaseSummarizer):
             sessions_block=sessions_block,
         )
         result = await self._call_api(system, user_msg)
-        logger.info("Campaign summary generated from %d session(s)", len(session_summaries))
+        logger.info(
+            "Campaign summary generated from %d session(s)", len(session_summaries)
+        )
         return result
 
     # ------------------------------------------------------------------
@@ -1018,7 +1201,8 @@ class ClaudeSummarizer(BaseSummarizer):
 
         known_entities_lines = [
             f"- ent:{ent.name} [{ent.entity_type}]: {ent.description}"
-            if ent.description else f"- ent:{ent.name} [{ent.entity_type}]"
+            if ent.description
+            else f"- ent:{ent.name} [{ent.entity_type}]"
             for ent in self.campaign.entities
         ] or ["(ninguna)"]
 
@@ -1057,7 +1241,9 @@ class ClaudeSummarizer(BaseSummarizer):
                     description=description,
                     first_seen_session=session_id,
                 )
-                self.campaign.known_npcs.append(NPCInfo(name=name, description=description))
+                self.campaign.known_npcs.append(
+                    NPCInfo(name=name, description=description)
+                )
                 results["new_npcs"].append(name)
 
             # ── Locations ──────────────────────────────────────────
@@ -1066,7 +1252,9 @@ class ClaudeSummarizer(BaseSummarizer):
                 description = loc.get("description", "").strip()
                 if not name:
                     continue
-                if await self._database.location_exists(self.campaign.campaign_id, name):
+                if await self._database.location_exists(
+                    self.campaign.campaign_id, name
+                ):
                     continue
                 await self._database.save_location(
                     campaign_id=self.campaign.campaign_id,
@@ -1074,13 +1262,18 @@ class ClaudeSummarizer(BaseSummarizer):
                     description=description,
                     first_seen_session=session_id,
                 )
-                self.campaign.locations.append(LocationInfo(name=name, description=description))
+                self.campaign.locations.append(
+                    LocationInfo(name=name, description=description)
+                )
                 results["new_locations"].append(name)
 
             # ── Entities ───────────────────────────────────────────
             for entity in extracted["entities"]:
                 name = str(entity.get("name", "")).strip()
-                entity_type = str(entity.get("entity_type", "group") or "group").strip() or "group"
+                entity_type = (
+                    str(entity.get("entity_type", "group") or "group").strip()
+                    or "group"
+                )
                 description = str(entity.get("description", "")).strip()
                 if not name:
                     continue
@@ -1094,7 +1287,9 @@ class ClaudeSummarizer(BaseSummarizer):
                     first_seen_session=session_id,
                 )
                 self.campaign.entities.append(
-                    EntityInfo(name=name, entity_type=entity_type, description=description)
+                    EntityInfo(
+                        name=name, entity_type=entity_type, description=description
+                    )
                 )
                 results["new_entities"].append(name)
 
@@ -1102,7 +1297,9 @@ class ClaudeSummarizer(BaseSummarizer):
             relation_seed_map: dict[str, str] = {}
             for p in self.campaign.players:
                 if p.discord_id:
-                    relation_seed_map[p.character_name.strip().casefold()] = f"player:{p.discord_id}"
+                    relation_seed_map[p.character_name.strip().casefold()] = (
+                        f"player:{p.discord_id}"
+                    )
             for n in self.campaign.known_npcs:
                 relation_seed_map[n.name.strip().casefold()] = f"npc:{n.name}"
             for loc in self.campaign.locations:
@@ -1115,9 +1312,9 @@ class ClaudeSummarizer(BaseSummarizer):
                 if not candidate and fallback_name:
                     candidate = relation_seed_map.get(fallback_name.casefold(), "")
                 if candidate.startswith("location:"):
-                    candidate = "loc:" + candidate[len("location:"):]
+                    candidate = "loc:" + candidate[len("location:") :]
                 if candidate.startswith("entity:"):
-                    candidate = "ent:" + candidate[len("entity:"):]
+                    candidate = "ent:" + candidate[len("entity:") :]
                 if ":" in candidate:
                     return candidate
                 if candidate:
@@ -1135,7 +1332,10 @@ class ClaudeSummarizer(BaseSummarizer):
                     str(rel.get("target", "")).strip(),
                 )
                 relation_type = str(rel.get("relation_type", "")).strip()
-                category = str(rel.get("category", "general") or "general").strip() or "general"
+                category = (
+                    str(rel.get("category", "general") or "general").strip()
+                    or "general"
+                )
                 notes = str(rel.get("notes", "")).strip()
                 if not source_key or not target_key or not relation_type:
                     continue

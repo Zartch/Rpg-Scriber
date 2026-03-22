@@ -1,4 +1,4 @@
-﻿"""Entry point that orchestrates all RPG Scribe components.
+"""Entry point that orchestrates all RPG Scribe components.
 
 Usage:
     python -m rpg_scribe --campaign config/campaigns/my-campaign.toml
@@ -44,7 +44,9 @@ class TranscriptionFileWriter:
     ``_MAX_TRANSCRIPTION_FILE_MB`` a new numbered file is created.
     """
 
-    def __init__(self, log_dir: Path, max_size_mb: float = _MAX_TRANSCRIPTION_FILE_MB) -> None:
+    def __init__(
+        self, log_dir: Path, max_size_mb: float = _MAX_TRANSCRIPTION_FILE_MB
+    ) -> None:
         self._dir = log_dir
         self._dir.mkdir(parents=True, exist_ok=True)
         self._max_bytes = int(max_size_mb * 1024 * 1024)
@@ -73,7 +75,8 @@ class TranscriptionFileWriter:
             self._file_index += 1
             self._path = self._next_path()
             logger.info(
-                "📄 Transcription file rotated to %s", self._path.name,
+                "📄 Transcription file rotated to %s",
+                self._path.name,
             )
 
         ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
@@ -106,8 +109,7 @@ class AudioDiagnosticSaver:
         import wave
 
         safe_name = "".join(
-            c if c.isalnum() or c in "-_" else "_"
-            for c in event.speaker_name
+            c if c.isalnum() or c in "-_" else "_" for c in event.speaker_name
         )
         filepath = self._audio_dir / f"{safe_name}_{uid}_{count:03d}.wav"
 
@@ -255,6 +257,10 @@ class Application:
                         (event.session_summary, event.session_id),
                     )
                     await self.db.conn.commit()
+            if event.session_chronology:
+                await self.db.update_session_chronology(
+                    event.session_id, event.session_chronology
+                )
             if event.campaign_summary and self.config.campaign:
                 await self.db.update_campaign_summary(
                     self.config.campaign.campaign_id,
@@ -265,6 +271,7 @@ class Application:
                     save_campaign_toml(self.config.campaign, self.config.campaign_path)
         except Exception as exc:
             logger.error("Failed to persist summary: %s", exc)
+
     async def _write_summary_snapshot_to_file(self, event: SummaryUpdateEvent) -> None:
         """Persist on-demand summary snapshots for traceability in logs."""
         if self._log_dir is None or event.update_type != "on_demand":
@@ -273,7 +280,9 @@ class Application:
             return
 
         try:
-            self._save_on_demand_summary_to_file(event.session_id, event.session_summary)
+            self._save_on_demand_summary_to_file(
+                event.session_id, event.session_summary
+            )
         except Exception as exc:
             logger.error("Failed to write on-demand summary snapshot: %s", exc)
 
@@ -283,9 +292,7 @@ class Application:
         """Create and start the transcriber."""
         from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber
 
-        self._transcriber = OpenAITranscriber(
-            self.event_bus, self.config.transcriber
-        )
+        self._transcriber = OpenAITranscriber(self.event_bus, self.config.transcriber)
         await self._transcriber.start()  # type: ignore[union-attr]
 
     async def _setup_summarizer(self, session_id: str) -> None:
@@ -298,9 +305,7 @@ class Application:
             campaign = CampaignContext.create_generic(
                 language=self.config.transcriber.language,
             )
-            logger.info(
-                "No campaign configured — using generic summarization mode"
-            )
+            logger.info("No campaign configured — using generic summarization mode")
 
         self._summarizer = ClaudeSummarizer(
             self.event_bus, self.config.summarizer, campaign, database=self.db
@@ -313,7 +318,9 @@ class Application:
 
         from rpg_scribe.web.app import create_app
 
-        app = create_app(self.event_bus, database=self.db, config=self.config, application=self)
+        app = create_app(
+            self.event_bus, database=self.db, config=self.config, application=self
+        )
         uv_config = uvicorn.Config(
             app,
             host=self.config.web_host,
@@ -408,8 +415,12 @@ class Application:
                 c.game_system = existing.get("game_system", c.game_system)
                 c.language = existing.get("language", c.language)
                 c.description = existing.get("description", c.description)
-                c.custom_instructions = existing.get("custom_instructions", c.custom_instructions)
-                c.campaign_summary = existing.get("campaign_summary", c.campaign_summary)
+                c.custom_instructions = existing.get(
+                    "custom_instructions", c.custom_instructions
+                )
+                c.campaign_summary = existing.get(
+                    "campaign_summary", c.campaign_summary
+                )
                 c.dm_speaker_id = existing.get("dm_speaker_id", c.dm_speaker_id)
 
                 db_players = await self.db.get_players(c.campaign_id)
@@ -425,7 +436,9 @@ class Application:
                     ]
 
                 # Keep speaker_map aligned with loaded players.
-                c.speaker_map = {p.discord_id: p.character_name for p in c.players if p.discord_id}
+                c.speaker_map = {
+                    p.discord_id: p.character_name for p in c.players if p.discord_id
+                }
 
                 db_npcs = await self.db.get_npcs(c.campaign_id)
                 if db_npcs:
@@ -461,7 +474,9 @@ class Application:
                         if e.get("name")
                     ]
 
-                db_relationship_types = await self.db.get_relationship_types(c.campaign_id)
+                db_relationship_types = await self.db.get_relationship_types(
+                    c.campaign_id
+                )
                 if db_relationship_types:
                     c.relation_types = [
                         RelationshipTypeInfo(
@@ -473,7 +488,9 @@ class Application:
                         if t.get("canonical_key")
                     ]
 
-                db_relationships = await self.db.get_character_relationships(c.campaign_id)
+                db_relationships = await self.db.get_character_relationships(
+                    c.campaign_id
+                )
                 if db_relationships:
                     c.relationships = [
                         CharacterRelationshipInfo(
@@ -484,7 +501,9 @@ class Application:
                             notes=str(r.get("notes", "") or ""),
                         )
                         for r in db_relationships
-                        if r.get("source_key") and r.get("target_key") and r.get("type_key")
+                        if r.get("source_key")
+                        and r.get("target_key")
+                        and r.get("type_key")
                     ]
             else:
                 await self.db.upsert_campaign(
@@ -514,7 +533,9 @@ class Application:
             for npc in c.known_npcs:
                 if not await self.db.npc_exists(c.campaign_id, npc.name):
                     await self.db.save_npc(
-                        c.campaign_id, npc.name, npc.description,
+                        c.campaign_id,
+                        npc.name,
+                        npc.description,
                     )
 
             # Persist locations from campaign config to DB (idempotent)
@@ -523,7 +544,9 @@ class Application:
                     continue
                 if not await self.db.location_exists(c.campaign_id, loc.name):
                     await self.db.save_location(
-                        c.campaign_id, loc.name, loc.description,
+                        c.campaign_id,
+                        loc.name,
+                        loc.description,
                     )
 
             # Persist entities from campaign config to DB (idempotent)
@@ -565,15 +588,15 @@ class Application:
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)
         self.event_bus.subscribe(SummaryUpdateEvent, self._persist_summary)
-        self.event_bus.subscribe(SummaryUpdateEvent, self._write_summary_snapshot_to_file)
+        self.event_bus.subscribe(
+            SummaryUpdateEvent, self._write_summary_snapshot_to_file
+        )
 
         # Subscribe session lifecycle handlers
         self.event_bus.subscribe(
             SessionStartRequestEvent, self._on_session_start_request
         )
-        self.event_bus.subscribe(
-            SessionEndRequestEvent, self._on_session_end_request
-        )
+        self.event_bus.subscribe(SessionEndRequestEvent, self._on_session_end_request)
         self.event_bus.subscribe(
             SummaryRefreshRequestEvent, self._on_summary_refresh_request
         )
@@ -585,7 +608,8 @@ class Application:
                 TranscriptionEvent, self._write_transcription_to_file
             )
             logger.info(
-                "📄 Transcripciones se guardarán en: %s", self._log_dir,
+                "📄 Transcripciones se guardarán en: %s",
+                self._log_dir,
             )
 
             # Audio diagnostic: save first chunks per user as WAV for inspection
@@ -626,20 +650,24 @@ class Application:
     async def on_session_end(self, session_id: str) -> None:
         """Called when a recording session ends."""
         summary = ""
+        chronology = ""
         if self._summarizer is not None:
             try:
                 summary = await self._summarizer.finalize_session()  # type: ignore[union-attr]
+                chronology = self._summarizer._session_chronology  # type: ignore[union-attr]
                 await self._summarizer.stop()  # type: ignore[union-attr]
             except Exception as exc:
                 logger.error("Failed to finalize session: %s", exc)
 
-        await self.db.end_session(session_id, summary)
+        await self.db.end_session(session_id, summary, chronology)
         self._active_session_id = None
 
         # Generate and persist campaign summary from all session summaries
         campaign_summary = ""
         if self.config.campaign and summary:
-            campaign_summary = await self._generate_and_save_campaign_summary(session_id)
+            campaign_summary = await self._generate_and_save_campaign_summary(
+                session_id
+            )
 
         # Save summary to log file
         if summary:
@@ -657,7 +685,11 @@ class Application:
             sessions = await self.db.list_sessions(campaign.campaign_id)
             # Only completed sessions with a non-empty summary, oldest first
             completed = sorted(
-                [s for s in sessions if s.get("session_summary") and s.get("status") == "completed"],
+                [
+                    s
+                    for s in sessions
+                    if s.get("session_summary") and s.get("status") == "completed"
+                ],
                 key=lambda s: s.get("started_at") or 0,
             )
             if not completed:
@@ -669,6 +701,7 @@ class Application:
             summarizer = self._summarizer
             if summarizer is None or not isinstance(summarizer, ClaudeSummarizer):
                 from rpg_scribe.core.models import SummarizerConfig
+
                 summarizer = ClaudeSummarizer(
                     self.event_bus,
                     self.config.summarizer,
@@ -690,6 +723,7 @@ class Application:
                 campaign.campaign_summary = campaign_summary
                 if self.config.campaign_path:
                     from rpg_scribe.config import save_campaign_toml
+
                     save_campaign_toml(campaign, self.config.campaign_path)
                 logger.info(
                     "Campaign summary generated from %d session(s) and saved",
@@ -708,21 +742,30 @@ class Application:
             return
         try:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            chronology = ""
+            if self._summarizer and self._summarizer._session_chronology:
+                chronology = (
+                    f"## Cronologia Temporal\n\n"
+                    f"{self._summarizer._session_chronology}\n\n"
+                )
             content = (
                 f"# Resumen de Sesion - {session_id}\n"
                 f"Fecha: {ts}\n\n"
                 f"## Resumen de Sesion\n\n"
                 f"{session_summary}\n\n"
+                f"{chronology}"
                 f"## Resumen de Campana\n\n"
                 f"{campaign_summary or '(sin resumen de campana)'}\n"
             )
             summary_path = self._log_dir / "session_summary.md"
             summary_path.write_text(content, encoding="utf-8")
             logger.info(
-                "Resumen guardado en: %s", summary_path,
+                "Resumen guardado en: %s",
+                summary_path,
             )
         except Exception as exc:
             logger.error("Failed to save summary file: %s", exc)
+
     def _save_on_demand_summary_to_file(
         self, session_id: str, session_summary: str
     ) -> None:
@@ -731,19 +774,13 @@ class Application:
             return
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         summary_path = self._log_dir / "ongoing_summaries.md"
-        content = (
-            f"## {ts} - {session_id}\n\n"
-            f"{session_summary}\n\n"
-            "---\n\n"
-        )
+        content = f"## {ts} - {session_id}\n\n{session_summary}\n\n---\n\n"
         with open(summary_path, "a", encoding="utf-8") as f:
             f.write(content)
 
     # ── EventBus session lifecycle handlers ────────────────────────
 
-    async def _on_session_start_request(
-        self, event: SessionStartRequestEvent
-    ) -> None:
+    async def _on_session_start_request(self, event: SessionStartRequestEvent) -> None:
         """Handle a session start request from any source."""
         logger.info(
             "Session start request: session=%s source=%s",
@@ -753,9 +790,7 @@ class Application:
         self._active_session_id = event.session_id
         await self.on_session_start(event.session_id)
 
-    async def _on_session_end_request(
-        self, event: SessionEndRequestEvent
-    ) -> None:
+    async def _on_session_end_request(self, event: SessionEndRequestEvent) -> None:
         """Handle a session end request from any source.
 
         Runs finalization as a background task so callers (e.g. Discord
@@ -776,6 +811,7 @@ class Application:
         self._finalize_task = asyncio.create_task(
             _finalize(), name=f"finalize-{event.session_id}"
         )
+
     async def _on_summary_refresh_request(
         self, event: SummaryRefreshRequestEvent
     ) -> None:
@@ -794,7 +830,9 @@ class Application:
         try:
             refreshed = await self._summarizer.refresh_summary_on_demand()  # type: ignore[union-attr]
             if refreshed:
-                logger.info("On-demand summary refreshed for session %s", event.session_id)
+                logger.info(
+                    "On-demand summary refreshed for session %s", event.session_id
+                )
         except Exception as exc:
             logger.error("On-demand summary refresh failed: %s", exc)
             await self.event_bus.publish(
@@ -851,9 +889,13 @@ class Application:
         # Cancelar cualquier tarea asyncio residual (e.g. hilos internos de discord.py)
         # para que asyncio.run() pueda terminar limpiamente y devolver el prompt.
         current = asyncio.current_task()
-        remaining = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+        remaining = [
+            t for t in asyncio.all_tasks() if t is not current and not t.done()
+        ]
         if remaining:
-            logger.debug("Cancelando %d tarea(s) asyncio residual(es)...", len(remaining))
+            logger.debug(
+                "Cancelando %d tarea(s) asyncio residual(es)...", len(remaining)
+            )
             for task in remaining:
                 task.cancel()
             await asyncio.gather(*remaining, return_exceptions=True)
@@ -881,7 +923,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="RPG Scribe — live RPG session transcriber and summarizer",
     )
     parser.add_argument(
-        "--campaign", "-c",
+        "--campaign",
+        "-c",
         type=str,
         default=None,
         help="Path to campaign TOML configuration file",
@@ -985,6 +1028,3 @@ def cli_main() -> None:
 
 if __name__ == "__main__":
     cli_main()
-
-
-

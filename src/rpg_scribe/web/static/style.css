@@ -923,3 +923,71 @@ header h1 { font-size: 1.25rem; }
 .relationship-node-tooltip strong {
   color: var(--accent);
 }
+
+.panel-header-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.summary-tab-content .tab-content-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  min-height: 1.5rem;
+}
+
+/* Generation log */
+.generation-log {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.25);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border-left: 2px solid var(--accent);
+}
+.log-entry {
+  padding: 0.15rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+/* Summary tabs */
+.summary-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.5rem;
+}
+.summary-tab {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.summary-tab:first-child {
+  border-radius: 0.35rem 0 0 0;
+}
+.summary-tab:last-child {
+  border-radius: 0 0.35rem 0 0;
+}
+.summary-tab:hover {
+  color: var(--text);
+  background: rgba(124, 106, 240, 0.05);
+}
+.summary-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: rgba(124, 106, 240, 0.08);
+}

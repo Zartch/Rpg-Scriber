@@ -314,24 +314,45 @@
         <!-- Live summary -->
         <section id="summary-panel" class="panel">
           <div class="panel-header-row">
-            <h2>Session Summary <span class="edit-hint">(click to edit)</span></h2>
-            <button id="refresh-summary-btn" class="btn-small hidden" title="Generate an on-going summary snapshot">Update Summary</button>
-            <button id="extract-entities-btn" class="btn-small hidden" title="Force extraction of NPCs, locations and relationships from the current summary">Extract Entities</button>
-            <button id="finalize-btn" class="btn-small btn-finalize hidden" title="Finalize and stop the current session">Finalize Session</button>
-          </div>
-          <div id="session-log-link" class="session-log-link hidden"></div>
-          <div id="session-summary" class="summary-content">
-            <p class="placeholder">Waiting for summary updates&hellip;</p>
-          </div>
-          <div class="campaign-summary-header">
-            <h3>Campaign Summary <span class="edit-hint">(click to edit)</span></h3>
-            <div class="campaign-summary-actions">
-              <button id="btn-generate-campaign-summary" class="btn-small hidden" title="Generate campaign summary from all sessions">Generate</button>
-              <a id="campaign-summaries-link" href="#" class="btn-small hidden" target="_blank">View all</a>
+            <h2>Summaries <span class="edit-hint">(click to edit)</span></h2>
+            <div class="panel-header-actions">
+              <button id="extract-entities-btn" class="btn-small hidden" title="Force extraction of NPCs, locations and relationships from the current summary">Extract Entities</button>
+              <button id="finalize-btn" class="btn-small btn-finalize hidden" title="Finalize and stop the current session">Finalize Session</button>
             </div>
           </div>
-          <div id="campaign-summary" class="summary-content">
-            <p class="placeholder">No campaign summary yet.</p>
+          <div class="summary-tabs">
+            <button class="summary-tab active" data-tab="narrative">Narrative</button>
+            <button class="summary-tab" data-tab="chronology">Chronology</button>
+            <button class="summary-tab" data-tab="campaign">Campaign</button>
+          </div>
+          <div id="session-log-link" class="session-log-link hidden"></div>
+          <div id="session-summary" class="summary-tab-content">
+            <div class="tab-content-actions">
+              <button id="refresh-summary-btn" class="btn-small" title="Generate an on-going summary snapshot">Update Summary</button>
+            </div>
+            <div class="generation-log hidden"></div>
+            <div class="summary-content">
+              <p class="placeholder">Waiting for summary updates&hellip;</p>
+            </div>
+          </div>
+          <div id="session-chronology" class="summary-tab-content hidden">
+            <div class="tab-content-actions">
+              <button id="btn-generate-chronology" class="btn-small" title="Generate chronological timeline from transcriptions">Generate Chronology</button>
+            </div>
+            <div class="generation-log hidden"></div>
+            <div class="summary-content">
+              <p class="placeholder">No chronology yet. It will be generated when the session is finalized.</p>
+            </div>
+          </div>
+          <div id="campaign-summary" class="summary-tab-content hidden">
+            <div class="tab-content-actions">
+              <button id="btn-generate-campaign-summary" class="btn-small" title="Generate campaign summary from all sessions">Generate</button>
+              <a id="campaign-summaries-link" href="#" class="btn-small hidden" target="_blank">View all</a>
+            </div>
+            <div class="generation-log hidden"></div>
+            <div class="summary-content">
+              <p class="placeholder">No campaign summary yet.</p>
+            </div>
           </div>
         </section>
       </div>

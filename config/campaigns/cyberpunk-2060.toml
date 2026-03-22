@@ -1,0 +1,163 @@
+[campaign]
+id = "cyberpunk-2060-nacimiento-perfeccion"
+name = "Cyberpunk 2060: Nacimiento de la Perfeccion"
+game_system = "Cyberpunk RED"
+language = "es"
+description = "Night City, 2060. La contaminacion de la explosion de la torre Arasaka ha sido limpiada y la ciudad empieza a reconstruirse. Pero no es la vieja Night City la que resurge: Aeterna Biotics, una startup agresiva que promete inmortalidad, esta transformando la ciudad desde dentro. Su lema: \"La carne es un lastre; nosotros somos la evolucion\". Mientras las megas tradicionales luchan por no quedar obsoletas, los jugadores viven la metamorfosis de Night City hacia algo que podria ser el futuro de Cyberpunk 2077... o no."
+campaign_summary = """
+## Cyberpunk 2060: Nacimiento de la Perfección
+### Resumen Global de Campaña
+
+En el Night City de 2060, donde la pulcritud aséptica de Aeterna Biotics compite con los últimos vestigios del cyberpunk clásico, un grupo de edgerunners se ha visto arrastrado hacia los secretos más oscuros de la corporación que promete la inmortalidad.
+
+### El Descubrimiento
+
+Todo comenzó cuando Tira, una mercenaria de origen europeo con implantes de tecnología avanzada, obtuvo información sobre un disco de datos de un contacto. Lo que inicialmente parecía un trabajo rutinario se reveló como una trampa cuidadosamente orquestada: quien le proporcionó la información esperaba que Aeterna apareciera para capturar a cualquiera que fuera tras el disco.
+
+En el despacho de Elara Navarro, el grupo descubrió que el disco contenía archivos fragmentarios bajo la carpeta raíz "John Trash" - un nombre que Vektor reconoció inmediatamente. Los datos incluían mapas de Viena, logs de gestión de tráfico de 2023, procesos cifrados complejos y coordenadas dispersas. Sin embargo, la información estaba incompleta: claramente se necesitaban más discos para acceder al contenido completo.
+
+### La Revelación de Sena
+
+La situación se complicó dramáticamente cuando la misteriosa nómada que había aparecido previamente en un callejón regresó con una nueva identidad. Presentándose como Sena y acompañada por su guardaespaldas Kael, reveló ser mucho más que una simple vagabunda. Su conocimiento íntimo de Aeterna y su reacción visceral al mencionar la corporación sugieren una historia personal dolorosa.
+
+Sena desveló información crucial: el disco contiene datos sobre los orígenes de Aeterna - lo que ella denomina su "semilla" o "germen" en Eurasia. Esta información, distribuida en sucesos aparentemente inconexos ocurridos en Austria, Night City, Panamá y otras ciudades, podría desencadenar algo que Aeterna desesperadamente quiere mantener oculto.
+
+### El Misterio de la Conexión
+
+Más inquietante aún, Sena detectó que algo une al grupo en la Capa 3 de la Red - una vinculación digital que ellos mismos no comprenden pero que podría representar un peligro mortal. Para ayudar a Vektor a investigar esta conexión, le entregó un dispositivo de almacenamiento con la advertencia estricta de no conectarlo a ninguna red.
+
+### Estado Actual
+
+El grupo se encuentra ahora en posesión del primer disco de una serie que aparentemente contiene los secretos fundacionales de Aeterna Biotics. Sena confirma conocer la ubicación del segundo disco, aunque el paradero del tercero permanece en las sombras. La advertencia es clara: el simple conocimiento de la existencia de estos discos ya los ha marcado como objetivos de Aeterna.
+
+Mientras Elara se recupera de su experiencia en la zona de silencio de Aeterna sin aparentes secuelas físicas, las tensiones dentro del grupo aumentan. La sospecha de Vektor hacia los implantes avanzados de Tira, la misteriosa conexión que los une en la Capa 3, y la solicitud de Sena para una conversación privada con la mercenaria sugieren que los secretos personales pronto colisionarán con la conspiración corporativa más amplia.
+
+En las calles de Night City, donde las antenas blancas de Aeterna proyectan su silencio aséptico sobre los barrios de carbón y acero, el grupo se adentra en un juego mortal donde la información es poder, la paranoia es supervivencia, y los secretos del pasado pueden determinar el futuro de la humanidad misma.
+"""
+
+[[campaign.locations]]
+name = "Afterlife"
+description = "Bar iconico de mercenarios y edgerunners. Punto de encuentro para trabajos y contactos."
+
+[[campaign.locations]]
+name = "Centro Corporativo (Nucleo de Cristal)"
+description = "Zona de exclusion llena de gruas silenciosas y andamios de luz. Drones de Aeterna proyectan laseres sobre esqueletos de acero mientras el biopolimero 'crece' sobre las estructuras como coral blanco. Un muro sonico separa este distrito: de un paso a otro, el caos de la ciudad se apaga y solo queda un zumbido de baja frecuencia."
+
+[[campaign.locations]]
+name = "Heywood"
+description = "Vigilancia Emocional. Los drones de Aeterna escanean ventanas de apartamentos. La musica latina se corta por anuncios holograficos que ofrecen 'Mejoras Familiares' para ti y tus seres queridos."
+
+[[campaign.locations]]
+name = "Pacifica"
+description = "El Olvido Digital. Zonas de 'muerte de senal' donde aparecen cuerpos catatonicos tirados en cualquier lado. No estan muertos, o si, pero yacen inertes y ninguno se ha recuperado. Hay zonas sin ningun tipo de cobertura, como un agujero negro."
+
+[[campaign.locations]]
+name = "Santo Domingo"
+description = "Desmantelamiento. Las viejas industrias ruidosas estan siendo desmanteladas por gruas silenciosas que instalan paneles de biopolimero. Es el lugar donde mejor se ve el choque entre el acero viejo y el cristal nuevo."
+
+[[campaign.locations]]
+name = "Watson"
+description = "El Distrito Enrarecido. Entre fabricas oxidadas aparecen 'Nodos de Silencio': cruzas una calle y el ruido desaparece, no escuchas coches ni gritos, solo susurros de personas muy proximas a ti."
+
+[[campaign.locations]]
+name = "Viena"
+description = "Ciudad europea cuyos mapas aparecen en los archivos del disco de John Trash, con información en alemán relacionada con los orígenes de Aeterna."
+
+[[campaign.locations]]
+name = "Austria"
+description = "País donde ocurrieron sucesos aparentemente inconexos relacionados con la información sobre los orígenes de Aeterna distribuida en los discos."
+
+[[campaign.locations]]
+name = "Panamá"
+description = "Ubicación donde ocurrieron eventos conectados con la información sobre los orígenes de Aeterna."
+
+[[campaign.locations]]
+name = "Capa 3 de la Red"
+description = "Nivel profundo de la red donde existe una conexión misteriosa que une al grupo de alguna manera desconocida."
+
+[campaign.dm]
+discord_id = "432635509899001877"
+
+[[campaign.players]]
+discord_id = "301071912292057088"
+discord_name = "@Zartch"
+character_name = "Elara Navarro - Nix"
+character_description = "Fixer experta en información"
+
+[[campaign.players]]
+discord_id = "341205872615096321"
+discord_name = "Bateman"
+character_name = "Tira"
+character_description = "Mercenaria misteriosa"
+
+[[campaign.players]]
+discord_id = "438410726298746891"
+discord_name = "Davidus"
+character_name = "Vektor"
+character_description = "El Netrunero"
+
+[[campaign.players]]
+discord_id = "432635509899001877"
+discord_name = "Escalopo"
+character_name = "Director de juego"
+character_description = "Es el master / DM"
+
+[[campaign.players]]
+discord_id = "321011002856701972"
+discord_name = "Miquel"
+character_name = "Canal"
+character_description = "Técnico"
+
+[[campaign.npcs]]
+name = "John Trash"
+description = "Persona asociada con los discos que contienen información sensible sobre los orígenes de Aeterna. Su identidad es reconocida por Vektor."
+
+[[campaign.npcs]]
+name = "Sena"
+description = "Nómada misteriosa que inicialmente apareció en un callejón. Ahora muestra autoridad y conoce información crucial sobre Aeterna y los discos. Tiene una historia personal dolorosa relacionada con la corporación."
+
+[[campaign.npcs]]
+name = "Kael"
+description = "Guardaespaldas armado que acompaña a Sena. Proporciona protección durante las negociaciones."
+
+[campaign.custom_instructions]
+text = """
+== LINEA TEMPORAL ==
+- Ano 2060. Post-contaminacion de la explosion de la torre Arasaka. Pre-Cyberpunk 2077.
+- El mundo y pasado es el canon: Cyberpunk 2020, Firestorms, Cyberpunk RED.
+- Night City empieza a construirse tal como la vemos en Cyberpunk 2077 y Edgerunners, o quiza evolucione hacia otro sitio.
+- Todo lo que respecta a NPCs, corporaciones y gobierno es exactamente el oficial de 2060, EXCEPTO lo relacionado con Aeterna Biotics.
+
+== AETERNA BIOTICS ==
+- Startup agresiva que vende inmortalidad, no armas. Lema: "La carne es un lastre; nosotros somos la evolucion".
+- Clinicas: cubos de cristal blanco en esquinas mugrientas de Heywood o Watson. Huelen a clinica de lujo en medio de un vertedero.
+- Muchos ciudadanos convertidos a su "fe/dogma": prometen vida y recuerdos eternos, cuerpos mejorados, perfectos, tecnologia e implantes finos, limpios y pulcros.
+- Antenas blancas de Aeterna por toda la ciudad: nadie ha conseguido hackearlas, su pintura repele grafitis, si alguien intenta vandalizar una la NCPD aparece de inmediato y no hace preguntas.
+
+== LA RED: 3 LAYER ==
+- La Red se ha fusionado con la realidad. Olvida consolas pesadas y cables en la nuca.
+- Capa 1 - Omnipresencia (RA Total): Todo emite un "eco de datos". Con el equipo adecuado, el mundo fisico se vuelve translucido y aparecen lineas de codigo, flujos de energia y nodos de control.
+- Capa 2 - Netrunning de Proximidad: Hackear es un acto de presencia. Debes estar cerca del objetivo para que tu enlace neural sintonice con su campo de radiofrecuencia. Ves dos planos simultaneos: el fisico y el digital.
+- Capa 3 - Arquitectura Fantasma: Fortalezas de datos construidas sobre edificios reales. Un pasillo vacio puede estar bloqueado por un muro de fuego logico o patrullado por Black ICE con forma de centinela geometrico. El dano en la Red es dano real.
+- "Sintonizar": filtrar la realidad fisica para enfocarse en datos. El Netrunner manipula interfaces tactiles invisibles para los demas.
+- "Ruido": el mundo analogico (paredes, lluvia, gente sin implantes). Para un Netrunner experto, es solo un estorbo que oculta la verdadera estructura: el codigo.
+
+== FACCIONES ==
+- Los Analogicos (Resistencia Organica): Creen que el sudor y la finitud nos hacen humanos. Son "ruido" en el canal, pero su improvisacion organica es impredecible para cualquier IA. Rechazan a Aeterna.
+- Los Ascendidos (Evangelistas Digitales): Odian su biologia y ven en Aeterna la salvacion. Se afeitan el vello, visten de blanco quirurgico, son 100% fieles a Aeterna e intentan evangelizar a todos.
+- Los Sintonizados (Followers): Gente que ve en Aeterna su tabla de salvacion o simplemente una nueva moda.
+- Las Megas Tradicionales (Depredadores): Arasaka, Militech, Petrochem, etc. Intentan robar el secreto de Aeterna mediante sabotaje y espionaje.
+
+== ATMOSFERA ==
+- Ciudad en metamorfosis: esquizofrenia arquitectonica entre el cyberpunk sucio clasico y la pulcritud aseptica de Aeterna.
+- Nucleo de Cristal (Centro): agujas de cristal espejo y polimero, sin cables ni basura, aire frio con olor a antiseptico y ozono. Geometria perfecta, publicidad que te analiza y susurra.
+- Anillos de Carbono (Barrios): conservan estetica Cyberpunk RED (humo, cables, grasa) pero el "silencio corporativo" infecta sus calles.
+- La noche es silenciosa, aseptica, y Aeterna te pide que entregues lo unico que te queda: tu alma de carbono.
+
+== INSTRUCCIONES PARA EL RESUMEN ==
+- Captura la tension entre el cyberpunk clasico sucio y la pulcritud de Aeterna en las descripciones.
+- Distingue claramente dialogo in-game de comentarios meta/fuera de personaje.
+- Si el transcriptor genera texto sin sentido, descartalo.
+- Presta atencion a menciones de las facciones, la Red (3 Layer), y las antenas/clinicas de Aeterna.
+- Mantener tono noir cyberpunk en las descripciones narrativas.
+"""

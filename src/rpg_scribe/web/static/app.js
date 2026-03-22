@@ -7,8 +7,12 @@
 
   var connectionBadge = document.getElementById("connection-badge");
   var transcriptionFeed = document.getElementById("transcription-feed");
-  var sessionSummaryEl = document.getElementById("session-summary");
-  var campaignSummaryEl = document.getElementById("campaign-summary");
+  var sessionSummaryTab = document.getElementById("session-summary");
+  var sessionSummaryEl = sessionSummaryTab ? sessionSummaryTab.querySelector(".summary-content") : null;
+  var sessionChronologyTab = document.getElementById("session-chronology");
+  var sessionChronologyEl = sessionChronologyTab ? sessionChronologyTab.querySelector(".summary-content") : null;
+  var campaignSummaryTab = document.getElementById("campaign-summary");
+  var campaignSummaryEl = campaignSummaryTab ? campaignSummaryTab.querySelector(".summary-content") : null;
   var questionsList = document.getElementById("questions-list");
   var componentStatusEl = document.getElementById("component-status");
   var sessionListEl = document.getElementById("session-list");
@@ -184,6 +188,9 @@
       case "entities_updated":
         // Refresh campaign data so NPC/location/relationship panels stay current
         fetchCampaignInfo();
+        break;
+      case "generation_progress":
+        handleGenerationProgress(msg.data);
         break;
     }
   }
@@ -435,10 +442,78 @@
     });
   }
 
+  // --- Generation log utilities ---
+  function addLogEntry(tabEl, message) {
+    if (!tabEl) return;
+    var logDiv = tabEl.querySelector(".generation-log");
+    if (!logDiv) return;
+    logDiv.classList.remove("hidden");
+    var entry = document.createElement("div");
+    entry.className = "log-entry";
+    var time = new Date().toLocaleTimeString();
+    entry.textContent = "[" + time + "] " + message;
+    logDiv.appendChild(entry);
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  function clearLog(tabEl) {
+    if (!tabEl) return;
+    var logDiv = tabEl.querySelector(".generation-log");
+    if (!logDiv) return;
+    logDiv.innerHTML = "";
+    logDiv.classList.add("hidden");
+  }
+
+  var generationLogTabMap = {
+    narrative: sessionSummaryTab,
+    chronology: sessionChronologyTab,
+    campaign: campaignSummaryTab,
+  };
+
+  function handleGenerationProgress(data) {
+    var tabEl = generationLogTabMap[data.target];
+    if (tabEl) addLogEntry(tabEl, data.message);
+  }
+
+  function updateGenerateChronologyBtn(sessionId) {
+    var btn = document.getElementById("btn-generate-chronology");
+    if (!btn) return;
+    btn.onclick = sessionId ? function () {
+      clearLog(sessionChronologyTab);
+      addLogEntry(sessionChronologyTab, "Generating chronology...");
+      btn.disabled = true;
+      btn.textContent = "Generating...";
+      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-chronology", {
+        method: "POST",
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.session_chronology) {
+            renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sessionId);
+            addLogEntry(sessionChronologyTab, "Chronology generated");
+          } else {
+            addLogEntry(sessionChronologyTab, "Error: no chronology returned");
+          }
+          btn.disabled = false;
+          btn.textContent = "Generate Chronology";
+        })
+        .catch(function () {
+          addLogEntry(sessionChronologyTab, "Error: request failed");
+          btn.disabled = false;
+          btn.textContent = "Generate Chronology";
+        });
+    } : null;
+  }
+
   function updateSummary(data) {
     if (data.session_summary) {
       var sid = data.session_id || activeSessionId || "";
       renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sid);
+    }
+    if (data.session_chronology) {
+      var sid2 = data.session_id || activeSessionId || "";
+      renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sid2);
+      updateGenerateChronologyBtn(sid2);
     }
     if (data.campaign_summary) {
       renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", activeCampaignId || browseCampaignId || "");
@@ -537,6 +612,9 @@
     if (type === "session") {
       url = "/api/sessions/" + encodeURIComponent(targetId) + "/summary";
       bodyKey = "session_summary";
+    } else if (type === "chronology") {
+      url = "/api/sessions/" + encodeURIComponent(targetId) + "/chronology";
+      bodyKey = "session_chronology";
     } else {
       url = "/api/campaigns/" + encodeURIComponent(targetId) + "/campaign-summary";
       bodyKey = "campaign_summary";
@@ -962,7 +1040,6 @@
             summariesLink.classList.remove("hidden");
           }
           if (generateBtn && data.campaign.id) {
-            generateBtn.classList.remove("hidden");
             generateBtn.dataset.campaignId = data.campaign.id;
           }
           // Load campaign summary on init
@@ -3203,6 +3280,13 @@
         }
 
         renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+        if (summData.session_chronology) {
+          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+          updateGenerateChronologyBtn(sessionId);
+        } else {
+          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+          updateGenerateChronologyBtn(sessionId);
+        }
         renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
         loadedLiveSessionId = sessionId;
         renderSessionLogLink(sessionId);
@@ -3234,6 +3318,13 @@
         }
 
         renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+        if (summData.session_chronology) {
+          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+          updateGenerateChronologyBtn(sessionId);
+        } else {
+          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+          updateGenerateChronologyBtn(sessionId);
+        }
         renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
       })
       .catch(function () {
@@ -3304,14 +3395,6 @@
       }
     }
 
-    if (refreshSummaryBtn) {
-      if (show) {
-        refreshSummaryBtn.classList.remove("hidden");
-      } else {
-        refreshSummaryBtn.classList.add("hidden");
-      }
-    }
-
     // Extract entities button: also visible when viewing a historical session
     var showExtract = show || !!(currentHistoricalSessionId);
     if (extractEntitiesBtn) {
@@ -3325,23 +3408,30 @@
 
   if (refreshSummaryBtn) {
     refreshSummaryBtn.addEventListener("click", function () {
-      if (!activeSessionId) return;
+      var sessionId = activeSessionId || currentHistoricalSessionId;
+      if (!sessionId) return;
 
+      clearLog(sessionSummaryTab);
+      addLogEntry(sessionSummaryTab, "Generating summary...");
       refreshSummaryBtn.disabled = true;
-      refreshSummaryBtn.textContent = "Updating...";
+      refreshSummaryBtn.textContent = "Generating...";
 
-      fetch("/api/sessions/" + activeSessionId + "/refresh-summary", {
+      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-summary", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (!data.ok) {
-            alert("Error: " + (data.error || "Failed to update summary"));
+          if (data.ok) {
+            if (data.session_summary) {
+              renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sessionId);
+            }
+            addLogEntry(sessionSummaryTab, "Summary updated");
+          } else {
+            addLogEntry(sessionSummaryTab, "Error: " + (data.error || "Failed"));
           }
         })
         .catch(function () {
-          alert("Failed to update summary.");
+          addLogEntry(sessionSummaryTab, "Error: request failed");
         })
         .finally(function () {
           refreshSummaryBtn.disabled = false;
@@ -3437,9 +3527,11 @@
     generateCampaignSummaryBtn.addEventListener("click", function () {
       var campaignId = generateCampaignSummaryBtn.dataset.campaignId;
       if (!campaignId) return;
+      clearLog(campaignSummaryTab);
+      addLogEntry(campaignSummaryTab, "Requesting campaign summary generation...");
       var originalText = generateCampaignSummaryBtn.textContent;
       generateCampaignSummaryBtn.disabled = true;
-      generateCampaignSummaryBtn.textContent = "Generatingâ€¦";
+      generateCampaignSummaryBtn.textContent = "Generating...";
       fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
         method: "POST",
       })
@@ -3449,16 +3541,18 @@
             if (data.campaign_summary && campaignSummaryEl) {
               renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
             }
-            var msg = "Campaign summary generated from " + data.session_count + " session(s).";
+            var msg = "Completed: " + data.session_count + " session(s)";
             if (data.sessions_processed > 0) {
-              msg += " Also generated " + data.sessions_processed + " missing session summary(s).";
+              msg += ", " + data.sessions_processed + " missing summary(s) generated";
             }
-            alert(msg);
+            addLogEntry(campaignSummaryTab, msg);
           } else {
-            alert("Error: " + (data.detail || "Unknown error"));
+            addLogEntry(campaignSummaryTab, "Error: " + (data.detail || "Unknown error"));
           }
         })
-        .catch(function () { alert("Failed to generate campaign summary."); })
+        .catch(function () {
+          addLogEntry(campaignSummaryTab, "Error: request failed");
+        })
         .finally(function () {
           generateCampaignSummaryBtn.disabled = false;
           generateCampaignSummaryBtn.textContent = originalText;
@@ -3581,6 +3675,21 @@
   if (mergeCancelBtn) {
     mergeCancelBtn.addEventListener("click", exitMergeMode);
   }
+
+  // ── Summary tab switching ──────────────────────────────────
+  var summaryTabs = document.querySelectorAll(".summary-tab");
+  var summaryTabContents = [sessionSummaryTab, sessionChronologyTab, campaignSummaryTab];
+  var summaryTabMap = { narrative: sessionSummaryTab, chronology: sessionChronologyTab, campaign: campaignSummaryTab };
+  summaryTabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      summaryTabs.forEach(function (t) { t.classList.remove("active"); });
+      tab.classList.add("active");
+      var target = tab.getAttribute("data-tab");
+      summaryTabContents.forEach(function (el) { if (el) el.classList.add("hidden"); });
+      var activeTab = summaryTabMap[target];
+      if (activeTab) activeTab.classList.remove("hidden");
+    });
+  });
 
   connectWS();
   fetchCampaignInfo();

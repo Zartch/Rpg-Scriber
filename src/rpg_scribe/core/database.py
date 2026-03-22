@@ -18,12 +18,14 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
+
 def normalize_relationship_type_label(value: str) -> str:
     """Normalize a relationship type label for matching/deduplication."""
     text = value.strip().lower()
     text = text.replace("_", " ").replace("-", " ")
     text = "".join(
-        ch for ch in unicodedata.normalize("NFKD", text)
+        ch
+        for ch in unicodedata.normalize("NFKD", text)
         if not unicodedata.combining(ch)
     )
     text = re.sub(r"[^a-z0-9\s]", " ", text)
@@ -48,6 +50,7 @@ def _relation_similarity(a: str, b: str) -> float:
         jaccard = len(a_tokens & b_tokens) / len(a_tokens | b_tokens)
         return max(seq, jaccard)
     return seq
+
 
 SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS campaigns (
@@ -88,6 +91,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     started_at REAL,
     ended_at REAL,
     session_summary TEXT,
+    session_chronology TEXT,
     status TEXT DEFAULT 'active'
 );
 
@@ -206,6 +210,7 @@ class Database:
         await self._ensure_column("locations", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("campaign_entities", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("sessions", "merged_into", "TEXT DEFAULT ''")
+        await self._ensure_column("sessions", "session_chronology", "TEXT DEFAULT ''")
 
     async def _ensure_column(self, table: str, column: str, ddl: str) -> None:
         cursor = await self.conn.execute(f"PRAGMA table_info({table})")
@@ -258,9 +263,17 @@ class Database:
                updated_at=excluded.updated_at
             """,
             (
-                campaign_id, name, game_system, language, description,
-                campaign_summary, json.dumps(speaker_map or {}),
-                dm_speaker_id, custom_instructions, now, now,
+                campaign_id,
+                name,
+                game_system,
+                language,
+                description,
+                campaign_summary,
+                json.dumps(speaker_map or {}),
+                dm_speaker_id,
+                custom_instructions,
+                now,
+                now,
             ),
         )
         await self.conn.commit()
@@ -278,7 +291,6 @@ class Database:
             result["speaker_map"] = json.loads(result["speaker_map"])
         return result
 
-
     async def list_campaigns(self) -> list[dict[str, Any]]:
         """List all campaigns ordered by most recently updated."""
         cursor = await self.conn.execute(
@@ -293,9 +305,7 @@ class Database:
                     row["speaker_map"] = {}
         return rows
 
-    async def update_campaign_summary(
-        self, campaign_id: str, summary: str
-    ) -> None:
+    async def update_campaign_summary(self, campaign_id: str, summary: str) -> None:
         """Update the accumulated campaign summary (latest-only cache)."""
         await self.conn.execute(
             "UPDATE campaigns SET campaign_summary = ?, updated_at = ? WHERE id = ?",
@@ -328,9 +338,7 @@ class Database:
         await self.update_campaign_summary(campaign_id, content)
         return summary_id
 
-    async def list_campaign_summaries(
-        self, campaign_id: str
-    ) -> list[dict[str, Any]]:
+    async def list_campaign_summaries(self, campaign_id: str) -> list[dict[str, Any]]:
         """Return all campaign summaries for a campaign, newest first."""
         cursor = await self.conn.execute(
             "SELECT * FROM campaign_summaries WHERE campaign_id = ? "
@@ -363,9 +371,7 @@ class Database:
 
     # ── Sessions ───────────────────────────────────────────────────
 
-    async def create_session(
-        self, session_id: str, campaign_id: str
-    ) -> None:
+    async def create_session(self, session_id: str, campaign_id: str) -> None:
         """Create a new session record."""
         await self.conn.execute(
             "INSERT INTO sessions (id, campaign_id, started_at, status) VALUES (?, ?, ?, ?)",
@@ -374,12 +380,12 @@ class Database:
         await self.conn.commit()
 
     async def end_session(
-        self, session_id: str, summary: str = ""
+        self, session_id: str, summary: str = "", chronology: str = ""
     ) -> None:
         """Mark a session as completed."""
         await self.conn.execute(
-            "UPDATE sessions SET ended_at = ?, session_summary = ?, status = ? WHERE id = ?",
-            (time.time(), summary, "completed", session_id),
+            "UPDATE sessions SET ended_at = ?, session_summary = ?, session_chronology = ?, status = ? WHERE id = ?",
+            (time.time(), summary, chronology, "completed", session_id),
         )
         await self.conn.commit()
 
@@ -437,14 +443,20 @@ class Database:
             """INSERT INTO transcriptions
                (session_id, speaker_id, speaker_name, text, timestamp, confidence, is_ingame)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (session_id, speaker_id, speaker_name, text, timestamp, confidence, is_ingame),
+            (
+                session_id,
+                speaker_id,
+                speaker_name,
+                text,
+                timestamp,
+                confidence,
+                is_ingame,
+            ),
         )
         await self.conn.commit()
         return cursor.lastrowid or 0
 
-    async def get_transcriptions(
-        self, session_id: str
-    ) -> list[dict[str, Any]]:
+    async def get_transcriptions(self, session_id: str) -> list[dict[str, Any]]:
         """Get all transcriptions for a session, ordered by timestamp."""
         cursor = await self.conn.execute(
             "SELECT * FROM transcriptions WHERE session_id = ? ORDER BY timestamp",
@@ -482,7 +494,9 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def get_merged_npcs_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+    async def get_merged_npcs_map(
+        self, campaign_id: str
+    ) -> dict[str, list[dict[str, Any]]]:
         """Get merged NPC children grouped by parent NPC name."""
         cursor = await self.conn.execute(
             "SELECT * FROM npcs WHERE campaign_id = ? "
@@ -518,9 +532,7 @@ class Database:
             return
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [npc_id]
-        await self.conn.execute(
-            f"UPDATE npcs SET {set_clause} WHERE id = ?", values
-        )
+        await self.conn.execute(f"UPDATE npcs SET {set_clause} WHERE id = ?", values)
         await self.conn.commit()
 
     async def update_merged_npc(
@@ -605,7 +617,9 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def get_merged_locations_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+    async def get_merged_locations_map(
+        self, campaign_id: str
+    ) -> dict[str, list[dict[str, Any]]]:
         """Get merged location children grouped by parent location name."""
         cursor = await self.conn.execute(
             "SELECT * FROM locations WHERE campaign_id = ? "
@@ -744,7 +758,9 @@ class Database:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def get_merged_entities_map(self, campaign_id: str) -> dict[str, list[dict[str, Any]]]:
+    async def get_merged_entities_map(
+        self, campaign_id: str
+    ) -> dict[str, list[dict[str, Any]]]:
         """Get merged entity children grouped by parent entity name."""
         cursor = await self.conn.execute(
             "SELECT * FROM campaign_entities WHERE campaign_id = ? "
@@ -833,7 +849,14 @@ class Database:
         await self.conn.execute(
             "UPDATE campaign_entities SET name = ?, entity_type = ?, description = ?, merged_into = ? "
             "WHERE id = ? AND campaign_id = ?",
-            (new_name, normalized_type, description.strip(), target_parent, entity_id, campaign_id),
+            (
+                new_name,
+                normalized_type,
+                description.strip(),
+                target_parent,
+                entity_id,
+                campaign_id,
+            ),
         )
         await self._rewrite_relationship_entity_keys(
             campaign_id,
@@ -1086,8 +1109,14 @@ class Database:
         await self.conn.execute(
             "INSERT INTO players (id, campaign_id, discord_id, discord_name, "
             "character_name, character_description) VALUES (?, ?, ?, ?, ?, ?)",
-            (player_id, campaign_id, discord_id, discord_name,
-             character_name, character_description),
+            (
+                player_id,
+                campaign_id,
+                discord_id,
+                discord_name,
+                character_name,
+                character_description,
+            ),
         )
         await self.conn.commit()
         return player_id
@@ -1119,9 +1148,7 @@ class Database:
             return
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [player_id]
-        await self.conn.execute(
-            f"UPDATE players SET {set_clause} WHERE id = ?", values
-        )
+        await self.conn.execute(f"UPDATE players SET {set_clause} WHERE id = ?", values)
         await self.conn.commit()
 
     # -- Questions --------------------------------------------------
@@ -1350,12 +1377,16 @@ class Database:
         source_end = source_row["ended_at"]
         target_end = target_row["ended_at"]
 
-        new_start = min(
-            t for t in (source_start, target_start) if t is not None
-        ) if (source_start is not None or target_start is not None) else None
-        new_end = max(
-            t for t in (source_end, target_end) if t is not None
-        ) if (source_end is not None or target_end is not None) else None
+        new_start = (
+            min(t for t in (source_start, target_start) if t is not None)
+            if (source_start is not None or target_start is not None)
+            else None
+        )
+        new_end = (
+            max(t for t in (source_end, target_end) if t is not None)
+            if (source_end is not None or target_end is not None)
+            else None
+        )
 
         await self.conn.execute(
             "UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = ?",
@@ -1379,9 +1410,13 @@ class Database:
             str(target_row["session_summary"] or ""),
             str(source_row["session_summary"] or ""),
         )
+        target_chronology = self._merge_text_fields(
+            str(target_row["session_chronology"] or ""),
+            str(source_row["session_chronology"] or ""),
+        )
         await self.conn.execute(
-            "UPDATE sessions SET session_summary = ? WHERE id = ?",
-            (target_summary, target_id),
+            "UPDATE sessions SET session_summary = ?, session_chronology = ? WHERE id = ?",
+            (target_summary, target_chronology, target_id),
         )
 
         # Tombstone source session
@@ -1470,15 +1505,19 @@ class Database:
             (campaign_id, source, target, relation_type["canonical_key"]),
         )
         row = await cursor.fetchone()
-        return dict(row) if row else {
-            "campaign_id": campaign_id,
-            "source_key": source,
-            "target_key": target,
-            "type_key": relation_type["canonical_key"],
-            "type_label": relation_type["label"],
-            "notes": notes.strip(),
-            "type_category": relation_type.get("category", "general"),
-        }
+        return (
+            dict(row)
+            if row
+            else {
+                "campaign_id": campaign_id,
+                "source_key": source,
+                "target_key": target,
+                "type_key": relation_type["canonical_key"],
+                "type_label": relation_type["label"],
+                "notes": notes.strip(),
+                "type_category": relation_type.get("category", "general"),
+            }
+        )
 
     async def _recompute_relationship_type_usage(
         self,
@@ -1526,7 +1565,9 @@ class Database:
         )
         return await cursor.fetchone() is not None
 
-    async def get_character_relationships(self, campaign_id: str) -> list[dict[str, Any]]:
+    async def get_character_relationships(
+        self, campaign_id: str
+    ) -> list[dict[str, Any]]:
         """List character relationships for a campaign."""
         cursor = await self.conn.execute(
             "SELECT r.*, t.category AS type_category "
@@ -1537,6 +1578,7 @@ class Database:
             (campaign_id,),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
     async def rename_relationship_entity_key(
         self,
         campaign_id: str,
@@ -1552,12 +1594,20 @@ class Database:
             "target_key = CASE WHEN target_key = ? THEN ? ELSE target_key END, "
             "updated_at = ? "
             "WHERE campaign_id = ? AND (source_key = ? OR target_key = ?)",
-            (old_key, new_key, old_key, new_key, time.time(), campaign_id, old_key, old_key),
+            (
+                old_key,
+                new_key,
+                old_key,
+                new_key,
+                time.time(),
+                campaign_id,
+                old_key,
+                old_key,
+            ),
         )
         await self.conn.commit()
-    async def save_question(
-        self, session_id: str, question: str
-    ) -> int:
+
+    async def save_question(self, session_id: str, question: str) -> int:
         """Save a question from the summarizer."""
         cursor = await self.conn.execute(
             "INSERT INTO questions (session_id, question, status) VALUES (?, ?, ?)",
@@ -1566,9 +1616,7 @@ class Database:
         await self.conn.commit()
         return cursor.lastrowid or 0
 
-    async def answer_question(
-        self, question_id: int, answer: str
-    ) -> None:
+    async def answer_question(self, question_id: int, answer: str) -> None:
         """Answer a pending question."""
         await self.conn.execute(
             "UPDATE questions SET answer = ?, answered_at = ?, status = ? WHERE id = ?",
@@ -1576,9 +1624,7 @@ class Database:
         )
         await self.conn.commit()
 
-    async def get_pending_questions(
-        self, session_id: str
-    ) -> list[dict[str, Any]]:
+    async def get_pending_questions(self, session_id: str) -> list[dict[str, Any]]:
         """Get all pending questions for a session."""
         cursor = await self.conn.execute(
             "SELECT * FROM questions WHERE session_id = ? AND status = 'pending'",
@@ -1683,9 +1729,7 @@ class Database:
         await self.conn.commit()
         return cursor.lastrowid or 0
 
-    async def get_word_replacements(
-        self, campaign_id: str
-    ) -> list[dict[str, Any]]:
+    async def get_word_replacements(self, campaign_id: str) -> list[dict[str, Any]]:
         """Get all word replacement rules for a campaign."""
         cursor = await self.conn.execute(
             "SELECT * FROM word_replacements WHERE campaign_id = ? "
@@ -1729,9 +1773,7 @@ class Database:
 
     # ── Session summary editing ───────────────────────────────────
 
-    async def update_session_summary(
-        self, session_id: str, summary: str
-    ) -> bool:
+    async def update_session_summary(self, session_id: str, summary: str) -> bool:
         """Update the session summary text. Returns True if updated."""
         cursor = await self.conn.execute(
             "UPDATE sessions SET session_summary = ? WHERE id = ?",
@@ -1740,3 +1782,11 @@ class Database:
         await self.conn.commit()
         return cursor.rowcount > 0
 
+    async def update_session_chronology(self, session_id: str, chronology: str) -> bool:
+        """Update the session chronology text. Returns True if updated."""
+        cursor = await self.conn.execute(
+            "UPDATE sessions SET session_chronology = ? WHERE id = ?",
+            (chronology, session_id),
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0

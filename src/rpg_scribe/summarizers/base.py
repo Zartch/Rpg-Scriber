@@ -49,6 +49,7 @@ class BaseSummarizer(ABC):
 
         self._session_id: str = ""
         self._session_summary: str = ""
+        self._session_chronology: str = ""
         self._campaign_summary: str = campaign.campaign_summary
 
         # Buffer of transcriptions pending summarization
@@ -74,6 +75,7 @@ class BaseSummarizer(ABC):
     async def finalize_session(self) -> str:
         """Generate the final polished session summary and update the campaign summary."""
         ...
+
     async def refresh_summary_on_demand(self) -> bool:
         """Force a summary refresh for the current session.
 
@@ -87,6 +89,7 @@ class BaseSummarizer(ABC):
         """Subscribe to the event bus and start processing transcriptions."""
         self._session_id = session_id
         self._session_summary = ""
+        self._session_chronology = ""
         self._pending.clear()
         self._last_update_time = time.time()
         self.event_bus.subscribe(TranscriptionEvent, self._handle_transcription)
@@ -139,6 +142,6 @@ class BaseSummarizer(ABC):
             campaign_summary=self._campaign_summary,
             last_updated=time.time(),
             update_type=update_type,
+            session_chronology=self._session_chronology,
         )
         await self.event_bus.publish(event)
-

@@ -41,6 +41,7 @@ class SummaryUpdateEvent:
     campaign_summary: str  # Accumulated campaign summary
     last_updated: float
     update_type: str  # "incremental", "revision", "final"
+    session_chronology: str = ""  # Chronological timeline (generated at finalization)
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,8 @@ class SessionEndRequestEvent:
 
     session_id: str
     source: str  # "discord", "file", "web", etc.
+
+
 @dataclass(frozen=True)
 class SummaryRefreshRequestEvent:
     """Published when an on-demand summary refresh is requested."""
@@ -71,9 +74,20 @@ class EntitiesUpdatedEvent:
 
     campaign_id: str
     session_id: str
-    new_npcs: tuple[str, ...]         # Names of newly-saved NPCs
-    new_locations: tuple[str, ...]    # Names of newly-saved locations
+    new_npcs: tuple[str, ...]  # Names of newly-saved NPCs
+    new_locations: tuple[str, ...]  # Names of newly-saved locations
     new_relationships: tuple[str, ...]  # "source -> target: type" labels
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class GenerationProgressEvent:
+    """Progress update during summary/chronology/campaign generation."""
+
+    target: str  # "narrative", "chronology", "campaign"
+    message: str
+    campaign_id: str = ""
+    session_id: str = ""
     timestamp: float = field(default_factory=time.time)
 
 
@@ -85,5 +99,3 @@ class SystemStatusEvent:
     status: str  # "running", "error", "idle"
     message: str
     timestamp: float = field(default_factory=time.time)
-
-

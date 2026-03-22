@@ -1,4 +1,4 @@
-﻿"""REST API routes for RPG Scribe web interface."""
+"""REST API routes for RPG Scribe web interface."""
 
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ class WebState:
         self.transcriptions: list[dict[str, Any]] = []
         self.max_transcriptions = max(1, max_transcriptions)
         self.session_summary: str = ""
+        self.session_chronology: str = ""
         self.campaign_summary: str = ""
         self.last_summary_update: float = 0.0
         self.component_status: dict[str, dict[str, Any]] = {}
@@ -62,6 +63,9 @@ class WebState:
 
     def update_summary(self, data: dict[str, Any]) -> None:
         self.session_summary = data.get("session_summary", "")
+        self.session_chronology = (
+            data.get("session_chronology", "") or self.session_chronology
+        )
         self.campaign_summary = data.get("campaign_summary", "")
         self.last_summary_update = data.get("last_updated", time.time())
 
@@ -70,13 +74,15 @@ class WebState:
         self.component_status[component] = data
 
     def add_question(self, question_id: str, text: str) -> None:
-        self.questions.append({
-            "id": question_id,
-            "question": text,
-            "answer": None,
-            "status": "pending",
-            "created_at": time.time(),
-        })
+        self.questions.append(
+            {
+                "id": question_id,
+                "question": text,
+                "answer": None,
+                "status": "pending",
+                "created_at": time.time(),
+            }
+        )
 
     def answer_question(self, question_id: str, answer: str) -> bool:
         for q in self.questions:
@@ -125,7 +131,6 @@ def _persist_campaign_toml(config: Any) -> None:
     if not campaign_path:
         return
     save_campaign_toml(config.campaign, campaign_path)
-
 
 
 def _logs_root() -> Path:
@@ -186,10 +191,12 @@ def _normalize_locations(values: list[Any] | None) -> list[dict[str, str]]:
         if folded in seen:
             continue
         seen.add(folded)
-        normalized.append({
-            "name": name,
-            "description": _extract_location_description(raw),
-        })
+        normalized.append(
+            {
+                "name": name,
+                "description": _extract_location_description(raw),
+            }
+        )
     return normalized
 
 
@@ -242,8 +249,9 @@ def _normalize_entities(values: list[Any] | None) -> list[dict[str, str]]:
             }
         )
     return normalized
-# -- REST endpoints ------------------------------------------------
 
+
+# -- REST endpoints ------------------------------------------------
 
 
 async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) -> None:
@@ -296,10 +304,12 @@ async def _load_merged_children_maps(
         "merged_entities_by_parent": await db.get_merged_entities_map(campaign_id),
     }
 
+
 @router.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Return 204 No Content to suppress browser favicon 404."""
     from starlette.responses import Response
+
     return Response(status_code=204)
 
 
@@ -318,6 +328,7 @@ async def get_status() -> dict[str, Any]:
         },
     }
 
+
 @router.get("/api/sessions/{session_id}/transcriptions")
 async def get_transcriptions(session_id: str) -> dict[str, Any]:
     """Return transcriptions for a session.
@@ -328,9 +339,7 @@ async def get_transcriptions(session_id: str) -> dict[str, Any]:
     state = _get_state()
 
     # Check in-memory first
-    filtered = [
-        t for t in state.transcriptions if t.get("session_id") == session_id
-    ]
+    filtered = [t for t in state.transcriptions if t.get("session_id") == session_id]
 
     # Return in-memory data if we found results, or if this is the live session
     if filtered or session_id == state.active_session_id:
@@ -362,10 +371,9 @@ async def get_full_transcriptions(session_id: str) -> dict[str, Any]:
             logger.error("Error fetching full transcriptions from DB: %s", exc)
 
     # Fallback when no DB is available: return in-memory snapshot for this session.
-    filtered = [
-        t for t in state.transcriptions if t.get("session_id") == session_id
-    ]
+    filtered = [t for t in state.transcriptions if t.get("session_id") == session_id]
     return {"session_id": session_id, "transcriptions": filtered}
+
 
 @router.get("/api/sessions/{session_id}/summary")
 async def get_summary(session_id: str) -> dict[str, Any]:
@@ -382,6 +390,7 @@ async def get_summary(session_id: str) -> dict[str, Any]:
         return {
             "session_id": session_id,
             "session_summary": state.session_summary,
+            "session_chronology": state.session_chronology,
             "campaign_summary": state.campaign_summary,
             "last_updated": state.last_summary_update,
         }
@@ -401,6 +410,7 @@ async def get_summary(session_id: str) -> dict[str, Any]:
                 return {
                     "session_id": session_id,
                     "session_summary": session.get("session_summary", ""),
+                    "session_chronology": session.get("session_chronology", ""),
                     "campaign_summary": campaign_summary,
                     "last_updated": session.get("ended_at", 0),
                 }
@@ -412,6 +422,7 @@ async def get_summary(session_id: str) -> dict[str, Any]:
         return {
             "session_id": session_id,
             "session_summary": state.session_summary,
+            "session_chronology": state.session_chronology,
             "campaign_summary": state.campaign_summary,
             "last_updated": state.last_summary_update,
         }
@@ -419,6 +430,7 @@ async def get_summary(session_id: str) -> dict[str, Any]:
     return {
         "session_id": session_id,
         "session_summary": "",
+        "session_chronology": "",
         "campaign_summary": "",
         "last_updated": 0,
     }
@@ -528,7 +540,8 @@ async def create_word_replacement(
     replacement = body.get("replacement_word", "").strip()
     if not original or not replacement:
         raise HTTPException(
-            status_code=400, detail="Both original_word and replacement_word are required"
+            status_code=400,
+            detail="Both original_word and replacement_word are required",
         )
     rule_id = await db.save_word_replacement(campaign_id, original, replacement)
     app = _get_application()
@@ -585,6 +598,232 @@ async def update_session_summary(
         state.session_summary = text
 
     return {"ok": True}
+
+
+@router.put("/api/sessions/{session_id}/chronology")
+async def update_session_chronology(
+    session_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Update the session chronology text (overwrite)."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    text = body.get("session_chronology", "")
+    ok = await db.update_session_chronology(session_id, text)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    state = _get_state()
+    if session_id == state.active_session_id:
+        state.session_chronology = text
+
+    return {"ok": True}
+
+
+@router.post("/api/sessions/{session_id}/generate-summary")
+async def generate_session_summary(session_id: str) -> dict[str, Any]:
+    """Generate a narrative summary for an existing session (post-hoc).
+
+    Works for both active and historical sessions.
+    For active sessions, triggers the live summarizer via event bus.
+    For historical sessions, generates from stored transcriptions.
+    """
+    state = _get_state()
+    event_bus = _get_event_bus()
+    db = _get_database()
+
+    # If this is the active session and event bus is available, use live refresh
+    if (
+        state.active_session_id == session_id
+        and event_bus is not None
+    ):
+        await event_bus.publish(
+            SummaryRefreshRequestEvent(session_id=session_id, source="web")
+        )
+        return {"ok": True, "session_summary": "", "mode": "live_refresh"}
+
+    # Otherwise generate from transcriptions in DB
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    rows = await db.get_transcriptions(session_id)
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="No transcriptions found for this session",
+        )
+
+    config = _get_config()
+
+    from rpg_scribe.core.models import (
+        CampaignContext,
+        LocationInfo,
+        PlayerInfo,
+        SummarizerConfig,
+    )
+    from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+
+    campaign = None
+    if config is not None and getattr(config, "campaign", None):
+        campaign = config.campaign
+    else:
+        campaign_id = session.get("campaign_id")
+        if campaign_id:
+            camp_row = await db.get_campaign(campaign_id)
+            if camp_row:
+                players_rows = await db.get_players(campaign_id)
+                locations_rows = await db.get_locations(campaign_id)
+                campaign = CampaignContext(
+                    campaign_id=campaign_id,
+                    name=camp_row.get("name", ""),
+                    game_system=camp_row.get("game_system", ""),
+                    language=camp_row.get("language", "es"),
+                    description=camp_row.get("description", ""),
+                    custom_instructions=camp_row.get("custom_instructions", ""),
+                    players=[
+                        PlayerInfo(
+                            discord_id=p.get("discord_id", ""),
+                            discord_name=p.get("discord_name", ""),
+                            character_name=p.get("character_name", ""),
+                            character_description=p.get("character_description", ""),
+                        )
+                        for p in players_rows
+                    ],
+                    locations=[
+                        LocationInfo(
+                            name=loc.get("name", ""),
+                            description=loc.get("description", ""),
+                        )
+                        for loc in locations_rows
+                    ],
+                    speaker_map=camp_row.get("speaker_map") or {},
+                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
+                )
+    if campaign is None:
+        campaign = CampaignContext.create_generic()
+
+    summarizer_config = (
+        config.summarizer
+        if config is not None and getattr(config, "summarizer", None)
+        else SummarizerConfig()
+    )
+
+    from rpg_scribe.core.event_bus import EventBus as _EventBus
+
+    summarizer = ClaudeSummarizer(
+        event_bus or _EventBus(),
+        summarizer_config,
+        campaign,
+        database=db,
+    )
+
+    summary = await summarizer.generate_session_summary_from_transcriptions(rows)
+    if summary:
+        await db.end_session(session_id, summary)
+        if session_id == state.active_session_id:
+            state.session_summary = summary
+
+    return {"ok": True, "session_summary": summary or ""}
+
+
+@router.post("/api/sessions/{session_id}/generate-chronology")
+async def generate_session_chronology(session_id: str) -> dict[str, Any]:
+    """Generate a chronological timeline for an existing session (post-hoc).
+
+    Requires the session to have transcriptions in the DB.
+    Works with or without an active campaign — falls back to generic context.
+    """
+    db = _get_database()
+    config = _get_config()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_summary = session.get("session_summary", "") or ""
+    rows = await db.get_transcriptions(session_id)
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="No transcriptions found for this session",
+        )
+
+    from rpg_scribe.core.models import (
+        CampaignContext,
+        LocationInfo,
+        PlayerInfo,
+        SummarizerConfig,
+    )
+    from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+
+    # Prefer in-memory campaign; fall back to loading from DB
+    campaign = None
+    if config is not None and getattr(config, "campaign", None):
+        campaign = config.campaign
+    else:
+        campaign_id = session.get("campaign_id")
+        if campaign_id:
+            camp_row = await db.get_campaign(campaign_id)
+            if camp_row:
+                players_rows = await db.get_players(campaign_id)
+                locations_rows = await db.get_locations(campaign_id)
+                campaign = CampaignContext(
+                    campaign_id=campaign_id,
+                    name=camp_row.get("name", ""),
+                    game_system=camp_row.get("game_system", ""),
+                    language=camp_row.get("language", "es"),
+                    description=camp_row.get("description", ""),
+                    custom_instructions=camp_row.get("custom_instructions", ""),
+                    players=[
+                        PlayerInfo(
+                            discord_id=p.get("discord_id", ""),
+                            discord_name=p.get("discord_name", ""),
+                            character_name=p.get("character_name", ""),
+                            character_description=p.get("character_description", ""),
+                        )
+                        for p in players_rows
+                    ],
+                    locations=[
+                        LocationInfo(
+                            name=loc.get("name", ""),
+                            description=loc.get("description", ""),
+                        )
+                        for loc in locations_rows
+                    ],
+                    speaker_map=camp_row.get("speaker_map") or {},
+                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
+                )
+    if campaign is None:
+        campaign = CampaignContext.create_generic()
+    summarizer_config = (
+        config.summarizer
+        if config is not None and getattr(config, "summarizer", None)
+        else SummarizerConfig()
+    )
+
+    summarizer = ClaudeSummarizer(
+        _get_event_bus(),
+        summarizer_config,
+        campaign,
+        database=db,
+    )
+
+    chronology = await summarizer.generate_chronology_from_transcriptions(
+        [dict(r) for r in rows], session_summary
+    )
+    await db.update_session_chronology(session_id, chronology)
+
+    state = _get_state()
+    if session_id == state.active_session_id:
+        state.session_chronology = chronology
+
+    return {"ok": True, "session_chronology": chronology}
 
 
 @router.put("/api/campaigns/{campaign_id}/campaign-summary")
@@ -646,6 +885,7 @@ async def answer_question(question_id: str, body: dict[str, str]) -> dict[str, A
     found = state.answer_question(question_id, answer_text)
     return {"ok": found}
 
+
 @router.get("/api/campaigns")
 async def get_campaigns() -> dict[str, Any]:
     """Return active campaign info including players, NPCs and relationships."""
@@ -656,7 +896,13 @@ async def get_campaigns() -> dict[str, Any]:
     campaign = state.active_campaign
 
     # Fall back to DB if campaign is not in memory
-    if not campaign and config and hasattr(config, "campaign") and config.campaign and db:
+    if (
+        not campaign
+        and config
+        and hasattr(config, "campaign")
+        and config.campaign
+        and db
+    ):
         try:
             row = await db.get_campaign(config.campaign.campaign_id)
             if row:
@@ -700,12 +946,16 @@ async def get_campaigns() -> dict[str, Any]:
             logger.error("Error fetching entities: %s", exc)
             campaign.setdefault("entities", [])
         try:
-            campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
+            campaign["relationship_types"] = await db.get_relationship_types(
+                campaign_id
+            )
         except Exception as exc:
             logger.error("Error fetching relationship types: %s", exc)
             campaign.setdefault("relationship_types", [])
         try:
-            campaign["relationships"] = await db.get_character_relationships(campaign_id)
+            campaign["relationships"] = await db.get_character_relationships(
+                campaign_id
+            )
         except Exception as exc:
             logger.error("Error fetching relationships: %s", exc)
             campaign.setdefault("relationships", [])
@@ -781,14 +1031,22 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
                 campaign["npcs"] = await db.get_npcs(campaign_id)
                 campaign["locations"] = await db.get_locations(campaign_id)
                 campaign["entities"] = await db.get_entities(campaign_id)
-                campaign["relationship_types"] = await db.get_relationship_types(campaign_id)
-                campaign["relationships"] = await db.get_character_relationships(campaign_id)
+                campaign["relationship_types"] = await db.get_relationship_types(
+                    campaign_id
+                )
+                campaign["relationships"] = await db.get_character_relationships(
+                    campaign_id
+                )
                 campaign.update(await _load_merged_children_maps(db, campaign_id))
         except Exception as exc:
             logger.error("Error loading browse campaign %s: %s", campaign_id, exc)
             return {"campaign": None}
 
-    if campaign is None and state.active_campaign and state.active_campaign.get("id") == campaign_id:
+    if (
+        campaign is None
+        and state.active_campaign
+        and state.active_campaign.get("id") == campaign_id
+    ):
         campaign = dict(state.active_campaign)
         campaign.setdefault("campaign_summary", "")
         campaign.setdefault("players", [])
@@ -808,6 +1066,7 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
         campaign.setdefault("merged_entities_by_parent", {})
     return {"campaign": campaign}
 
+
 @router.patch("/api/campaigns/{campaign_id}")
 async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update editable fields of a campaign.
@@ -825,7 +1084,14 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
         return {"ok": False, "error": "Campaign not found"}
 
     # Fields that can be edited from the UI
-    editable = {"name", "game_system", "description", "language", "custom_instructions", "dm_speaker_id"}
+    editable = {
+        "name",
+        "game_system",
+        "description",
+        "language",
+        "custom_instructions",
+        "dm_speaker_id",
+    }
     updates = {k: v for k, v in body.items() if k in editable and isinstance(v, str)}
 
     if not updates:
@@ -838,9 +1104,14 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     # Update in-memory config.campaign (CampaignContext dataclass)
     if config and hasattr(config, "campaign") and config.campaign:
         campaign_obj = config.campaign
-        field_map = {"name": "name", "game_system": "game_system",
-                     "description": "description", "language": "language",
-                     "custom_instructions": "custom_instructions", "dm_speaker_id": "dm_speaker_id"}
+        field_map = {
+            "name": "name",
+            "game_system": "game_system",
+            "description": "description",
+            "language": "language",
+            "custom_instructions": "custom_instructions",
+            "dm_speaker_id": "dm_speaker_id",
+        }
         for k, v in updates.items():
             attr = field_map.get(k, k)
             if hasattr(campaign_obj, attr):
@@ -854,12 +1125,18 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
                 await db.upsert_campaign(
                     campaign_id=campaign_id,
                     name=updates.get("name", current.get("name", "")),
-                    game_system=updates.get("game_system", current.get("game_system", "")),
+                    game_system=updates.get(
+                        "game_system", current.get("game_system", "")
+                    ),
                     language=updates.get("language", current.get("language", "es")),
-                    description=updates.get("description", current.get("description", "")),
+                    description=updates.get(
+                        "description", current.get("description", "")
+                    ),
                     campaign_summary=current.get("campaign_summary", ""),
                     speaker_map=current.get("speaker_map"),
-                    dm_speaker_id=updates.get("dm_speaker_id", current.get("dm_speaker_id", "")),
+                    dm_speaker_id=updates.get(
+                        "dm_speaker_id", current.get("dm_speaker_id", "")
+                    ),
                     custom_instructions=updates.get(
                         "custom_instructions",
                         current.get("custom_instructions", ""),
@@ -918,7 +1195,10 @@ async def update_player(
                 for k, v in updates.items():
                     object.__setattr__(p, k, v)
                 # Update speaker_map if character_name changed
-                if "character_name" in updates and p.discord_id in campaign_obj.speaker_map:
+                if (
+                    "character_name" in updates
+                    and p.discord_id in campaign_obj.speaker_map
+                ):
                     campaign_obj.speaker_map[p.discord_id] = updates["character_name"]
                 break
 
@@ -953,9 +1233,7 @@ async def update_player(
 
 
 @router.post("/api/campaigns/{campaign_id}/npcs")
-async def create_npc(
-    campaign_id: str, body: dict[str, Any]
-) -> dict[str, Any]:
+async def create_npc(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Create a new NPC."""
     state = _get_state()
     db = _get_database()
@@ -1044,10 +1322,10 @@ async def update_npc_endpoint(
     return {"ok": True}
 
 
-
-
 @router.post("/api/campaigns/{campaign_id}/locations")
-async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def create_location_endpoint(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Add a location to the active campaign context."""
     state = _get_state()
     db = _get_database()
@@ -1096,8 +1374,11 @@ async def create_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
 
     return {"ok": True, "locations": current}
 
+
 @router.put("/api/campaigns/{campaign_id}/locations")
-async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def update_location_endpoint(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Update a location (name/description) in the active campaign context."""
     state = _get_state()
     db = _get_database()
@@ -1109,7 +1390,9 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
     old_name = str(body.get("old_name", "")).strip()
     new_name = str(body.get("name", "")).strip()
     has_description = "description" in body
-    new_description = str(body.get("description", "")).strip() if has_description else ""
+    new_description = (
+        str(body.get("description", "")).strip() if has_description else ""
+    )
     if not old_name or not new_name:
         return {"ok": False, "error": "old_name and name are required"}
 
@@ -1154,8 +1437,12 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
                         db_updates["description"] = new_description
                     await db.update_location(str(row.get("id", "")), **db_updates)
                     break
-            await db.rename_relationship_entity_key(campaign_id, f"loc:{old_name}", f"loc:{new_name}")
-            await db.rename_relationship_entity_key(campaign_id, f"location:{old_name}", f"loc:{new_name}")
+            await db.rename_relationship_entity_key(
+                campaign_id, f"loc:{old_name}", f"loc:{new_name}"
+            )
+            await db.rename_relationship_entity_key(
+                campaign_id, f"location:{old_name}", f"loc:{new_name}"
+            )
         except Exception as exc:
             logger.error("Error renaming location relationship keys: %s", exc)
             return {"ok": False, "error": "Failed to update relationship links"}
@@ -1182,7 +1469,9 @@ async def update_location_endpoint(campaign_id: str, body: dict[str, Any]) -> di
 
 
 @router.post("/api/campaigns/{campaign_id}/locations/merge")
-async def merge_locations_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def merge_locations_endpoint(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Merge one location into another location in the same campaign."""
     state = _get_state()
     db = _get_database()
@@ -1254,7 +1543,9 @@ async def update_merged_location_endpoint(
             merged_into=merged_into,
         )
         state.active_campaign["locations"] = await db.get_locations(campaign_id)
-        state.active_campaign["merged_locations_by_parent"] = await db.get_merged_locations_map(campaign_id)
+        state.active_campaign[
+            "merged_locations_by_parent"
+        ] = await db.get_merged_locations_map(campaign_id)
         relationships = await db.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
@@ -1277,7 +1568,9 @@ async def update_merged_location_endpoint(
 
 
 @router.post("/api/campaigns/{campaign_id}/entities")
-async def create_entity_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def create_entity_endpoint(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Create a new campaign entity (clan, corporation, faction, group...)."""
     state = _get_state()
     db = _get_database()
@@ -1415,7 +1708,9 @@ async def update_entity_endpoint(
 
 
 @router.post("/api/campaigns/{campaign_id}/entities/merge")
-async def merge_entities_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def merge_entities_endpoint(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Merge one campaign entity into another entity in same campaign."""
     state = _get_state()
     db = _get_database()
@@ -1490,7 +1785,9 @@ async def update_merged_entity_endpoint(
             merged_into=merged_into,
         )
         state.active_campaign["entities"] = await db.get_entities(campaign_id)
-        state.active_campaign["merged_entities_by_parent"] = await db.get_merged_entities_map(campaign_id)
+        state.active_campaign[
+            "merged_entities_by_parent"
+        ] = await db.get_merged_entities_map(campaign_id)
         relationships = await db.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
@@ -1586,7 +1883,9 @@ async def update_merged_npc_endpoint(
             merged_into=merged_into,
         )
         state.active_campaign["npcs"] = await db.get_npcs(campaign_id)
-        state.active_campaign["merged_npcs_by_parent"] = await db.get_merged_npcs_map(campaign_id)
+        state.active_campaign["merged_npcs_by_parent"] = await db.get_merged_npcs_map(
+            campaign_id
+        )
         relationships = await db.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
@@ -1688,7 +1987,9 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
 
 
 @router.post("/api/campaigns/{campaign_id}/relationship-types/merge")
-async def merge_relationship_types(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def merge_relationship_types(
+    campaign_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
     """Merge one relationship type label into another canonical type."""
     state = _get_state()
     db = _get_database()
@@ -1701,7 +2002,10 @@ async def merge_relationship_types(campaign_id: str, body: dict[str, Any]) -> di
     source_type_key = str(body.get("source_type_key", "")).strip()
     target_type_key = str(body.get("target_type_key", "")).strip()
     if not source_type_key or not target_type_key:
-        return {"ok": False, "error": "source_type_key and target_type_key are required"}
+        return {
+            "ok": False,
+            "error": "source_type_key and target_type_key are required",
+        }
 
     try:
         await db.merge_relationship_types(campaign_id, source_type_key, target_type_key)
@@ -1746,7 +2050,10 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     category = str(body.get("category", "general") or "general").strip()
 
     if not old_source_key or not old_target_key or not old_type_key:
-        return {"ok": False, "error": "old_source_key, old_target_key and old_type_key are required"}
+        return {
+            "ok": False,
+            "error": "old_source_key, old_target_key and old_type_key are required",
+        }
     if not source_key or not target_key:
         return {"ok": False, "error": "source_key and target_key are required"}
     if source_key == target_key:
@@ -1793,6 +2100,7 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
         "relationships": relationships,
     }
 
+
 _SUMMARY_PREVIEW_LEN = 150
 
 # â”€â”€ Campaign summary history endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1827,35 +2135,64 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
         database=db,
     )
 
+    from rpg_scribe.core.events import GenerationProgressEvent
+
+    event_bus = _get_event_bus()
+
     # Step 1: Generate missing session summaries
     all_sessions = await db.list_sessions(campaign_id)
     missing = [
-        s for s in all_sessions
-        if s.get("status") == "completed" and not (s.get("session_summary") or "").strip()
+        s
+        for s in all_sessions
+        if s.get("status") == "completed"
+        and not (s.get("session_summary") or "").strip()
     ]
     sessions_processed = 0
-    for session in missing:
+    for idx, session in enumerate(missing, 1):
         session_id = session["id"]
+        await event_bus.publish(GenerationProgressEvent(
+            target="campaign",
+            message=f"Generating session summary {idx}/{len(missing)}...",
+            campaign_id=campaign_id,
+            session_id=session_id,
+        ))
         try:
             rows = await db.get_transcriptions(session_id)
             if not rows:
                 continue
-            summary = await summarizer.generate_session_summary_from_transcriptions(rows)
+            summary = await summarizer.generate_session_summary_from_transcriptions(
+                rows
+            )
             if summary:
                 await db.end_session(session_id, summary)
                 sessions_processed += 1
                 logger.info("Generated missing summary for session %s", session_id)
         except Exception as exc:
-            logger.error("Failed to generate summary for session %s: %s", session_id, exc)
+            logger.error(
+                "Failed to generate summary for session %s: %s", session_id, exc
+            )
 
     # Step 2: Generate campaign summary from all sessions that now have one
     all_sessions = await db.list_sessions(campaign_id)
     completed = sorted(
-        [s for s in all_sessions if (s.get("session_summary") or "").strip() and s.get("status") == "completed"],
+        [
+            s
+            for s in all_sessions
+            if (s.get("session_summary") or "").strip()
+            and s.get("status") == "completed"
+        ],
         key=lambda s: s.get("started_at") or 0,
     )
     if not completed:
-        raise HTTPException(status_code=422, detail="No completed sessions with summaries found")
+        raise HTTPException(
+            status_code=422, detail="No completed sessions with summaries found"
+        )
+
+    await event_bus.publish(GenerationProgressEvent(
+        target="campaign",
+        message=f"Generating campaign summary from {len(completed)} sessions...",
+        campaign_id=campaign_id,
+    ))
 
     try:
         campaign_summary = await summarizer.generate_campaign_summary(
@@ -1901,14 +2238,16 @@ async def list_campaign_summaries(campaign_id: str) -> dict[str, Any]:
         preview = content[:_CAMPAIGN_SUMMARY_PREVIEW_LEN]
         if len(content) > _CAMPAIGN_SUMMARY_PREVIEW_LEN:
             preview += "..."
-        result.append({
-            "id": r["id"],
-            "campaign_id": r.get("campaign_id", ""),
-            "generated_at": r.get("generated_at"),
-            "trigger_session_id": r.get("trigger_session_id", ""),
-            "session_count": r.get("session_count", 0),
-            "preview": preview,
-        })
+        result.append(
+            {
+                "id": r["id"],
+                "campaign_id": r.get("campaign_id", ""),
+                "generated_at": r.get("generated_at"),
+                "trigger_session_id": r.get("trigger_session_id", ""),
+                "session_count": r.get("session_count", 0),
+                "preview": preview,
+            }
+        )
     return {"campaign_summaries": result}
 
 
@@ -1956,7 +2295,6 @@ async def list_all_sessions() -> dict[str, Any]:
     return {"sessions": _format_session_list(sessions)}
 
 
-
 @router.get("/api/browse/sessions/uncategorized")
 async def list_uncategorized_sessions() -> dict[str, Any]:
     """Return sessions not linked to any campaign."""
@@ -1969,6 +2307,7 @@ async def list_uncategorized_sessions() -> dict[str, Any]:
         logger.error("Error listing uncategorized sessions: %s", exc)
         return {"sessions": []}
     return {"sessions": _format_session_list(sessions)}
+
 
 @router.get("/api/campaigns/{campaign_id}/sessions")
 async def list_campaign_sessions(campaign_id: str) -> dict[str, Any]:
@@ -2003,18 +2342,19 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
             except (TypeError, ValueError):
                 duration_minutes = None
 
-        result.append({
-            "id": s["id"],
-            "campaign_id": s.get("campaign_id", ""),
-            "started_at": started,
-            "ended_at": ended,
-            "duration_minutes": duration_minutes,
-            "status": s.get("status", ""),
-            "summary_preview": preview,
-            "has_summary": bool(summary),
-        })
+        result.append(
+            {
+                "id": s["id"],
+                "campaign_id": s.get("campaign_id", ""),
+                "started_at": started,
+                "ended_at": ended,
+                "duration_minutes": duration_minutes,
+                "status": s.get("status", ""),
+                "summary_preview": preview,
+                "has_summary": bool(summary),
+            }
+        )
     return result
-
 
 
 @router.get("/api/sessions/{session_id}/logs")
@@ -2034,11 +2374,13 @@ async def get_session_logs(session_id: str) -> dict[str, Any]:
         if not path.is_file():
             continue
         rel = path.relative_to(session_dir).as_posix()
-        files.append({
-            "name": rel,
-            "size": path.stat().st_size,
-            "url": f"/api/sessions/{session_id}/logs/file/{quote(rel)}",
-        })
+        files.append(
+            {
+                "name": rel,
+                "size": path.stat().st_size,
+                "url": f"/api/sessions/{session_id}/logs/file/{quote(rel)}",
+            }
+        )
 
     return {
         "session_id": session_id,
@@ -2082,14 +2424,14 @@ async def get_session_logs_explorer(session_id: str) -> HTMLResponse:
         file_url = f"/api/sessions/{session_id}/logs/file/{quote(rel)}"
         size = path.stat().st_size
         items.append(
-            f"<li><a href=\"{file_url}\" target=\"_blank\" rel=\"noopener\">{safe_rel}</a> "
+            f'<li><a href="{file_url}" target="_blank" rel="noopener">{safe_rel}</a> '
             f"<span>({size} bytes)</span></li>"
         )
 
     title = html.escape(f"Session {session_id} logs")
     body = "\n".join(items) if items else "<li>No files found.</li>"
     page = (
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\" />"
+        '<!DOCTYPE html><html><head><meta charset="utf-8" />'
         f"<title>{title}</title>"
         "<style>body{font-family:Segoe UI,Arial,sans-serif;padding:1rem;}"
         "ul{line-height:1.6;}span{color:#666;}</style></head><body>"
@@ -2097,6 +2439,7 @@ async def get_session_logs_explorer(session_id: str) -> HTMLResponse:
         f"<ul>{body}</ul></body></html>"
     )
     return HTMLResponse(page)
+
 
 # -- Session finalize endpoint -------------------------------------
 
@@ -2120,15 +2463,12 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
     if state.active_session_id != session_id:
         return {"ok": False, "error": "Session ID does not match active session"}
 
-    await event_bus.publish(
-        SessionEndRequestEvent(session_id=session_id, source="web")
-    )
+    await event_bus.publish(SessionEndRequestEvent(session_id=session_id, source="web"))
     state.active_session_id = None
     return {"ok": True, "status": "finalizing"}
 
 
 # -- WebSocket endpoint --------------------------------------------
-
 
 
 @router.post("/api/sessions/{session_id}/extract-entities")
@@ -2168,16 +2508,20 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
 
     try:
         from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+
         summarizer = ClaudeSummarizer(
             event_bus,
             config.summarizer,
             campaign,
             database=db,
         )
-        results = await summarizer.extract_entities_from_summary(session_id, session_summary)
+        results = await summarizer.extract_entities_from_summary(
+            session_id, session_summary
+        )
         # Publish EntitiesUpdatedEvent if anything new was found
         if any(results.values()):
             from rpg_scribe.core.events import EntitiesUpdatedEvent
+
             await event_bus.publish(
                 EntitiesUpdatedEvent(
                     campaign_id=campaign.campaign_id,
@@ -2213,6 +2557,7 @@ async def refresh_summary(session_id: str) -> dict[str, Any]:
     )
     return {"ok": True, "status": "refresh_requested"}
 
+
 @router.post("/api/sessions/merge")
 async def merge_sessions_endpoint(body: dict[str, Any]) -> dict[str, Any]:
     """Merge one session into another, combining transcriptions and summaries."""
@@ -2246,5 +2591,3 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
-
-
