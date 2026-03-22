@@ -200,7 +200,7 @@ class Application:
         if self._word_replacements:
             text = self._apply_word_replacements(text)
         try:
-            await self.db.save_transcription(
+            row_id = await self.db.save_transcription(
                 session_id=event.session_id,
                 speaker_id=event.speaker_id,
                 speaker_name=event.speaker_name,
@@ -208,6 +208,17 @@ class Application:
                 timestamp=event.timestamp,
                 confidence=event.confidence,
             )
+            # Inject DB id into the in-memory WebState transcription
+            web_state = getattr(self, "_web_state", None)
+            if web_state is not None and row_id:
+                for t in web_state.transcriptions:
+                    if (
+                        t.get("timestamp") == event.timestamp
+                        and t.get("speaker_id") == event.speaker_id
+                        and "id" not in t
+                    ):
+                        t["id"] = row_id
+                        break
             if text != event.text:
                 # Publish corrected event so WebSocket/UI gets the replaced text
                 corrected = TranscriptionEvent(

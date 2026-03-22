@@ -296,6 +296,13 @@ async def _load_merged_children_maps(
         "merged_entities_by_parent": await db.get_merged_entities_map(campaign_id),
     }
 
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return 204 No Content to suppress browser favicon 404."""
+    from starlette.responses import Response
+    return Response(status_code=204)
+
+
 @router.get("/api/status")
 async def get_status() -> dict[str, Any]:
     """Return current component statuses."""

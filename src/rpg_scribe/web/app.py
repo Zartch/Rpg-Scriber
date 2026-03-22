@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from rpg_scribe.core.event_bus import EventBus
@@ -44,6 +45,10 @@ def create_app(
     state = WebState(max_transcriptions=max_transcriptions)
     manager = ConnectionManager()
     bridge = WebSocketBridge(event_bus, manager)
+
+    # Expose WebState to the Application so it can inject DB ids
+    if application is not None:
+        application._web_state = state
 
     # â”€â”€ Event handlers that keep WebState in sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

@@ -439,7 +439,7 @@
       renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sid);
     }
     if (data.campaign_summary) {
-      renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", activeCampaignId || "");
+      renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", activeCampaignId || browseCampaignId || "");
     }
   }
 
@@ -448,9 +448,17 @@
   function renderEditableSummary(container, text, type, targetId) {
     container.innerHTML = "";
     if (!text) {
-      container.innerHTML = '<p class="placeholder">' +
-        (type === "session" ? "Waiting for summary updates\u2026" : "No campaign summary yet.") +
-        "</p>";
+      // Clickable placeholder — allows creating a summary from scratch
+      var emptyEl = document.createElement("p");
+      emptyEl.className = "editable-paragraph editable-placeholder";
+      emptyEl.dataset.paragraphIndex = "0";
+      emptyEl.dataset.summaryType = type;
+      emptyEl.dataset.targetId = targetId;
+      emptyEl.textContent = type === "session"
+        ? "No session summary yet. Click to add one."
+        : "No campaign summary yet. Click to add one.";
+      emptyEl.addEventListener("click", function () { startParagraphEdit(emptyEl, container); });
+      container.appendChild(emptyEl);
       return;
     }
     var paragraphs = text.split(/\n\n+/);
@@ -469,7 +477,8 @@
 
   function startParagraphEdit(pEl, container) {
     if (pEl.querySelector("textarea")) return; // already editing
-    var originalText = pEl.textContent;
+    var isPlaceholder = pEl.classList.contains("editable-placeholder");
+    var originalText = isPlaceholder ? "" : pEl.textContent;
     var type = pEl.dataset.summaryType;
     var targetId = pEl.dataset.targetId;
 
@@ -953,6 +962,17 @@
           if (generateBtn && data.campaign.id) {
             generateBtn.classList.remove("hidden");
             generateBtn.dataset.campaignId = data.campaign.id;
+          }
+          // Load campaign summary on init
+          if (data.campaign.id) {
+            fetch("/api/campaigns/" + encodeURIComponent(data.campaign.id) + "/campaign-summaries/latest")
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (csData) {
+                if (csData && csData.campaign_summary && csData.campaign_summary.content) {
+                  renderEditableSummary(campaignSummaryEl, csData.campaign_summary.content, "campaign", data.campaign.id);
+                }
+              })
+              .catch(function () {});
           }
         } else {
           // No campaign loaded - show "Resume mode"
@@ -3182,7 +3202,7 @@
         }
 
         renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || "");
+        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
         loadedLiveSessionId = sessionId;
         renderSessionLogLink(sessionId);
       })
@@ -3213,7 +3233,7 @@
         }
 
         renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || "");
+        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
       })
       .catch(function () {
         transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
