@@ -167,22 +167,59 @@ class Application:
         self._shutdown_event = asyncio.Event()
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
+        self._word_replacements: dict[str, str] = {}  # original -> replacement
 
     # ── Database persistence handlers ──────────────────────────────
 
+    async def reload_word_replacements(self) -> None:
+        """Reload word replacement rules from DB into memory cache."""
+        if not self.config.campaign:
+            self._word_replacements = {}
+            return
+        try:
+            rules = await self.db.get_word_replacements(
+                self.config.campaign.campaign_id
+            )
+            self._word_replacements = {
+                r["original_word"]: r["replacement_word"] for r in rules
+            }
+        except Exception as exc:
+            logger.error("Failed to load word replacements: %s", exc)
+
+    def _apply_word_replacements(self, text: str) -> str:
+        """Apply cached word replacement rules to a text string."""
+        for original, replacement in self._word_replacements.items():
+            text = text.replace(original, replacement)
+        return text
+
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
-        """Save every transcription to the database."""
+        """Save every transcription to the database, applying word replacements."""
         if event.is_partial:
             return
+        text = event.text
+        if self._word_replacements:
+            text = self._apply_word_replacements(text)
         try:
             await self.db.save_transcription(
                 session_id=event.session_id,
                 speaker_id=event.speaker_id,
                 speaker_name=event.speaker_name,
-                text=event.text,
+                text=text,
                 timestamp=event.timestamp,
                 confidence=event.confidence,
             )
+            if text != event.text:
+                # Publish corrected event so WebSocket/UI gets the replaced text
+                corrected = TranscriptionEvent(
+                    session_id=event.session_id,
+                    speaker_id=event.speaker_id,
+                    speaker_name=event.speaker_name,
+                    text=text,
+                    timestamp=event.timestamp,
+                    confidence=event.confidence,
+                    is_partial=False,
+                )
+                await self.event_bus.publish(corrected)
         except Exception as exc:
             logger.error("Failed to persist transcription: %s", exc)
 
@@ -265,7 +302,7 @@ class Application:
 
         from rpg_scribe.web.app import create_app
 
-        app = create_app(self.event_bus, database=self.db, config=self.config)
+        app = create_app(self.event_bus, database=self.db, config=self.config, application=self)
         uv_config = uvicorn.Config(
             app,
             host=self.config.web_host,
@@ -510,6 +547,9 @@ class Application:
                     relation.relation_type_label or relation.relation_type_key,
                     notes=relation.notes,
                 )
+
+        # Load word replacement rules into memory
+        await self.reload_word_replacements()
 
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)

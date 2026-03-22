@@ -68,6 +68,12 @@
   var addEntityBtn = document.getElementById("add-entity-btn");
   var addEntityForm = document.getElementById("add-entity-form");
   var addEntityCancel = document.getElementById("add-entity-cancel");
+  var replacementsSection = document.getElementById("replacements-section");
+  var replacementsHeader = document.getElementById("replacements-header");
+  var replacementsBody = document.getElementById("replacements-body");
+  var replacementsList = document.getElementById("replacements-list");
+  var replacementsCount = document.getElementById("replacements-count");
+  var applyReplacementsBtn = document.getElementById("apply-replacements-btn");
   var relationshipsSection = document.getElementById("relationships-section");
   var relationshipsHeader = document.getElementById("relationships-header");
   var relationshipsBody = document.getElementById("relationships-body");
@@ -206,11 +212,37 @@
     if (ph) ph.remove();
 
     var entry = document.createElement("div");
-    entry.className = "feed-entry" + (data.is_partial ? " partial" : "");
+    var isIngame = data.is_ingame !== false && data.is_ingame !== 0;
+    entry.className = "feed-entry" + (data.is_partial ? " partial" : "") + (isIngame ? "" : " meta");
+
+    // Wrap each word in a span for inline editing
+    var tokens = (data.text || "").split(/(\s+)/);
+    var wordIdx = 0;
+    var wordHtml = tokens.map(function (tok) {
+      if (/^\s+$/.test(tok)) return tok;
+      var html = '<span class="editable-word" data-word-index="' + wordIdx + '">' +
+        escapeHtml(tok) + "</span>";
+      wordIdx++;
+      return html;
+    }).join("");
+
     entry.innerHTML =
+      '<span class="entry-actions">' +
+        '<button class="btn-meta" title="Marcar como META">M</button>' +
+        '<button class="btn-delete" title="Eliminar">\u00d7</button>' +
+      '</span>' +
+      '<span class="meta-badge">[META]</span>' +
       '<span class="speaker">' + escapeHtml(data.speaker_name) + ":</span>" +
-      escapeHtml(data.text) +
+      '<span class="transcription-text">' + wordHtml + "</span>" +
       '<span class="ts">' + formatTime(data.timestamp) + "</span>";
+
+    // Store metadata for editing
+    entry.dataset.timestamp = data.timestamp || "";
+    entry.dataset.speakerId = data.speaker_id || "";
+    entry.dataset.sessionId = data.session_id || "";
+    entry.dataset.isIngame = isIngame ? "true" : "false";
+    if (data.id) entry.dataset.transcriptionId = data.id;
+
     transcriptionFeed.appendChild(entry);
     if (!viewingHistorical) {
       trimTranscriptionFeed();
@@ -225,13 +257,294 @@
       entries[i].remove();
     }
   }
+
+  // ── Transcription word editing ─────────────────────────────
+
+  transcriptionFeed.addEventListener("dblclick", function (e) {
+    var wordSpan = e.target.closest(".editable-word");
+    if (!wordSpan) return;
+    if (wordSpan.querySelector("input")) return; // already editing
+    startWordEdit(wordSpan);
+  });
+
+  // ── Delete transcription ──────────────────────────────────
+
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-delete");
+    if (!btn) return;
+    var entry = btn.closest(".feed-entry");
+    if (!entry) return;
+    if (!confirm("¿Eliminar esta transcripción?")) return;
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) return;
+      fetch("/api/transcriptions/" + id, { method: "DELETE" })
+        .then(function (r) { if (r.ok) entry.remove(); });
+    });
+  });
+
+  // ── META toggle ───────────────────────────────────────────
+
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-meta");
+    if (!btn) return;
+    var entry = btn.closest(".feed-entry");
+    if (!entry) return;
+    var currentlyIngame = entry.dataset.isIngame !== "false";
+    var newIngame = !currentlyIngame;
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) return;
+      fetch("/api/transcriptions/" + id + "/meta", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_ingame: newIngame }),
+      }).then(function (r) {
+        if (r.ok) {
+          entry.dataset.isIngame = newIngame ? "true" : "false";
+          if (newIngame) {
+            entry.classList.remove("meta");
+          } else {
+            entry.classList.add("meta");
+          }
+        }
+      });
+    });
+  });
+
+  function resolveTranscriptionId(entry) {
+    return new Promise(function (resolve) {
+      if (entry.dataset.transcriptionId) {
+        resolve(Number(entry.dataset.transcriptionId));
+        return;
+      }
+      var sid = entry.dataset.sessionId;
+      if (!sid) { resolve(null); return; }
+      fetch("/api/sessions/" + encodeURIComponent(sid) + "/transcriptions/full")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var ts = parseFloat(entry.dataset.timestamp);
+          var spk = entry.dataset.speakerId;
+          var rows = data.transcriptions || [];
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].timestamp === ts && rows[i].speaker_id === spk) {
+              entry.dataset.transcriptionId = rows[i].id;
+              resolve(rows[i].id);
+              return;
+            }
+          }
+          resolve(null);
+        })
+        .catch(function () { resolve(null); });
+    });
+  }
+
+  function startWordEdit(wordSpan) {
+    var originalWord = wordSpan.textContent;
+    var entry = wordSpan.closest(".feed-entry");
+    var wordIndex = parseInt(wordSpan.dataset.wordIndex, 10);
+
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "word-edit-input";
+    input.value = originalWord;
+    input.style.width = Math.max(originalWord.length * 0.6 + 1.5, 3) + "em";
+
+    var actions = document.createElement("span");
+    actions.className = "word-edit-actions";
+    actions.innerHTML =
+      '<button class="word-confirm" title="Guardar">✓</button>' +
+      '<button class="word-cancel" title="Cancelar">✗</button>';
+
+    var replaceLabel = document.createElement("label");
+    replaceLabel.className = "word-replace-option";
+    replaceLabel.innerHTML =
+      '<input type="checkbox" class="word-replace-check"> Reemplazar siempre';
+
+    wordSpan.textContent = "";
+    wordSpan.appendChild(input);
+    wordSpan.appendChild(actions);
+    wordSpan.appendChild(replaceLabel);
+    input.focus();
+    input.select();
+
+    function confirm() {
+      var newWord = input.value.trim();
+      if (!newWord || newWord === originalWord) {
+        cancel();
+        return;
+      }
+      var alwaysReplace = wordSpan.querySelector(".word-replace-check").checked;
+      saveWordEdit(entry, wordIndex, originalWord, newWord, alwaysReplace);
+    }
+
+    function cancel() {
+      wordSpan.textContent = originalWord;
+    }
+
+    actions.querySelector(".word-confirm").addEventListener("click", function (e) {
+      e.stopPropagation();
+      confirm();
+    });
+    actions.querySelector(".word-cancel").addEventListener("click", function (e) {
+      e.stopPropagation();
+      cancel();
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); confirm(); }
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener("dblclick", function (e) { e.stopPropagation(); });
+  }
+
+  function saveWordEdit(entry, wordIndex, originalWord, newWord, alwaysReplace) {
+    // Update the span immediately
+    var wordSpans = entry.querySelectorAll(".editable-word");
+    for (var i = 0; i < wordSpans.length; i++) {
+      if (parseInt(wordSpans[i].dataset.wordIndex, 10) === wordIndex) {
+        wordSpans[i].textContent = newWord;
+        break;
+      }
+    }
+
+    // Rebuild full text
+    var textSpan = entry.querySelector(".transcription-text");
+    var fullText = textSpan ? textSpan.textContent : "";
+
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) return;
+      fetch("/api/transcriptions/" + id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: fullText,
+          edits: [{ original: originalWord, "new": newWord, position: wordIndex }],
+        }),
+      });
+
+      if (alwaysReplace && activeCampaignId) {
+        fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            original_word: originalWord,
+            replacement_word: newWord,
+          }),
+        });
+      }
+    });
+  }
+
   function updateSummary(data) {
     if (data.session_summary) {
-      sessionSummaryEl.textContent = data.session_summary;
+      var sid = data.session_id || activeSessionId || "";
+      renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sid);
     }
     if (data.campaign_summary) {
-      campaignSummaryEl.textContent = data.campaign_summary;
+      renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", activeCampaignId || "");
     }
+  }
+
+  // ── Summary paragraph editing ──────────────────────────────
+
+  function renderEditableSummary(container, text, type, targetId) {
+    container.innerHTML = "";
+    if (!text) {
+      container.innerHTML = '<p class="placeholder">' +
+        (type === "session" ? "Waiting for summary updates\u2026" : "No campaign summary yet.") +
+        "</p>";
+      return;
+    }
+    var paragraphs = text.split(/\n\n+/);
+    paragraphs.forEach(function (p, i) {
+      if (!p.trim()) return;
+      var pEl = document.createElement("p");
+      pEl.className = "editable-paragraph";
+      pEl.dataset.paragraphIndex = i;
+      pEl.dataset.summaryType = type;
+      pEl.dataset.targetId = targetId;
+      pEl.textContent = p;
+      pEl.addEventListener("click", function () { startParagraphEdit(pEl, container); });
+      container.appendChild(pEl);
+    });
+  }
+
+  function startParagraphEdit(pEl, container) {
+    if (pEl.querySelector("textarea")) return; // already editing
+    var originalText = pEl.textContent;
+    var type = pEl.dataset.summaryType;
+    var targetId = pEl.dataset.targetId;
+
+    var wrap = document.createElement("div");
+    wrap.className = "paragraph-edit-wrap";
+
+    var textarea = document.createElement("textarea");
+    textarea.className = "paragraph-edit-textarea";
+    textarea.value = originalText;
+    textarea.rows = Math.max(3, Math.ceil(originalText.length / 80));
+
+    var actions = document.createElement("div");
+    actions.className = "paragraph-edit-actions";
+    actions.innerHTML =
+      '<button class="para-cancel">Cancelar</button>' +
+      '<button class="para-save">Guardar</button>';
+
+    wrap.appendChild(textarea);
+    wrap.appendChild(actions);
+    pEl.replaceWith(wrap);
+    textarea.focus();
+
+    actions.querySelector(".para-save").addEventListener("click", function () {
+      saveParagraphEdit(container, wrap, textarea.value, type, targetId);
+    });
+    actions.querySelector(".para-cancel").addEventListener("click", function () {
+      pEl.textContent = originalText;
+      wrap.replaceWith(pEl);
+    });
+    textarea.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        pEl.textContent = originalText;
+        wrap.replaceWith(pEl);
+      }
+    });
+  }
+
+  function saveParagraphEdit(container, editWrap, newText, type, targetId) {
+    // Collect all paragraphs (edited and unedited)
+    var parts = [];
+    var children = container.children;
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      if (child === editWrap) {
+        parts.push(newText.trim());
+      } else if (child.classList.contains("editable-paragraph")) {
+        parts.push(child.textContent);
+      }
+    }
+    var fullText = parts.join("\n\n");
+
+    var url, bodyKey;
+    if (type === "session") {
+      url = "/api/sessions/" + encodeURIComponent(targetId) + "/summary";
+      bodyKey = "session_summary";
+    } else {
+      url = "/api/campaigns/" + encodeURIComponent(targetId) + "/campaign-summary";
+      bodyKey = "campaign_summary";
+    }
+
+    var payload = {};
+    payload[bodyKey] = fullText;
+
+    fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function () {
+        renderEditableSummary(container, fullText, type, targetId);
+      })
+      .catch(function (err) {
+        console.error("Failed to save summary:", err);
+      });
   }
 
   function updateStatus(data) {
@@ -618,12 +931,17 @@
             if (locationsSection) locationsSection.classList.add("hidden");
             if (entitiesSection) entitiesSection.classList.add("hidden");
             if (relationshipsSection) relationshipsSection.classList.add("hidden");
+            if (replacementsSection) replacementsSection.classList.add("hidden");
           } else {
             renderPlayers(data.campaign.players || []);
             renderNpcs(data.campaign.npcs || []);
             renderLocations(data.campaign.locations || []);
             renderEntities(data.campaign.entities || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
+            if (replacementsSection && data.campaign.id) {
+              replacementsSection.classList.remove("hidden");
+              fetchWordReplacements(data.campaign.id);
+            }
           }
           // Show "View all" link and "Generate" button for campaign summaries
           var summariesLink = document.getElementById("campaign-summaries-link");
@@ -648,6 +966,7 @@
           if (locationsSection) locationsSection.classList.add("hidden");
           if (entitiesSection) entitiesSection.classList.add("hidden");
           if (relationshipsSection) relationshipsSection.classList.add("hidden");
+          if (replacementsSection) replacementsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
         }
@@ -678,6 +997,7 @@
       if (locationsSection) locationsSection.classList.add("hidden");
       if (entitiesSection) entitiesSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (replacementsSection) replacementsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
     }
@@ -2142,6 +2462,63 @@
       relationshipsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
     });
   }
+  if (replacementsHeader) {
+    replacementsHeader.addEventListener("click", function () {
+      replacementsBody.classList.toggle("collapsed");
+      replacementsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+    });
+  }
+
+  // ── Word replacements UI ───────────────────────────────────
+
+  function fetchWordReplacements(campaignId) {
+    fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var rules = data.replacements || [];
+        if (replacementsCount) replacementsCount.textContent = "(" + rules.length + ")";
+        replacementsList.innerHTML = "";
+        if (rules.length === 0) {
+          replacementsList.innerHTML = '<p class="placeholder">No replacement rules.</p>';
+          return;
+        }
+        rules.forEach(function (rule) {
+          var row = document.createElement("div");
+          row.className = "replacement-row";
+          row.innerHTML =
+            '<span class="replacement-original">' + escapeHtml(rule.original_word) + "</span>" +
+            '<span class="replacement-arrow">\u2192</span>' +
+            '<span class="replacement-new">' + escapeHtml(rule.replacement_word) + "</span>" +
+            '<button class="replacement-delete" title="Eliminar">\u2717</button>';
+          row.querySelector(".replacement-delete").addEventListener("click", function () {
+            fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements/" + rule.id, {
+              method: "DELETE",
+            }).then(function () { fetchWordReplacements(campaignId); });
+          });
+          replacementsList.appendChild(row);
+        });
+      });
+  }
+
+  if (applyReplacementsBtn) {
+    applyReplacementsBtn.addEventListener("click", function () {
+      if (!activeCampaignId) return;
+      applyReplacementsBtn.disabled = true;
+      applyReplacementsBtn.textContent = "Applying\u2026";
+      fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements/apply", {
+        method: "POST",
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          alert("Modified " + (data.modified_count || 0) + " transcription(s).");
+        })
+        .catch(function () { alert("Error applying replacements."); })
+        .finally(function () {
+          applyReplacementsBtn.disabled = false;
+          applyReplacementsBtn.textContent = "Apply All Retroactively";
+        });
+    });
+  }
 
   // Add Location form
   if (addLocationBtn) {
@@ -2608,6 +2985,7 @@
       if (locationsSection) locationsSection.classList.add("hidden");
       if (entitiesSection) entitiesSection.classList.add("hidden");
       if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (replacementsSection) replacementsSection.classList.add("hidden");
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
       return;
@@ -2629,6 +3007,10 @@
         renderLocations(campaign.locations || []);
         renderEntities(campaign.entities || []);
         renderRelationships(campaign.relationships || [], campaign);
+        if (replacementsSection && campaign.id) {
+          replacementsSection.classList.remove("hidden");
+          fetchWordReplacements(campaign.id);
+        }
         addNpcBtn.classList.add("hidden");
         if (addLocationBtn) addLocationBtn.classList.add("hidden");
         if (addEntityBtn) addEntityBtn.classList.add("hidden");
@@ -2799,8 +3181,8 @@
           transcriptions.forEach(function (t) { addTranscription(t); });
         }
 
-        sessionSummaryEl.textContent = summData.session_summary || "";
-        campaignSummaryEl.textContent = summData.campaign_summary || "";
+        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || "");
         loadedLiveSessionId = sessionId;
         renderSessionLogLink(sessionId);
       })
@@ -2830,8 +3212,8 @@
           transcriptions.forEach(function (t) { addTranscription(t); });
         }
 
-        sessionSummaryEl.textContent = summData.session_summary || "(no summary)";
-        campaignSummaryEl.textContent = summData.campaign_summary || "(no campaign summary)";
+        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || "");
       })
       .catch(function () {
         transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
@@ -3044,7 +3426,7 @@
         .then(function (data) {
           if (data.status === "ok") {
             if (data.campaign_summary && campaignSummaryEl) {
-              campaignSummaryEl.innerHTML = "<p>" + escapeHtml(data.campaign_summary) + "</p>";
+              renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
             }
             var msg = "Campaign summary generated from " + data.session_count + " session(s).";
             if (data.sessions_processed > 0) {
