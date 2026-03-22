@@ -13,6 +13,7 @@ build/
 .vscode/
 .venv/
 .claude
+.superpowers/
 logs/
 *.db
 *.sqlite

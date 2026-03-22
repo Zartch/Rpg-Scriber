@@ -2213,6 +2213,26 @@ async def refresh_summary(session_id: str) -> dict[str, Any]:
     )
     return {"ok": True, "status": "refresh_requested"}
 
+@router.post("/api/sessions/merge")
+async def merge_sessions_endpoint(body: dict[str, Any]) -> dict[str, Any]:
+    """Merge one session into another, combining transcriptions and summaries."""
+    db = _get_database()
+    if db is None:
+        return {"ok": False, "error": "Database not available"}
+
+    source_id = str(body.get("source_id", "")).strip()
+    target_id = str(body.get("target_id", "")).strip()
+    if not source_id or not target_id:
+        return {"ok": False, "error": "source_id and target_id are required"}
+
+    try:
+        await db.merge_sessions(source_id, target_id)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {"ok": True, "target_session_id": target_id}
+
+
 @router.websocket("/ws/live")
 async def websocket_live(ws: WebSocket) -> None:
     """WebSocket endpoint for live event streaming."""

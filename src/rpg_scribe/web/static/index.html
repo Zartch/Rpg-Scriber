@@ -260,8 +260,18 @@
           <p class="placeholder">No campaigns loaded.</p>
         </div>
       </section>
-      <h2 id="sessions-title">Sessions</h2>
+      <div class="sessions-header-row">
+        <h2 id="sessions-title">Sessions</h2>
+        <button id="merge-sessions-btn" class="btn-small" title="Select two sessions to merge">Merge</button>
+      </div>
       <button id="back-to-live" class="btn-live hidden">Back to Live</button>
+      <div id="merge-confirm-panel" class="merge-confirm hidden">
+        <p class="merge-info"></p>
+        <div class="merge-actions">
+          <button id="merge-execute-btn" class="btn-small btn-danger">Merge</button>
+          <button id="merge-cancel-btn" class="btn-small">Cancel</button>
+        </div>
+      </div>
       <div id="session-list" class="session-list">
         <p class="placeholder">No sessions loaded.</p>
       </div>

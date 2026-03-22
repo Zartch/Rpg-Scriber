@@ -414,6 +414,125 @@ class TestDatabaseMerges:
         assert updated["entity_type"] == "megacorp"
 
 
+class TestDatabaseMergeSessions:
+    """Tests for the merge_sessions feature."""
+
+    async def _setup_two_sessions(self, db: Database):
+        """Helper: create a campaign with two completed sessions."""
+        await db.upsert_campaign(campaign_id="c1", name="Test Campaign")
+        await db.create_session("s1", "c1")
+        await db.end_session("s1", summary="First part of the adventure.")
+        await db.create_session("s2", "c1")
+        await db.end_session("s2", summary="Second part after reconnect.")
+
+    async def test_merge_sessions_reassigns_transcriptions(self, db: Database) -> None:
+        await self._setup_two_sessions(db)
+        await db.save_transcription("s1", "u1", "Alice", "Hello", 1.0, 0.9)
+        await db.save_transcription("s2", "u1", "Alice", "World", 2.0, 0.9)
+
+        await db.merge_sessions("s2", "s1")
+
+        rows = await db.get_transcriptions("s1")
+        assert len(rows) == 2
+        texts = [r["text"] for r in rows]
+        assert "Hello" in texts
+        assert "World" in texts
+        # Source session should have no transcriptions left
+        rows_s2 = await db.get_transcriptions("s2")
+        assert len(rows_s2) == 0
+
+    async def test_merge_sessions_concatenates_summaries(self, db: Database) -> None:
+        await self._setup_two_sessions(db)
+
+        await db.merge_sessions("s2", "s1")
+
+        cursor = await db.conn.execute("SELECT session_summary FROM sessions WHERE id = 's1'")
+        row = await cursor.fetchone()
+        summary = row["session_summary"]
+        assert "First part" in summary
+        assert "Second part" in summary
+
+    async def test_merge_sessions_updates_timestamps(self, db: Database) -> None:
+        await self._setup_two_sessions(db)
+        # Get original timestamps
+        cursor = await db.conn.execute("SELECT started_at, ended_at FROM sessions WHERE id = 's1'")
+        s1 = await cursor.fetchone()
+        cursor = await db.conn.execute("SELECT started_at, ended_at FROM sessions WHERE id = 's2'")
+        s2 = await cursor.fetchone()
+
+        await db.merge_sessions("s2", "s1")
+
+        cursor = await db.conn.execute("SELECT started_at, ended_at FROM sessions WHERE id = 's1'")
+        merged = await cursor.fetchone()
+        assert merged["started_at"] == min(s1["started_at"], s2["started_at"])
+        assert merged["ended_at"] == max(s1["ended_at"], s2["ended_at"])
+
+    async def test_merge_sessions_tombstones_source(self, db: Database) -> None:
+        await self._setup_two_sessions(db)
+
+        await db.merge_sessions("s2", "s1")
+
+        cursor = await db.conn.execute("SELECT merged_into FROM sessions WHERE id = 's2'")
+        row = await cursor.fetchone()
+        assert row["merged_into"] == "s1"
+
+    async def test_merged_sessions_excluded_from_listings(self, db: Database) -> None:
+        await self._setup_two_sessions(db)
+
+        await db.merge_sessions("s2", "s1")
+
+        sessions = await db.list_sessions("c1")
+        ids = [s["id"] for s in sessions]
+        assert "s1" in ids
+        assert "s2" not in ids
+
+        all_sessions = await db.list_all_sessions()
+        all_ids = [s["id"] for s in all_sessions]
+        assert "s2" not in all_ids
+
+    async def test_merge_same_session_raises_error(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.create_session("s1", "c1")
+        await db.end_session("s1", summary="Done")
+
+        with pytest.raises(ValueError, match="different"):
+            await db.merge_sessions("s1", "s1")
+
+    async def test_merge_different_campaigns_raises_error(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Campaign 1")
+        await db.upsert_campaign(campaign_id="c2", name="Campaign 2")
+        await db.create_session("s1", "c1")
+        await db.end_session("s1", summary="Done")
+        await db.create_session("s2", "c2")
+        await db.end_session("s2", summary="Done")
+
+        with pytest.raises(ValueError, match="different campaigns"):
+            await db.merge_sessions("s2", "s1")
+
+    async def test_merge_already_merged_raises_error(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.create_session("s1", "c1")
+        await db.end_session("s1", summary="A")
+        await db.create_session("s2", "c1")
+        await db.end_session("s2", summary="B")
+        await db.create_session("s3", "c1")
+        await db.end_session("s3", summary="C")
+
+        await db.merge_sessions("s2", "s1")
+        with pytest.raises(ValueError, match="already merged"):
+            await db.merge_sessions("s2", "s3")
+
+    async def test_merge_active_session_raises_error(self, db: Database) -> None:
+        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.create_session("s1", "c1")
+        await db.end_session("s1", summary="Done")
+        await db.create_session("s2", "c1")
+        # s2 is still active (not ended)
+
+        with pytest.raises(ValueError, match="active"):
+            await db.merge_sessions("s2", "s1")
+
+
 class TestDatabaseQuestions:
     async def test_save_and_get_questions(self, db: Database) -> None:
         await db.upsert_campaign(campaign_id="c1", name="Test")

@@ -205,6 +205,7 @@ class Database:
         await self._ensure_column("npcs", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("locations", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("campaign_entities", "merged_into", "TEXT DEFAULT ''")
+        await self._ensure_column("sessions", "merged_into", "TEXT DEFAULT ''")
 
     async def _ensure_column(self, table: str, column: str, ddl: str) -> None:
         cursor = await self.conn.execute(f"PRAGMA table_info({table})")
@@ -393,7 +394,9 @@ class Database:
     async def list_sessions(self, campaign_id: str) -> list[dict[str, Any]]:
         """List all sessions for a campaign."""
         cursor = await self.conn.execute(
-            "SELECT * FROM sessions WHERE campaign_id = ? ORDER BY started_at DESC",
+            "SELECT * FROM sessions WHERE campaign_id = ? "
+            "AND (merged_into IS NULL OR merged_into = '') "
+            "ORDER BY started_at DESC",
             (campaign_id,),
         )
         return [dict(r) for r in await cursor.fetchall()]
@@ -401,7 +404,9 @@ class Database:
     async def list_all_sessions(self) -> list[dict[str, Any]]:
         """List all sessions across all campaigns, ordered by date descending."""
         cursor = await self.conn.execute(
-            "SELECT * FROM sessions ORDER BY started_at DESC",
+            "SELECT * FROM sessions "
+            "WHERE (merged_into IS NULL OR merged_into = '') "
+            "ORDER BY started_at DESC",
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -409,7 +414,8 @@ class Database:
         """List sessions without campaign assignment."""
         cursor = await self.conn.execute(
             "SELECT * FROM sessions "
-            "WHERE campaign_id IS NULL OR campaign_id = '' "
+            "WHERE (campaign_id IS NULL OR campaign_id = '') "
+            "AND (merged_into IS NULL OR merged_into = '') "
             "ORDER BY started_at DESC",
         )
         return [dict(r) for r in await cursor.fetchall()]
@@ -1294,6 +1300,104 @@ class Database:
             (campaign_id, source_key),
         )
         await self._recompute_relationship_type_usage(campaign_id, target_key)
+
+    async def merge_sessions(
+        self,
+        source_id: str,
+        target_id: str,
+    ) -> None:
+        """Merge one session into another, combining transcriptions and summaries.
+
+        The source session is tombstoned (merged_into = target_id).
+        Transcriptions and questions are reassigned to the target.
+        Summaries are concatenated.  Timestamps are expanded to cover both.
+        """
+        if not source_id or not target_id or source_id == target_id:
+            raise ValueError("source_id and target_id must be different")
+
+        cursor = await self.conn.execute(
+            "SELECT * FROM sessions WHERE id = ? LIMIT 1", (source_id,)
+        )
+        source_row = await cursor.fetchone()
+        cursor = await self.conn.execute(
+            "SELECT * FROM sessions WHERE id = ? LIMIT 1", (target_id,)
+        )
+        target_row = await cursor.fetchone()
+        if source_row is None or target_row is None:
+            raise ValueError("Session source or target not found")
+
+        # Both must belong to the same campaign (or both NULL)
+        source_campaign = source_row["campaign_id"]
+        target_campaign = target_row["campaign_id"]
+        if source_campaign != target_campaign:
+            raise ValueError("Cannot merge sessions from different campaigns")
+
+        # Neither can be active
+        if source_row["status"] == "active":
+            raise ValueError("Cannot merge an active session (source)")
+        if target_row["status"] == "active":
+            raise ValueError("Cannot merge an active session (target)")
+
+        # Neither can already be merged
+        if source_row["merged_into"]:
+            raise ValueError("Source session is already merged")
+        if target_row["merged_into"]:
+            raise ValueError("Target session is already merged")
+
+        # Expand target timestamps to cover both sessions
+        source_start = source_row["started_at"]
+        target_start = target_row["started_at"]
+        source_end = source_row["ended_at"]
+        target_end = target_row["ended_at"]
+
+        new_start = min(
+            t for t in (source_start, target_start) if t is not None
+        ) if (source_start is not None or target_start is not None) else None
+        new_end = max(
+            t for t in (source_end, target_end) if t is not None
+        ) if (source_end is not None or target_end is not None) else None
+
+        await self.conn.execute(
+            "UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = ?",
+            (new_start, new_end, target_id),
+        )
+
+        # Reassign transcriptions from source to target
+        await self.conn.execute(
+            "UPDATE transcriptions SET session_id = ? WHERE session_id = ?",
+            (target_id, source_id),
+        )
+
+        # Reassign questions from source to target
+        await self.conn.execute(
+            "UPDATE questions SET session_id = ? WHERE session_id = ?",
+            (target_id, source_id),
+        )
+
+        # Concatenate summaries
+        target_summary = self._merge_text_fields(
+            str(target_row["session_summary"] or ""),
+            str(source_row["session_summary"] or ""),
+        )
+        await self.conn.execute(
+            "UPDATE sessions SET session_summary = ? WHERE id = ?",
+            (target_summary, target_id),
+        )
+
+        # Tombstone source session
+        await self.conn.execute(
+            "UPDATE sessions SET merged_into = ? WHERE id = ?",
+            (target_id, source_id),
+        )
+
+        # Update campaign_summaries that referenced the source session
+        await self.conn.execute(
+            "UPDATE campaign_summaries SET trigger_session_id = ? "
+            "WHERE trigger_session_id = ?",
+            (target_id, source_id),
+        )
+
+        await self.conn.commit()
 
     async def save_character_relationship(
         self,

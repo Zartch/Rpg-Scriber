@@ -104,6 +104,7 @@ config/
 - **Live mode**: WebSocket para transcripciones y resúmenes en tiempo real
 - **Browse mode**: navegar sesiones de cualquier campaña sin estar en sesión activa
 - **Questions**: panel de preguntas pendientes del summarizer con respuesta inline
+- **Merge sessions**: seleccionar 2 sesiones completadas y fusionarlas en una (transcripciones + resúmenes concatenados); patrón tombstone con `merged_into`
 - **Campaign summaries**: resumen acumulado de campaña; botón "Generate" para generar bajo demanda (también genera resúmenes de sesión faltantes); "View all" abre `campaign-summaries.html` con historial completo
 
 ### REST API Endpoints
@@ -127,6 +128,7 @@ config/
 | GET | `/api/campaigns/{id}/sessions` | Sesiones de una campaña |
 | GET | `/api/sessions/{id}/transcriptions` | Transcripciones (memoria o DB) |
 | GET | `/api/sessions/{id}/summary` | Resumen (memoria o DB) |
+| POST | `/api/sessions/merge` | Fusionar dos sesiones (source_id + target_id) |
 | GET | `/api/questions` | Preguntas pendientes |
 | POST | `/api/questions/{id}/answer` | Responder pregunta |
 | GET | `/api/browse/campaigns` | Listar todas las campañas (modo browse) |

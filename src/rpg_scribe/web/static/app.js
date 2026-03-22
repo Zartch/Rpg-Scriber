@@ -130,6 +130,8 @@
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
   var relationshipEditOriginal = null;
+  var mergeMode = false;
+  var mergeSelected = [];  // session objects selected for merge (max 2)
 
   // WebSocket
 
@@ -3154,21 +3156,20 @@
         metaLine +
         (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : "");
 
-      if (appMode === "browse") {
-        item.addEventListener("click", function () {
-          loadHistoricalSession(s.id);
-          highlightSession(s.id);
+      (function (session, el) {
+        el.addEventListener("click", function () {
+          if (mergeMode) {
+            toggleMergeSelect(session, el);
+            return;
+          }
+          if (appMode === "browse" || !isActive) {
+            loadHistoricalSession(session.id);
+            highlightSession(session.id);
+          } else {
+            switchToLive();
+          }
         });
-      } else if (!isActive) {
-        item.addEventListener("click", function () {
-          loadHistoricalSession(s.id);
-          highlightSession(s.id);
-        });
-      } else {
-        item.addEventListener("click", function () {
-          switchToLive();
-        });
-      }
+      })(s, item);
 
       sessionListEl.appendChild(item);
     });
@@ -3463,6 +3464,122 @@
           generateCampaignSummaryBtn.textContent = originalText;
         });
     });
+  }
+
+  // -- Merge Sessions -------------------------------------------------
+
+  var mergeBtnEl = document.getElementById("merge-sessions-btn");
+  var mergeConfirmPanel = document.getElementById("merge-confirm-panel");
+  var mergeExecuteBtn = document.getElementById("merge-execute-btn");
+  var mergeCancelBtn = document.getElementById("merge-cancel-btn");
+
+  function enterMergeMode() {
+    mergeMode = true;
+    mergeSelected = [];
+    mergeBtnEl.textContent = "Cancel Merge";
+    mergeBtnEl.classList.add("active");
+    mergeConfirmPanel.classList.add("hidden");
+    // Re-render to show selection styling
+    var items = sessionListEl.querySelectorAll(".session-item");
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove("merge-selected");
+    }
+  }
+
+  function exitMergeMode() {
+    mergeMode = false;
+    mergeSelected = [];
+    mergeBtnEl.textContent = "Merge";
+    mergeBtnEl.classList.remove("active");
+    mergeConfirmPanel.classList.add("hidden");
+    var items = sessionListEl.querySelectorAll(".session-item");
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove("merge-selected");
+    }
+  }
+
+  function toggleMergeSelect(session, el) {
+    var idx = mergeSelected.findIndex(function (s) { return s.id === session.id; });
+    if (idx >= 0) {
+      mergeSelected.splice(idx, 1);
+      el.classList.remove("merge-selected");
+    } else if (mergeSelected.length < 2) {
+      mergeSelected.push(session);
+      el.classList.add("merge-selected");
+    }
+    updateMergeConfirmPanel();
+  }
+
+  function updateMergeConfirmPanel() {
+    if (mergeSelected.length !== 2) {
+      mergeConfirmPanel.classList.add("hidden");
+      return;
+    }
+    // Target = earlier session, source = later session
+    var a = mergeSelected[0];
+    var b = mergeSelected[1];
+    var target, source;
+    if ((a.started_at || 0) <= (b.started_at || 0)) {
+      target = a; source = b;
+    } else {
+      target = b; source = a;
+    }
+    mergeSelected = [target, source]; // normalize order
+
+    var info = mergeConfirmPanel.querySelector(".merge-info");
+    var targetDate = target.started_at ? formatDate(target.started_at) : target.id.substring(0, 8);
+    var sourceDate = source.started_at ? formatDate(source.started_at) : source.id.substring(0, 8);
+    info.innerHTML =
+      "Merge <strong>" + escapeHtml(sourceDate) + "</strong> into " +
+      "<strong>" + escapeHtml(targetDate) + "</strong>?<br>" +
+      "<small>Transcriptions and summaries will be combined into the earlier session.</small>";
+    mergeConfirmPanel.classList.remove("hidden");
+  }
+
+  function executeMerge() {
+    if (mergeSelected.length !== 2) return;
+    var target = mergeSelected[0];
+    var source = mergeSelected[1];
+    mergeExecuteBtn.disabled = true;
+    mergeExecuteBtn.textContent = "Merging...";
+
+    fetch("/api/sessions/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: source.id, target_id: target.id })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        mergeExecuteBtn.disabled = false;
+        mergeExecuteBtn.textContent = "Merge";
+        if (data.ok) {
+          exitMergeMode();
+          fetchSessionList();
+        } else {
+          alert("Merge failed: " + (data.error || "Unknown error"));
+        }
+      })
+      .catch(function (err) {
+        mergeExecuteBtn.disabled = false;
+        mergeExecuteBtn.textContent = "Merge";
+        alert("Merge error: " + err.message);
+      });
+  }
+
+  if (mergeBtnEl) {
+    mergeBtnEl.addEventListener("click", function () {
+      if (mergeMode) {
+        exitMergeMode();
+      } else {
+        enterMergeMode();
+      }
+    });
+  }
+  if (mergeExecuteBtn) {
+    mergeExecuteBtn.addEventListener("click", executeMerge);
+  }
+  if (mergeCancelBtn) {
+    mergeCancelBtn.addEventListener("click", exitMergeMode);
   }
 
   connectWS();
