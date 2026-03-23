@@ -3434,19 +3434,24 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (!data.ok || !data.download_url) {
+          if (!data.ok) {
             alert("Failed to generate export.");
             return;
           }
           renderSessionExports(sessionId);
-          window.location.href = data.download_url;
+          exportSessionBtn.textContent = "Exported";
+          setTimeout(function () {
+            exportSessionBtn.textContent = "Export";
+          }, 1800);
         })
         .catch(function () {
           alert("Failed to generate export.");
         })
         .finally(function () {
           exportSessionBtn.disabled = false;
-          exportSessionBtn.textContent = "Export";
+          if (exportSessionBtn.textContent === "Exporting...") {
+            exportSessionBtn.textContent = "Export";
+          }
         });
     });
   }

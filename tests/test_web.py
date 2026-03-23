@@ -504,9 +504,8 @@ class TestRESTEndpoints:
         assert body["display_date"]
         assert body["download_url"].endswith("export_id=" + body["export_id"])
 
-        export_dirs = list((tmp_path / "sess-001").glob("export-*"))
-        assert len(export_dirs) == 1
-        zip_path = tmp_path / "sess-001" / body["zip_name"]
+        assert not list(tmp_path.glob("rpg-export-*"))
+        zip_path = tmp_path / body["zip_name"]
         assert zip_path.exists()
         with zipfile.ZipFile(zip_path) as zf:
             assert sorted(zf.namelist()) == [
@@ -542,6 +541,7 @@ class TestRESTEndpoints:
         first_body = first.json()
         second_body = second.json()
         assert first_body["export_id"] != second_body["export_id"]
+        assert len(list(tmp_path.glob("*.zip"))) == 2
 
         listed = listing.json()["exports"]
         assert len(listed) == 2
