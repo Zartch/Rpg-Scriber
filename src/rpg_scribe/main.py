@@ -638,8 +638,32 @@ class Application:
         )
         logger.info("RPG Scribe is ready — waiting for session to begin")
 
+    @staticmethod
+    def _get_folder_size(path: Path) -> str:
+        """Return human-readable size of a directory, or '(not found)' if missing."""
+        if not path.is_dir():
+            return "(not found)"
+        total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        for unit in ("B", "KB", "MB", "GB"):
+            if total < 1024:
+                return f"{total:.1f} {unit}"
+            total /= 1024
+        return f"{total:.1f} TB"
+
+    def _log_folder_sizes(self) -> None:
+        """Log the size of key project folders."""
+        folders = {
+            "logs": Path("logs"),
+            "exports": Path("exports"),
+            "data/audio": Path("data/audio"),
+        }
+        for name, path in folders.items():
+            size = self._get_folder_size(path)
+            logger.info("Folder size: %-15s %s", name, size)
+
     async def on_session_start(self, session_id: str) -> None:
         """Called when a new recording session begins."""
+        self._log_folder_sizes()
         campaign_id = ""
         if self.config.campaign:
             campaign_id = self.config.campaign.campaign_id

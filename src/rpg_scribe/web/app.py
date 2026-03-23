@@ -152,6 +152,11 @@ def create_app(
 
     app.include_router(router)
 
+    # Serve saved audio chunks as static files (data/audio/)
+    audio_dir = Path.cwd() / "data" / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+
     # Serve static files (HTML/JS/CSS) at the root path — mounted
     # last so API and WS routes take priority.
     if STATIC_DIR.is_dir():

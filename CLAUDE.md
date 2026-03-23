@@ -210,3 +210,11 @@ config/
 - Se pueden generar bajo demanda desde el Web UI (botón "Generate")
 - El endpoint `POST /generate` genera primero resúmenes de sesión faltantes (post-hoc desde transcripciones), luego el resumen de campaña
 - La página `campaign-summaries.html` muestra el historial completo con navegación lateral
+
+### Audio Chunks
+
+- Diseño detallado en [`docs/audio-chunks-design.md`](docs/audio-chunks-design.md)
+- Los chunks de audio enviados a transcribir se guardan en `data/audio/{session_id}/{timestamp}_{speaker}.wav`
+- Se sirven como archivos estáticos en `/audio/` desde FastAPI
+- El Web UI muestra un botón ▶ en cada transcripción para reproducir el audio original
+- Al iniciar sesión se logea el tamaño de `logs/`, `exports/` y `data/audio/`

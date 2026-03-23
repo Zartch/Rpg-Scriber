@@ -363,6 +363,16 @@ header h1 { font-size: 1.25rem; }
 .entry-actions .btn-delete:hover { background: #e53e3e; color: #fff; }
 .entry-actions .btn-meta:hover { background: var(--accent); color: #fff; }
 
+/* Play audio button */
+.btn-play {
+  font-size: 0.65rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+  margin-left: 0.3rem; opacity: 0.5; vertical-align: middle; transition: opacity 0.15s;
+}
+.feed-entry:hover .btn-play { opacity: 1; }
+.btn-play:hover { background: var(--green); color: #fff; }
+.btn-play.playing { background: var(--green); color: #fff; opacity: 1; }
+
 /* META transcription state */
 .feed-entry.meta { border-left-color: var(--text-muted); opacity: 0.7; }
 .feed-entry.meta .btn-meta { background: var(--accent); color: #fff; }

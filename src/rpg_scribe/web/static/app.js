@@ -237,6 +237,11 @@
       return html;
     }).join("");
 
+    // Build audio URL: /audio/{session_id}/{timestamp}_{speaker_sanitized}.wav
+    var speakerSanitized = (data.speaker_name || "").replace(/[^\w]/g, "_").substring(0, 30);
+    var audioUrl = "/audio/" + encodeURIComponent(data.session_id) +
+      "/" + data.timestamp + "_" + encodeURIComponent(speakerSanitized) + ".wav";
+
     entry.innerHTML =
       '<span class="entry-actions">' +
         '<button class="btn-meta" title="Marcar como META">M</button>' +
@@ -245,6 +250,7 @@
       '<span class="meta-badge">[META]</span>' +
       '<span class="speaker">' + escapeHtml(data.speaker_name) + ":</span>" +
       '<span class="transcription-text">' + wordHtml + "</span>" +
+      '<button class="btn-play" title="Reproducir audio" data-audio-url="' + escapeHtml(audioUrl) + '">\u25B6</button>' +
       '<span class="ts">' + formatTime(data.timestamp) + "</span>";
 
     // Store metadata for editing
@@ -276,6 +282,41 @@
     if (!wordSpan) return;
     if (wordSpan.querySelector("input")) return; // already editing
     startWordEdit(wordSpan);
+  });
+
+  // ── Play audio chunk ─────────────────────────────────────
+
+  var currentAudio = null;
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-play");
+    if (!btn) return;
+    var url = btn.dataset.audioUrl;
+    if (!url) return;
+
+    // Stop currently playing audio
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+      var prevBtn = transcriptionFeed.querySelector(".btn-play.playing");
+      if (prevBtn) prevBtn.classList.remove("playing");
+    }
+
+    // If clicking the same button that was playing, just stop
+    if (btn.classList.contains("playing")) {
+      btn.classList.remove("playing");
+      return;
+    }
+
+    var audio = new Audio(url);
+    currentAudio = audio;
+    btn.classList.add("playing");
+    audio.play().catch(function () {
+      btn.classList.remove("playing");
+    });
+    audio.addEventListener("ended", function () {
+      btn.classList.remove("playing");
+      currentAudio = null;
+    });
   });
 
   // ── Delete transcription ──────────────────────────────────
