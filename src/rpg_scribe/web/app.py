@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from rpg_scribe.core.event_bus import EventBus
@@ -132,6 +131,7 @@ def create_app(
     router.config = config  # type: ignore[attr-defined]
     router.event_bus = event_bus  # type: ignore[attr-defined]
     router.application = application  # type: ignore[attr-defined]
+    router.export_root = (Path.cwd() / "exports").resolve()  # type: ignore[attr-defined]
 
     # Populate campaign info in WebState from config
     if config and hasattr(config, "campaign") and config.campaign:

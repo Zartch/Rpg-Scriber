@@ -5,20 +5,16 @@ from __future__ import annotations
 import html
 import logging
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
     SummaryRefreshRequestEvent,
-    SummaryUpdateEvent,
-    SystemStatusEvent,
-    TranscriptionEvent,
 )
 from rpg_scribe.core.models import (
     CharacterRelationshipInfo,
@@ -28,7 +24,8 @@ from rpg_scribe.core.models import (
     RelationshipTypeInfo,
 )
 from rpg_scribe.config import save_campaign_toml
-from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
+from rpg_scribe.web.exporter import SessionExportData, SessionExportService
+from rpg_scribe.web.websocket import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +138,78 @@ def _logs_root() -> Path:
 def _session_logs_dir(session_id: str) -> Path:
     """Return the logs directory for a session."""
     return (_logs_root() / session_id).resolve()
+
+
+def _exports_root() -> Path:
+    """Return the base directory for immutable session exports."""
+    return Path(getattr(router, "export_root", Path("exports").resolve())).resolve()
+
+
+def _get_export_service() -> SessionExportService:
+    """Create the export service using the configured exports root."""
+    return SessionExportService(_exports_root())
+
+
+async def _load_session_export_data(session_id: str) -> SessionExportData | None:
+    """Load normalized export data for a session from memory and/or DB."""
+    state = _get_state()
+    db = _get_database()
+
+    live_transcriptions = [
+        dict(item)
+        for item in state.transcriptions
+        if item.get("session_id") == session_id
+    ]
+
+    if session_id == state.active_session_id:
+        session_row: dict[str, Any] = {}
+        transcriptions = live_transcriptions
+        if db is not None:
+            try:
+                session_row = await db.get_session(session_id) or {}
+                transcriptions = [dict(item) for item in await db.get_transcriptions(session_id)]
+            except Exception as exc:
+                logger.error("Error loading active session row for export: %s", exc)
+        return SessionExportData(
+            session_id=session_id,
+            transcriptions=transcriptions,
+            session_summary=state.session_summary or "",
+            session_chronology=state.session_chronology or "",
+            started_at=session_row.get("started_at", ""),
+            ended_at=session_row.get("ended_at", ""),
+            status=session_row.get("status", "active") or "active",
+        )
+
+    if db is not None:
+        try:
+            session_row = await db.get_session(session_id)
+            transcriptions = await db.get_transcriptions(session_id)
+        except Exception as exc:
+            logger.error("Error loading historical session export data: %s", exc)
+            session_row = None
+            transcriptions = []
+
+        if session_row:
+            return SessionExportData(
+                session_id=session_id,
+                transcriptions=[dict(item) for item in transcriptions],
+                session_summary=str(session_row.get("session_summary", "") or ""),
+                session_chronology=str(session_row.get("session_chronology", "") or ""),
+                started_at=session_row.get("started_at", ""),
+                ended_at=session_row.get("ended_at", ""),
+                status=str(session_row.get("status", "") or ""),
+            )
+
+    if live_transcriptions:
+        return SessionExportData(
+            session_id=session_id,
+            transcriptions=live_transcriptions,
+            session_summary="",
+            session_chronology="",
+            status="snapshot",
+        )
+
+    return None
 
 
 def _flatten_campaign_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -1496,11 +1565,11 @@ async def merge_locations_endpoint(
         if config and getattr(config, "campaign", None):
             config.campaign.locations = [
                 LocationInfo(
-                    name=str(l.get("name", "")),
-                    description=str(l.get("description", "")),
+                    name=str(loc.get("name", "")),
+                    description=str(loc.get("description", "")),
                 )
-                for l in locations
-                if l.get("name")
+                for loc in locations
+                if loc.get("name")
             ]
         await _sync_relationships_to_config(config, db, campaign_id)
         _persist_campaign_toml(config)
@@ -2439,6 +2508,73 @@ async def get_session_logs_explorer(session_id: str) -> HTMLResponse:
         f"<ul>{body}</ul></body></html>"
     )
     return HTMLResponse(page)
+
+
+@router.post("/api/sessions/{session_id}/export")
+async def create_session_export(session_id: str) -> dict[str, Any]:
+    """Generate a new immutable export bundle for a session."""
+    data = await _load_session_export_data(session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    service = _get_export_service()
+    manifest = service.build_export(data)
+    export_id = str(manifest["export_id"])
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "export_id": export_id,
+        "exported_at": manifest.get("created_at", ""),
+        "display_date": manifest.get("display_date", ""),
+        "export_dir": manifest.get("export_dir", ""),
+        "zip_name": manifest.get("zip_name", ""),
+        "files": manifest.get("files", []),
+        "download_url": (
+            f"/api/sessions/{quote(session_id)}/export/download"
+            f"?export_id={quote(export_id)}"
+        ),
+    }
+
+
+@router.get("/api/sessions/{session_id}/exports")
+async def list_session_exports(session_id: str) -> dict[str, Any]:
+    """List immutable export bundles previously generated for a session."""
+    service = _get_export_service()
+    exports = []
+    for item in service.list_exports(session_id):
+        export_id = str(item.get("export_id", ""))
+        exports.append(
+            {
+                "session_id": item.get("session_id", session_id),
+                "export_id": export_id,
+                "created_at": item.get("created_at", ""),
+                "display_date": item.get("display_date", ""),
+                "status": item.get("status", ""),
+                "zip_name": item.get("zip_name", ""),
+                "files": item.get("files", []),
+                "download_url": (
+                    f"/api/sessions/{quote(session_id)}/export/download"
+                    f"?export_id={quote(export_id)}"
+                ),
+            }
+        )
+    return {"session_id": session_id, "exports": exports}
+
+
+@router.get("/api/sessions/{session_id}/export/download")
+async def download_session_export(
+    session_id: str,
+    export_id: str = Query(default=""),
+) -> FileResponse:
+    """Download one concrete version of a session export bundle."""
+    if not export_id.strip():
+        raise HTTPException(status_code=400, detail="export_id is required")
+
+    service = _get_export_service()
+    zip_path = service.get_export_zip(session_id, export_id)
+    if zip_path is None:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return FileResponse(path=zip_path, filename=zip_path.name, media_type="application/zip")
 
 
 # -- Session finalize endpoint -------------------------------------

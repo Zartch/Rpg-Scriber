@@ -96,6 +96,12 @@ header h1 { font-size: 1.25rem; }
   border-color: var(--accent);
   background: rgba(124, 106, 240, 0.1);
 }
+.btn-small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--bg);
+}
 .btn-save {
   background: var(--accent);
   color: #fff;
@@ -796,6 +802,49 @@ header h1 { font-size: 1.25rem; }
 
 .session-log-link a {
   color: var(--accent);
+}
+
+.session-export-list {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: rgba(124, 106, 240, 0.05);
+}
+
+.session-export-list strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.session-export-list ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.session-export-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.session-export-list a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.session-export-list .export-date {
+  color: var(--text-muted);
 }
 
 

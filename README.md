@@ -141,6 +141,24 @@ description = "Alcalde de Tordesillas. Nervioso y con secretos."
 
 ### Iniciar RPG Scribe
 
+**Windows (recomendado):** usar el launcher local del repo. Ejecuta siempre el `.venv`
+de esta carpeta y el código de este proyecto, sin depender del `PATH` global ni de
+activar el entorno manualmente.
+
+```powershell
+.\rpg.cmd --campaign config/campaigns/mi-campana.toml
+```
+
+Para arrancar solo la Web UI:
+
+```powershell
+.\rpg.cmd --web-only
+```
+
+Si prefieres el flujo clásico, también puedes activar `.venv` y luego usar
+`rpg-scribe`, pero el launcher local evita confusiones cuando tienes varias copias
+del proyecto.
+
 ```bash
 rpg-scribe --campaign config/campaigns/mi-campana.toml
 ```

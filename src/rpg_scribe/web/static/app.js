@@ -18,6 +18,7 @@
   var sessionListEl = document.getElementById("session-list");
   var backToLiveBtn = document.getElementById("back-to-live");
   var openTranscriptBtn = document.getElementById("open-transcript-btn");
+  var exportSessionBtn = document.getElementById("export-session-btn");
   var modeLiveBtn = document.getElementById("mode-live-btn");
   var modeBrowseBtn = document.getElementById("mode-browse-btn");
   var browseCampaignsPanel = document.getElementById("browse-campaigns-panel");
@@ -26,6 +27,7 @@
   var statusPanel = document.getElementById("status-panel");
   var questionsPanel = document.getElementById("questions-panel");
   var sessionLogLinkEl = document.getElementById("session-log-link");
+  var sessionExportListEl = document.getElementById("session-export-list");
 
   // Campaign bar elements
   var campaignBar = document.getElementById("campaign-bar");
@@ -3146,6 +3148,36 @@
       });
   }
 
+  function renderSessionExports(sessionId) {
+    if (!sessionExportListEl || !sessionId) return;
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/exports")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var exports = data.exports || [];
+        if (!exports.length) {
+          sessionExportListEl.classList.add("hidden");
+          sessionExportListEl.innerHTML = "";
+          return;
+        }
+        sessionExportListEl.classList.remove("hidden");
+        sessionExportListEl.innerHTML =
+          "<strong>Recent exports</strong><ul>" +
+          exports.slice(0, 5).map(function (item) {
+            return (
+              "<li>" +
+                '<span class="export-date">' + escapeHtml(item.display_date || item.created_at || "") + "</span>" +
+                '<a href="' + escapeAttr(item.download_url || "#") + '">Download ZIP</a>' +
+              "</li>"
+            );
+          }).join("") +
+          "</ul>";
+      })
+      .catch(function () {
+        sessionExportListEl.classList.add("hidden");
+        sessionExportListEl.innerHTML = "";
+      });
+  }
+
   // Session history
 
   function fetchSessionList() {
@@ -3290,6 +3322,7 @@
         renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
         loadedLiveSessionId = sessionId;
         renderSessionLogLink(sessionId);
+        renderSessionExports(sessionId);
       })
       .catch(function () {});
   }
@@ -3299,6 +3332,7 @@
     currentHistoricalSessionId = sessionId;
     if (appMode === "live") backToLiveBtn.classList.remove("hidden");
     renderSessionLogLink(sessionId);
+    renderSessionExports(sessionId);
     updateFinalizeButton();
 
     Promise.all([
@@ -3344,6 +3378,10 @@
       sessionLogLinkEl.classList.add("hidden");
       sessionLogLinkEl.innerHTML = "";
     }
+    if (sessionExportListEl) {
+      sessionExportListEl.classList.add("hidden");
+      sessionExportListEl.innerHTML = "";
+    }
 
     var items = sessionListEl.querySelectorAll(".session-item");
     for (var i = 0; i < items.length; i++) {
@@ -3382,10 +3420,48 @@
     });
   }
 
+  if (exportSessionBtn) {
+    exportSessionBtn.addEventListener("click", function () {
+      var sessionId = getSessionIdForTranscriptView();
+      if (!sessionId) {
+        alert("No active or selected session.");
+        return;
+      }
+      exportSessionBtn.disabled = true;
+      exportSessionBtn.textContent = "Exporting...";
+      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/export", {
+        method: "POST",
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ok) {
+            alert("Failed to generate export.");
+            return;
+          }
+          renderSessionExports(sessionId);
+          exportSessionBtn.textContent = "Exported";
+          setTimeout(function () {
+            exportSessionBtn.textContent = "Export";
+          }, 1800);
+        })
+        .catch(function () {
+          alert("Failed to generate export.");
+        })
+        .finally(function () {
+          exportSessionBtn.disabled = false;
+          if (exportSessionBtn.textContent === "Exporting...") {
+            exportSessionBtn.textContent = "Export";
+          }
+        });
+    });
+  }
+
   // Finalize session
 
   function updateFinalizeButton() {
     var show = !!(appMode === "live" && activeSessionId && !viewingHistorical);
+    var exportTarget = !!getSessionIdForTranscriptView();
+    var extractTarget = !!getSessionIdForTranscriptView();
 
     if (finalizeBtn) {
       if (show) {
@@ -3395,10 +3471,15 @@
       }
     }
 
-    // Extract entities button: also visible when viewing a historical session
-    var showExtract = show || !!(currentHistoricalSessionId);
+    if (exportSessionBtn) {
+      exportSessionBtn.disabled = !exportTarget;
+      exportSessionBtn.title = exportTarget
+        ? "Generate a session export bundle"
+        : "Select a session first";
+    }
+
     if (extractEntitiesBtn) {
-      if (showExtract) {
+      if (extractTarget) {
         extractEntitiesBtn.classList.remove("hidden");
       } else {
         extractEntitiesBtn.classList.add("hidden");
@@ -3442,7 +3523,7 @@
 
   if (extractEntitiesBtn) {
     extractEntitiesBtn.addEventListener("click", function () {
-      var sessionId = activeSessionId || (viewingHistorical ? currentHistoricalSessionId : null);
+      var sessionId = getSessionIdForTranscriptView();
       if (!sessionId) return;
 
       extractEntitiesBtn.disabled = true;
