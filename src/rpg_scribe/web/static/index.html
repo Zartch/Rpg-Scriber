@@ -57,183 +57,170 @@
     </form>
   </section>
 
-  <!-- Players section (collapsible) -->
-  <section id="players-section" class="panel entity-section hidden">
-    <div class="entity-header" id="players-header">
-      <h2>Players <span class="entity-count" id="players-count"></span></h2>
+  <!-- Campaign Details (tabbed, collapsible) -->
+  <section id="campaign-details-section" class="panel entity-section hidden">
+    <div class="entity-header" id="campaign-details-header">
+      <h2>Campaign Details</h2>
       <span class="collapse-arrow">&#9660;</span>
     </div>
-    <div id="players-body" class="entity-body">
-      <div id="players-list" class="entity-list">
-        <p class="placeholder">No players loaded.</p>
+    <div id="campaign-details-body" class="entity-body collapsed">
+      <div class="campaign-details-tabs">
+        <button class="summary-tab active" data-detail-tab="players">Players <span id="players-count"></span></button>
+        <button class="summary-tab" data-detail-tab="npcs">NPCs <span id="npcs-count"></span></button>
+        <button class="summary-tab" data-detail-tab="locations">Locations <span id="locations-count"></span></button>
+        <button class="summary-tab" data-detail-tab="entities">Entities <span id="entities-count"></span></button>
+        <button class="summary-tab" data-detail-tab="relationships">Relationships <span id="relationships-count"></span></button>
       </div>
-    </div>
-  </section>
 
-  <!-- NPCs section (collapsible) -->
-  <section id="npcs-section" class="panel entity-section hidden">
-    <div class="entity-header" id="npcs-header">
-      <h2>NPCs <span class="entity-count" id="npcs-count"></span></h2>
-      <span class="collapse-arrow">&#9660;</span>
-    </div>
-    <div id="npcs-body" class="entity-body">
-      <div id="npcs-list" class="entity-list">
-        <p class="placeholder">No NPCs loaded.</p>
+      <!-- Players tab -->
+      <div id="players-tab" class="detail-tab-content active">
+        <div id="players-list" class="entity-list">
+          <p class="placeholder">No players loaded.</p>
+        </div>
       </div>
-      <button id="add-npc-btn" class="btn-small btn-add">+ Add NPC</button>
-      <form id="add-npc-form" class="entity-edit-form hidden">
-        <div class="edit-row">
-          <label>Name</label>
-          <input type="text" id="new-npc-name" required />
-        </div>
-        <div class="edit-row">
-          <label>Description</label>
-          <textarea id="new-npc-desc" rows="2" placeholder="NPC description..."></textarea>
-        </div>
-        <div class="edit-actions">
-          <button type="submit" class="btn-small btn-save">Save</button>
-          <button type="button" id="add-npc-cancel" class="btn-small btn-cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </section>
 
-
-  <!-- Locations section (collapsible) -->
-  <section id="locations-section" class="panel entity-section hidden">
-    <div class="entity-header" id="locations-header">
-      <h2>Locations <span class="entity-count" id="locations-count"></span></h2>
-      <span class="collapse-arrow">&#9660;</span>
-    </div>
-    <div id="locations-body" class="entity-body">
-      <div id="locations-list" class="entity-list">
-        <p class="placeholder">No locations loaded.</p>
-      </div>
-      <button id="add-location-btn" class="btn-small btn-add">+ Add Location</button>
-      <form id="add-location-form" class="entity-edit-form hidden">
-        <div class="edit-row">
-          <label>Name</label>
-          <input type="text" id="new-location-name" required />
+      <!-- NPCs tab -->
+      <div id="npcs-tab" class="detail-tab-content">
+        <div id="npcs-list" class="entity-list">
+          <p class="placeholder">No NPCs loaded.</p>
         </div>
-        <div class="edit-row">
-          <label>Description</label>
-          <textarea id="new-location-desc" rows="2" placeholder="Location description..."></textarea>
-        </div>
-        <div class="edit-actions">
-          <button type="submit" class="btn-small btn-save">Save</button>
-          <button type="button" id="add-location-cancel" class="btn-small btn-cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </section>
-
-  <!-- Entities section (collapsible) -->
-  <section id="entities-section" class="panel entity-section hidden">
-    <div class="entity-header" id="entities-header">
-      <h2>Entities <span class="entity-count" id="entities-count"></span></h2>
-      <span class="collapse-arrow">&#9660;</span>
-    </div>
-    <div id="entities-body" class="entity-body">
-      <div id="entities-list" class="entity-list">
-        <p class="placeholder">No entities loaded.</p>
-      </div>
-      <button id="add-entity-btn" class="btn-small btn-add">+ Add Entity</button>
-      <form id="add-entity-form" class="entity-edit-form hidden">
-        <div class="edit-row">
-          <label>Name</label>
-          <input type="text" id="new-entity-name" required />
-        </div>
-        <div class="edit-row">
-          <label>Type</label>
-          <input type="text" id="new-entity-type" placeholder="clan, corporacion, faccion..." value="group" />
-        </div>
-        <div class="edit-row">
-          <label>Description</label>
-          <textarea id="new-entity-desc" rows="2" placeholder="Entity description..."></textarea>
-        </div>
-        <div class="edit-actions">
-          <button type="submit" class="btn-small btn-save">Save</button>
-          <button type="button" id="add-entity-cancel" class="btn-small btn-cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </section>
-  <!-- Relationships section (collapsible) -->
-  <section id="relationships-section" class="panel entity-section hidden">
-    <div class="entity-header" id="relationships-header">
-      <h2>Relationships <span class="entity-count" id="relationships-count"></span></h2>
-      <span class="collapse-arrow">&#9660;</span>
-    </div>
-    <div id="relationships-body" class="entity-body">
-      <div id="relationships-list" class="entity-list">
-        <p class="placeholder">No relationships loaded.</p>
-      </div>
-      <div class="relationship-tools">
-        <button id="toggle-relationship-graph-btn" class="btn-small">Graph</button>
-      </div>
-      <section id="relationship-graph-panel" class="relationship-graph hidden">
-        <div class="relationship-graph-header">
-          <strong>Relationship Graph</strong>
-          <span id="relationship-graph-hint" class="relationship-graph-hint">Drag nodes to reorder the layout.</span>
-        </div>
-        <div class="relationship-graph-filters">
-          <label><input id="graph-filter-players" type="checkbox" checked /> Players</label>
-          <label><input id="graph-filter-npcs" type="checkbox" checked /> NPCs</label>
-          <label><input id="graph-filter-locations" type="checkbox" checked /> Locations</label>
-          <label><input id="graph-filter-entities" type="checkbox" checked /> Entities</label>
-        </div>
-        <svg id="relationship-graph-svg" class="relationship-graph-canvas" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet"></svg>
-        <div id="relationship-node-tooltip" class="relationship-node-tooltip hidden"></div>
-        <div id="relationship-legend" class="relationship-legend"></div>
-      </section>
-      <button id="add-relationship-btn" class="btn-small btn-add">+ Add Relationship</button>
-      <form id="add-relationship-form" class="entity-edit-form hidden">
-        <div class="edit-row">
-          <label>Source</label>
-          <div class="relationship-select-tools">
-            <input type="text" id="new-rel-source-search" class="entity-select-search" placeholder="Search source..." />
-            <select id="new-rel-source-kind" class="entity-select-kind">
-              <option value="all">All</option>
-              <option value="player">Players</option>
-              <option value="npc">NPCs</option>
-              <option value="location">Locations</option>
-              <option value="entity">Entities</option>
-            </select>
+        <button id="add-npc-btn" class="btn-small btn-add">+ Add NPC</button>
+        <form id="add-npc-form" class="entity-edit-form hidden">
+          <div class="edit-row">
+            <label>Name</label>
+            <input type="text" id="new-npc-name" required />
           </div>
-          <select id="new-rel-source" required></select>
-        </div>
-        <div class="edit-row">
-          <label>Target</label>
-          <div class="relationship-select-tools">
-            <input type="text" id="new-rel-target-search" class="entity-select-search" placeholder="Search target..." />
-            <select id="new-rel-target-kind" class="entity-select-kind">
-              <option value="all">All</option>
-              <option value="player">Players</option>
-              <option value="npc">NPCs</option>
-              <option value="location">Locations</option>
-              <option value="entity">Entities</option>
-            </select>
+          <div class="edit-row">
+            <label>Description</label>
+            <textarea id="new-npc-desc" rows="2" placeholder="NPC description..."></textarea>
           </div>
-          <select id="new-rel-target" required></select>
+          <div class="edit-actions">
+            <button type="submit" class="btn-small btn-save">Save</button>
+            <button type="button" id="add-npc-cancel" class="btn-small btn-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Locations tab -->
+      <div id="locations-tab" class="detail-tab-content">
+        <div id="locations-list" class="entity-list">
+          <p class="placeholder">No locations loaded.</p>
         </div>
-        <div class="edit-row">
-          <label>Type</label>
-          <input type="text" id="new-rel-type" placeholder="e.g. tio de, pareja de" required />
+        <button id="add-location-btn" class="btn-small btn-add">+ Add Location</button>
+        <form id="add-location-form" class="entity-edit-form hidden">
+          <div class="edit-row">
+            <label>Name</label>
+            <input type="text" id="new-location-name" required />
+          </div>
+          <div class="edit-row">
+            <label>Description</label>
+            <textarea id="new-location-desc" rows="2" placeholder="Location description..."></textarea>
+          </div>
+          <div class="edit-actions">
+            <button type="submit" class="btn-small btn-save">Save</button>
+            <button type="button" id="add-location-cancel" class="btn-small btn-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Entities tab -->
+      <div id="entities-tab" class="detail-tab-content">
+        <div id="entities-list" class="entity-list">
+          <p class="placeholder">No entities loaded.</p>
         </div>
-        <div class="edit-row">
-          <label>Category</label>
-          <input type="text" id="new-rel-category" placeholder="general, familiar, social..." value="general" />
+        <button id="add-entity-btn" class="btn-small btn-add">+ Add Entity</button>
+        <form id="add-entity-form" class="entity-edit-form hidden">
+          <div class="edit-row">
+            <label>Name</label>
+            <input type="text" id="new-entity-name" required />
+          </div>
+          <div class="edit-row">
+            <label>Type</label>
+            <input type="text" id="new-entity-type" placeholder="clan, corporacion, faccion..." value="group" />
+          </div>
+          <div class="edit-row">
+            <label>Description</label>
+            <textarea id="new-entity-desc" rows="2" placeholder="Entity description..."></textarea>
+          </div>
+          <div class="edit-actions">
+            <button type="submit" class="btn-small btn-save">Save</button>
+            <button type="button" id="add-entity-cancel" class="btn-small btn-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Relationships tab -->
+      <div id="relationships-tab" class="detail-tab-content">
+        <div id="relationships-list" class="entity-list">
+          <p class="placeholder">No relationships loaded.</p>
         </div>
-        <div class="edit-row">
-          <label>Notes</label>
-          <textarea id="new-rel-notes" rows="2" placeholder="Context or nuance..."></textarea>
+        <div class="relationship-tools">
+          <button id="toggle-relationship-graph-btn" class="btn-small">Graph</button>
         </div>
-        <div id="relationship-edit-parents" class="related-relationships hidden"></div>
-        <div class="edit-actions">
-          <button type="submit" class="btn-small btn-save">Save</button>
-          <button type="button" id="add-relationship-cancel" class="btn-small btn-cancel">Cancel</button>
-        </div>
-      </form>
+        <section id="relationship-graph-panel" class="relationship-graph hidden">
+          <div class="relationship-graph-header">
+            <strong>Relationship Graph</strong>
+            <span id="relationship-graph-hint" class="relationship-graph-hint">Drag nodes to reorder the layout.</span>
+          </div>
+          <div class="relationship-graph-filters">
+            <label><input id="graph-filter-players" type="checkbox" checked /> Players</label>
+            <label><input id="graph-filter-npcs" type="checkbox" checked /> NPCs</label>
+            <label><input id="graph-filter-locations" type="checkbox" checked /> Locations</label>
+            <label><input id="graph-filter-entities" type="checkbox" checked /> Entities</label>
+          </div>
+          <svg id="relationship-graph-svg" class="relationship-graph-canvas" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="relationship-node-tooltip" class="relationship-node-tooltip hidden"></div>
+          <div id="relationship-legend" class="relationship-legend"></div>
+        </section>
+        <button id="add-relationship-btn" class="btn-small btn-add">+ Add Relationship</button>
+        <form id="add-relationship-form" class="entity-edit-form hidden">
+          <div class="edit-row">
+            <label>Source</label>
+            <div class="relationship-select-tools">
+              <input type="text" id="new-rel-source-search" class="entity-select-search" placeholder="Search source..." />
+              <select id="new-rel-source-kind" class="entity-select-kind">
+                <option value="all">All</option>
+                <option value="player">Players</option>
+                <option value="npc">NPCs</option>
+                <option value="location">Locations</option>
+                <option value="entity">Entities</option>
+              </select>
+            </div>
+            <select id="new-rel-source" required></select>
+          </div>
+          <div class="edit-row">
+            <label>Target</label>
+            <div class="relationship-select-tools">
+              <input type="text" id="new-rel-target-search" class="entity-select-search" placeholder="Search target..." />
+              <select id="new-rel-target-kind" class="entity-select-kind">
+                <option value="all">All</option>
+                <option value="player">Players</option>
+                <option value="npc">NPCs</option>
+                <option value="location">Locations</option>
+                <option value="entity">Entities</option>
+              </select>
+            </div>
+            <select id="new-rel-target" required></select>
+          </div>
+          <div class="edit-row">
+            <label>Type</label>
+            <input type="text" id="new-rel-type" placeholder="e.g. tio de, pareja de" required />
+          </div>
+          <div class="edit-row">
+            <label>Category</label>
+            <input type="text" id="new-rel-category" placeholder="general, familiar, social..." value="general" />
+          </div>
+          <div class="edit-row">
+            <label>Notes</label>
+            <textarea id="new-rel-notes" rows="2" placeholder="Context or nuance..."></textarea>
+          </div>
+          <div id="relationship-edit-parents" class="related-relationships hidden"></div>
+          <div class="edit-actions">
+            <button type="submit" class="btn-small btn-save">Save</button>
+            <button type="button" id="add-relationship-cancel" class="btn-small btn-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
     </div>
   </section>
 

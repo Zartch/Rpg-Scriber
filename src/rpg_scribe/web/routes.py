@@ -110,6 +110,50 @@ def _get_config():
     return getattr(router, "config", None)
 
 
+async def _validate_campaign(campaign_id: str) -> bool:
+    """Check campaign exists and ensure it is loaded into state.
+
+    If the campaign is already in ``state.active_campaign`` we return
+    immediately.  Otherwise we attempt to load it from the database so
+    that subsequent code can read/write ``state.active_campaign`` as
+    usual.
+    """
+    state = _get_state()
+    if state.active_campaign and state.active_campaign.get("id") == campaign_id:
+        return True
+    db = _get_database()
+    if db:
+        try:
+            row = await db.get_campaign(campaign_id)
+            if row:
+                campaign: dict[str, Any] = {
+                    "id": row.get("id", ""),
+                    "name": row.get("name", ""),
+                    "game_system": row.get("game_system", ""),
+                    "language": row.get("language", "es"),
+                    "description": row.get("description", ""),
+                    "custom_instructions": row.get("custom_instructions", ""),
+                    "dm_speaker_id": row.get("dm_speaker_id", ""),
+                    "is_generic": False,
+                }
+                # Hydrate entity lists from DB
+                campaign["players"] = await db.get_players(campaign_id)
+                campaign["npcs"] = await db.get_npcs(campaign_id)
+                campaign["locations"] = await db.get_locations(campaign_id)
+                campaign["entities"] = await db.get_entities(campaign_id)
+                campaign["relationships"] = (
+                    await db.get_character_relationships(campaign_id)
+                )
+                campaign["relationship_types"] = (
+                    await db.get_relationship_types(campaign_id)
+                )
+                state.active_campaign = campaign
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _get_event_bus():
     """Access the optional EventBus attached to the router."""
     return getattr(router, "event_bus", None)
@@ -1149,7 +1193,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     config = _get_config()
 
     # Validate that we have a campaign to update
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     # Fields that can be edited from the UI
@@ -1235,11 +1279,10 @@ async def update_player(
     Accepts: discord_name, character_name, character_description.
     If character_name changes, also updates speaker_map.
     """
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"discord_name", "character_name", "character_description"}
@@ -1304,11 +1347,10 @@ async def update_player(
 @router.post("/api/campaigns/{campaign_id}/npcs")
 async def create_npc(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Create a new NPC."""
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = body.get("name", "").strip()
@@ -1345,11 +1387,10 @@ async def update_npc_endpoint(
     campaign_id: str, npc_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
     """Update an NPC's editable fields (name, description)."""
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"name", "description"}
@@ -1400,7 +1441,7 @@ async def create_location_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = str(body.get("name", "")).strip()
@@ -1453,7 +1494,7 @@ async def update_location_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     old_name = str(body.get("old_name", "")).strip()
@@ -1545,7 +1586,7 @@ async def merge_locations_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1592,7 +1633,7 @@ async def update_merged_location_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1645,7 +1686,7 @@ async def create_entity_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = str(body.get("name", "")).strip()
@@ -1708,7 +1749,7 @@ async def update_entity_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"name", "entity_type", "description"}
@@ -1784,7 +1825,7 @@ async def merge_entities_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1832,7 +1873,7 @@ async def update_merged_entity_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1885,7 +1926,7 @@ async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[st
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1932,7 +1973,7 @@ async def update_merged_npc_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -2003,7 +2044,7 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -2063,7 +2104,7 @@ async def merge_relationship_types(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -2104,7 +2145,7 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}

@@ -1050,3 +1050,21 @@ header h1 { font-size: 1.25rem; }
   border-bottom-color: var(--accent);
   background: rgba(124, 106, 240, 0.08);
 }
+
+/* Campaign details tab system */
+.campaign-details-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.campaign-details-tabs .summary-tab {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+}
+.detail-tab-content {
+  display: none;
+}
+.detail-tab-content.active {
+  display: block;
+}

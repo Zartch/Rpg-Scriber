@@ -44,31 +44,28 @@
   var editInstructionsInput = document.getElementById("edit-campaign-instructions");
   var editMasterSelect = document.getElementById("edit-campaign-master");
 
-  // Player/NPC elements
-  var playersSection = document.getElementById("players-section");
-  var playersHeader = document.getElementById("players-header");
-  var playersBody = document.getElementById("players-body");
+  // Campaign details (unified tabbed container)
+  var campaignDetailsSection = document.getElementById("campaign-details-section");
+  var campaignDetailsHeader = document.getElementById("campaign-details-header");
+  var campaignDetailsBody = document.getElementById("campaign-details-body");
+  // Keep legacy aliases for render functions that reference these
+  var playersSection = campaignDetailsSection;
+  var npcsSection = campaignDetailsSection;
+  var locationsSection = campaignDetailsSection;
+  var entitiesSection = campaignDetailsSection;
+  var relationshipsSection = campaignDetailsSection;
   var playersList = document.getElementById("players-list");
   var playersCount = document.getElementById("players-count");
-  var npcsSection = document.getElementById("npcs-section");
-  var npcsHeader = document.getElementById("npcs-header");
-  var npcsBody = document.getElementById("npcs-body");
   var npcsList = document.getElementById("npcs-list");
   var npcsCount = document.getElementById("npcs-count");
   var addNpcBtn = document.getElementById("add-npc-btn");
   var addNpcForm = document.getElementById("add-npc-form");
   var addNpcCancel = document.getElementById("add-npc-cancel");
-  var locationsSection = document.getElementById("locations-section");
-  var locationsHeader = document.getElementById("locations-header");
-  var locationsBody = document.getElementById("locations-body");
   var locationsList = document.getElementById("locations-list");
   var locationsCount = document.getElementById("locations-count");
   var addLocationBtn = document.getElementById("add-location-btn");
   var addLocationForm = document.getElementById("add-location-form");
   var addLocationCancel = document.getElementById("add-location-cancel");
-  var entitiesSection = document.getElementById("entities-section");
-  var entitiesHeader = document.getElementById("entities-header");
-  var entitiesBody = document.getElementById("entities-body");
   var entitiesList = document.getElementById("entities-list");
   var entitiesCount = document.getElementById("entities-count");
   var addEntityBtn = document.getElementById("add-entity-btn");
@@ -80,9 +77,6 @@
   var replacementsList = document.getElementById("replacements-list");
   var replacementsCount = document.getElementById("replacements-count");
   var applyReplacementsBtn = document.getElementById("apply-replacements-btn");
-  var relationshipsSection = document.getElementById("relationships-section");
-  var relationshipsHeader = document.getElementById("relationships-header");
-  var relationshipsBody = document.getElementById("relationships-body");
   var relationshipsList = document.getElementById("relationships-list");
   var relationshipsCount = document.getElementById("relationships-count");
   var addRelationshipBtn = document.getElementById("add-relationship-btn");
@@ -1000,7 +994,7 @@
       if (btn.dataset.boundMergedEditor === "1") return;
       btn.dataset.boundMergedEditor = "1";
       btn.addEventListener("click", function () {
-        if (appMode !== "live" || !activeCampaignId) return;
+        if (!activeCampaignId) return;
         var row = btn.closest(".merged-child-item");
         if (!row) return;
         var kind = row.getAttribute("data-merged-kind") || "";
@@ -1058,13 +1052,10 @@
           activeCampaignId = data.campaign.id;
           renderCampaignBar(data.campaign);
           if (data.campaign.is_generic) {
-            playersSection.classList.add("hidden");
-            npcsSection.classList.add("hidden");
-            if (locationsSection) locationsSection.classList.add("hidden");
-            if (entitiesSection) entitiesSection.classList.add("hidden");
-            if (relationshipsSection) relationshipsSection.classList.add("hidden");
+            if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
             if (replacementsSection) replacementsSection.classList.add("hidden");
           } else {
+            if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
             renderPlayers(data.campaign.players || []);
             renderNpcs(data.campaign.npcs || []);
             renderLocations(data.campaign.locations || []);
@@ -1103,11 +1094,7 @@
           campaignSystemEl.textContent = "";
           campaignMasterEl.textContent = "";
           campaignEditBtn.classList.add("hidden");
-          playersSection.classList.add("hidden");
-          npcsSection.classList.add("hidden");
-          if (locationsSection) locationsSection.classList.add("hidden");
-          if (entitiesSection) entitiesSection.classList.add("hidden");
-          if (relationshipsSection) relationshipsSection.classList.add("hidden");
+          if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
           if (replacementsSection) replacementsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
@@ -1134,11 +1121,7 @@
       campaignNameEl.textContent = "No campaign \u2014 Resume mode";
       campaignSystemEl.textContent = "";
       campaignMasterEl.textContent = "";
-      playersSection.classList.add("hidden");
-      npcsSection.classList.add("hidden");
-      if (locationsSection) locationsSection.classList.add("hidden");
-      if (entitiesSection) entitiesSection.classList.add("hidden");
-      if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
     } else {
       campaignEditBtn.classList.remove("hidden");
@@ -1176,7 +1159,6 @@
   }
 
   function openCampaignEdit() {
-    if (appMode !== "live") return;
     if (!currentCampaign) return;
     editNameInput.value = currentCampaign.name || "";
     editSystemInput.value = currentCampaign.game_system || "";
@@ -1196,7 +1178,6 @@
 
   function saveCampaignEdit(e) {
     e.preventDefault();
-    if (appMode !== "live") return;
     if (!currentCampaign || !activeCampaignId) return;
 
     var body = {
@@ -1243,10 +1224,10 @@
 
   function renderPlayers(players) {
     if (!players || players.length === 0) {
-      playersSection.classList.add("hidden");
+      playersCount.textContent = "(0)";
+      playersList.innerHTML = '<p class="placeholder">No players loaded.</p>';
       return;
     }
-    playersSection.classList.remove("hidden");
     playersCount.textContent = "(" + players.length + ")";
     playersList.innerHTML = "";
 
@@ -1302,7 +1283,7 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
 
-        if (appMode !== "live") return;
+        if (!activeCampaignId) return;
         fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1323,22 +1304,16 @@
           });
       });
 
-      if (appMode !== "live") {
-        var editBtn = card.querySelector(".btn-edit-entity");
-        if (editBtn) editBtn.classList.add("hidden");
-      }
       playersList.appendChild(card);
     });
   }
 
   function renderNpcs(npcs) {
     if (!npcs || npcs.length === 0) {
-      npcsSection.classList.remove("hidden");
       npcsCount.textContent = "(0)";
       npcsList.innerHTML = '<p class="placeholder">No NPCs yet.</p>';
       return;
     }
-    npcsSection.classList.remove("hidden");
     npcsCount.textContent = "(" + npcs.length + ")";
     npcsList.innerHTML = "";
     var mergedByParent = (currentCampaign && currentCampaign.merged_npcs_by_parent) || {};
@@ -1402,7 +1377,7 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving...";
 
-        if (appMode !== "live") return;
+        if (!activeCampaignId) return;
         fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -1433,7 +1408,7 @@
       }
       if (mergeNpcBtn && mergeNpcTarget) {
         mergeNpcBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeNpcTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
@@ -1465,7 +1440,7 @@
       var mergedNpcButtons = formEl.querySelectorAll(".btn-save-merged-child");
       mergedNpcButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1501,10 +1476,6 @@
         });
       });
 
-      if (appMode !== "live") {
-        var editBtnNpc = card.querySelector(".btn-edit-entity");
-        if (editBtnNpc) editBtnNpc.classList.add("hidden");
-      }
       npcsList.appendChild(card);
     });
   }
@@ -1521,7 +1492,6 @@
       };
     }).filter(function (loc) { return !!loc.name; });
 
-    locationsSection.classList.remove("hidden");
     locationsCount.textContent = "(" + items.length + ")";
     var mergedByParent = (currentCampaign && currentCampaign.merged_locations_by_parent) || {};
     var locationParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
@@ -1582,7 +1552,7 @@
 
       formEl.addEventListener("submit", function (e) {
         e.preventDefault();
-        if (appMode !== "live" || !activeCampaignId) return;
+        if (!activeCampaignId) return;
 
         var reqBody = {
           old_name: name,
@@ -1624,7 +1594,7 @@
       }
       if (mergeLocBtn && mergeLocTarget) {
         mergeLocBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeLocTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
@@ -1656,7 +1626,7 @@
       var mergedLocButtons = formEl.querySelectorAll(".btn-save-merged-child");
       mergedLocButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1692,11 +1662,6 @@
         });
       });
 
-      if (appMode !== "live") {
-        var editBtnLoc = card.querySelector(".btn-edit-entity");
-        if (editBtnLoc) editBtnLoc.classList.add("hidden");
-      }
-
       locationsList.appendChild(card);
     });
   }
@@ -1708,7 +1673,6 @@
       return !!(ent && ent.name);
     });
 
-    entitiesSection.classList.remove("hidden");
     entitiesCount.textContent = "(" + items.length + ")";
     var mergedByParent = (currentCampaign && currentCampaign.merged_entities_by_parent) || {};
     var entityParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
@@ -1763,7 +1727,6 @@
 
       if (editBtn && form) {
         editBtn.addEventListener("click", function () {
-          if (appMode !== "live") return;
           form.classList.remove("hidden");
           editBtn.classList.add("hidden");
           var input = form.querySelector(".edit-entity-name");
@@ -1781,7 +1744,7 @@
       if (form) {
         form.addEventListener("submit", function (e) {
           e.preventDefault();
-          if (appMode !== "live") return;
+          if (!activeCampaignId) return;
 
           var reqBody = {
             old_name: ent.name || "",
@@ -1827,7 +1790,7 @@
       }
       if (mergeEntBtn && mergeEntTarget) {
         mergeEntBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeEntTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
@@ -1859,7 +1822,7 @@
       var mergedEntButtons = form.querySelectorAll(".btn-save-merged-child");
       mergedEntButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1896,10 +1859,6 @@
             });
         });
       });
-
-      if (appMode !== "live") {
-        if (editBtn) editBtn.classList.add("hidden");
-      }
 
       entitiesList.appendChild(card);
     });
@@ -2379,9 +2338,6 @@
     else selectEl.value = "";
   }
   function renderRelationships(relationships, campaign) {
-    if (!relationshipsSection) return;
-    relationshipsSection.classList.remove("hidden");
-
     var items = relationships || [];
     lastRelationshipItems = items.slice();
     lastRelationshipCampaign = campaign || {};
@@ -2446,7 +2402,6 @@
       var editBtn = card.querySelector(".btn-edit-entity");
       if (editBtn) {
         editBtn.addEventListener("click", function () {
-          if (appMode !== "live") return;
           relationshipEditOriginal = {
             source_key: rel.source_key || "",
             target_key: rel.target_key || "",
@@ -2480,7 +2435,7 @@
       var mergeTypeTarget = card.querySelector(".merge-reltype-target");
       if (mergeTypeBtn && mergeTypeForm) {
         mergeTypeBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !typeKey) return;
+          if (!typeKey) return;
           mergeTypeForm.classList.remove("hidden");
         });
       }
@@ -2518,10 +2473,6 @@
               mergeTypeConfirmBtn.textContent = "Merge";
             });
         });
-      }
-      if (appMode !== "live") {
-        if (editBtn) editBtn.classList.add("hidden");
-        if (mergeTypeBtn) mergeTypeBtn.classList.add("hidden");
       }
       relationshipsList.appendChild(card);
     });
@@ -2577,31 +2528,11 @@
 
   setRelationshipGraphVisible(false);
 
-  // Collapse toggles
-  playersHeader.addEventListener("click", function () {
-    playersBody.classList.toggle("collapsed");
-    playersHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-  });
-  npcsHeader.addEventListener("click", function () {
-    npcsBody.classList.toggle("collapsed");
-    npcsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-  });
-  if (locationsHeader) {
-    locationsHeader.addEventListener("click", function () {
-      locationsBody.classList.toggle("collapsed");
-      locationsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-    });
-  }
-  if (entitiesHeader) {
-    entitiesHeader.addEventListener("click", function () {
-      entitiesBody.classList.toggle("collapsed");
-      entitiesHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-    });
-  }
-  if (relationshipsHeader) {
-    relationshipsHeader.addEventListener("click", function () {
-      relationshipsBody.classList.toggle("collapsed");
-      relationshipsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+  // Collapse toggle for campaign details
+  if (campaignDetailsHeader) {
+    campaignDetailsHeader.addEventListener("click", function () {
+      campaignDetailsBody.classList.toggle("collapsed");
+      campaignDetailsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
     });
   }
   if (replacementsHeader) {
@@ -2610,6 +2541,24 @@
       replacementsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
     });
   }
+
+  // Campaign details tab switching
+  (function initCampaignDetailsTabs() {
+    var tabButtons = document.querySelectorAll(".campaign-details-tabs .summary-tab");
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var tabName = btn.getAttribute("data-detail-tab");
+        tabButtons.forEach(function (b) { b.classList.remove("active"); });
+        btn.classList.add("active");
+        document.querySelectorAll(".detail-tab-content").forEach(function (panel) {
+          panel.classList.remove("active");
+        });
+        var target = document.getElementById(tabName + "-tab");
+        if (target) target.classList.add("active");
+      });
+    });
+  })();
 
   // ── Word replacements UI ───────────────────────────────────
 
@@ -2680,7 +2629,7 @@
   if (addLocationForm) {
     addLocationForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!activeCampaignId || appMode !== "live") return;
+      if (!activeCampaignId) return;
 
       var nameInput = document.getElementById("new-location-name");
       var descInput = document.getElementById("new-location-desc");
@@ -2737,7 +2686,7 @@
   if (addEntityForm) {
     addEntityForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!activeCampaignId || appMode !== "live") return;
+      if (!activeCampaignId) return;
 
       var nameInput = document.getElementById("new-entity-name");
       var typeInput = document.getElementById("new-entity-type");
@@ -2800,7 +2749,7 @@
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving...";
 
-    if (appMode !== "live") return;
+    if (!activeCampaignId) return;
     fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2885,7 +2834,7 @@
         reqBody.old_type_key = relationshipEditOriginal.type_key;
       }
 
-      if (appMode !== "live") return;
+      if (!activeCampaignId) return;
       fetch(url, {
         method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -3028,19 +2977,6 @@
       transcriptionFeed.innerHTML = '<p class="placeholder">Select a session to view transcriptions.</p>';
       sessionSummaryEl.innerHTML = '<p class="placeholder">Select a session to view summary.</p>';
       campaignSummaryEl.innerHTML = '<p class="placeholder">Select a session to view campaign summary.</p>';
-      if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
-      if (addNpcBtn) addNpcBtn.classList.add("hidden");
-      if (addLocationBtn) addLocationBtn.classList.add("hidden");
-      if (addEntityBtn) addEntityBtn.classList.add("hidden");
-      if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
-      if (addNpcForm) addNpcForm.classList.add("hidden");
-      if (addLocationForm) addLocationForm.classList.add("hidden");
-      if (addEntityForm) addEntityForm.classList.add("hidden");
-      if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
-      if (relationshipEditParentsPanel) {
-        relationshipEditParentsPanel.classList.add("hidden");
-        relationshipEditParentsPanel.innerHTML = "";
-      }
       fetchBrowseCampaigns();
     } else {
       viewingHistorical = false;
@@ -3122,11 +3058,7 @@
       campaignSystemEl.textContent = "";
       campaignMasterEl.textContent = "";
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
-      playersSection.classList.add("hidden");
-      npcsSection.classList.add("hidden");
-      if (locationsSection) locationsSection.classList.add("hidden");
-      if (entitiesSection) entitiesSection.classList.add("hidden");
-      if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
@@ -3143,7 +3075,7 @@
         currentCampaign = campaign;
         activeCampaignId = campaign.id;
         renderCampaignBar(campaign);
-        campaignEditBtn.classList.add("hidden");
+        if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
         renderPlayers(campaign.players || []);
         renderNpcs(campaign.npcs || []);
         renderLocations(campaign.locations || []);
@@ -3152,18 +3084,6 @@
         if (replacementsSection && campaign.id) {
           replacementsSection.classList.remove("hidden");
           fetchWordReplacements(campaign.id);
-        }
-        addNpcBtn.classList.add("hidden");
-        if (addLocationBtn) addLocationBtn.classList.add("hidden");
-        if (addEntityBtn) addEntityBtn.classList.add("hidden");
-        addRelationshipBtn.classList.add("hidden");
-        addNpcForm.classList.add("hidden");
-        if (addLocationForm) addLocationForm.classList.add("hidden");
-        if (addEntityForm) addEntityForm.classList.add("hidden");
-        addRelationshipForm.classList.add("hidden");
-        if (relationshipEditParentsPanel) {
-          relationshipEditParentsPanel.classList.add("hidden");
-          relationshipEditParentsPanel.innerHTML = "";
         }
         renderBrowseCampaignList(browseCampaignsCache);
         fetchSessionList();

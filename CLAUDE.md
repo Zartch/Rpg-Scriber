@@ -94,15 +94,17 @@ config/
 
 ### Web UI Features
 
+- **Campaign Details**: panel colapsable con tabs internas (Players, NPCs, Locations, Entities, Relationships). Documentación detallada en [`docs/web-ui-entities.md`](docs/web-ui-entities.md)
 - **Campaign bar**: muestra/edita nombre, sistema, descripción, instrucciones (PATCH `/api/campaigns/{id}`)
-- **Players**: sección colapsable, edición inline (PUT `/api/campaigns/{id}/players/{pid}`)
-- **NPCs**: sección colapsable, edición inline + crear nuevos (POST/PUT `/api/campaigns/{id}/npcs`)
-- **Locations**: sección colapsable, edición inline + crear nuevos (POST/PUT `/api/campaigns/{id}/locations`)
-- **Relationships**: grafo de relaciones entre personajes (POST `/api/campaigns/{id}/relationships`)
+- **Players**: tab con edición inline (PUT `/api/campaigns/{id}/players/{pid}`)
+- **NPCs**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/npcs`)
+- **Locations**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/locations`)
+- **Entities**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/entities`)
+- **Relationships**: tab con grafo de relaciones entre personajes (POST `/api/campaigns/{id}/relationships`)
 - **Session sidebar**: lista sesiones con duración, indicador de resumen, preview
 - **Session history**: click en sesión histórica carga transcripciones + resumen desde DB
 - **Live mode**: WebSocket para transcripciones y resúmenes en tiempo real
-- **Browse mode**: navegar sesiones de cualquier campaña sin estar en sesión activa
+- **Browse mode**: navegar y editar sesiones de cualquier campaña sin estar en sesión activa
 - **Questions**: panel de preguntas pendientes del summarizer con respuesta inline
 - **Merge sessions**: seleccionar 2 sesiones completadas y fusionarlas en una (transcripciones + resúmenes concatenados); patrón tombstone con `merged_into`
 - **Campaign summaries**: resumen acumulado de campaña; botón "Generate" para generar bajo demanda (también genera resúmenes de sesión faltantes); "View all" abre `campaign-summaries.html` con historial completo
