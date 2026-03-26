@@ -174,6 +174,94 @@ def _persist_campaign_toml(config: Any) -> None:
     save_campaign_toml(config.campaign, campaign_path)
 
 
+async def _load_campaign_context_from_db(db, campaign_id: str):
+    """Build a full CampaignContext from the database.
+
+    Loads campaign metadata, players, NPCs, locations, entities,
+    relationship types, relationships and campaign_summary so the
+    summarizer has the complete picture for extraction / generation.
+
+    Returns ``None`` if the campaign is not found.
+    """
+    from rpg_scribe.core.models import (
+        CampaignContext,
+        CharacterRelationshipInfo,
+        EntityInfo,
+        LocationInfo,
+        NPCInfo,
+        PlayerInfo,
+        RelationshipTypeInfo,
+    )
+
+    camp_row = await db.get_campaign(campaign_id)
+    if not camp_row:
+        return None
+
+    players_rows = await db.get_players(campaign_id)
+    npcs_rows = await db.get_npcs(campaign_id)
+    locations_rows = await db.get_locations(campaign_id)
+    entities_rows = await db.get_entities(campaign_id)
+    rel_types_rows = await db.get_relationship_types(campaign_id)
+    rels_rows = await db.get_character_relationships(campaign_id)
+
+    return CampaignContext(
+        campaign_id=campaign_id,
+        name=camp_row.get("name", ""),
+        game_system=camp_row.get("game_system", ""),
+        language=camp_row.get("language", "es"),
+        description=camp_row.get("description", ""),
+        custom_instructions=camp_row.get("custom_instructions", ""),
+        campaign_summary=camp_row.get("campaign_summary", ""),
+        dm_speaker_id=camp_row.get("dm_speaker_id", ""),
+        speaker_map=camp_row.get("speaker_map") or {},
+        players=[
+            PlayerInfo(
+                discord_id=p.get("discord_id", ""),
+                discord_name=p.get("discord_name", ""),
+                character_name=p.get("character_name", ""),
+                character_description=p.get("character_description", ""),
+            )
+            for p in players_rows
+        ],
+        known_npcs=[
+            NPCInfo(name=n.get("name", ""), description=n.get("description", ""))
+            for n in npcs_rows
+        ],
+        locations=[
+            LocationInfo(
+                name=loc.get("name", ""), description=loc.get("description", "")
+            )
+            for loc in locations_rows
+        ],
+        entities=[
+            EntityInfo(
+                name=e.get("name", ""),
+                entity_type=e.get("entity_type", "group"),
+                description=e.get("description", ""),
+            )
+            for e in entities_rows
+        ],
+        relation_types=[
+            RelationshipTypeInfo(
+                key=rt.get("canonical_key", ""),
+                label=rt.get("label", ""),
+                category=rt.get("category", "general"),
+            )
+            for rt in rel_types_rows
+        ],
+        relationships=[
+            CharacterRelationshipInfo(
+                source_key=r.get("source_key", ""),
+                target_key=r.get("target_key", ""),
+                relation_type_key=r.get("type_key", ""),
+                relation_type_label=r.get("type_label", ""),
+                notes=r.get("notes", ""),
+            )
+            for r in rels_rows
+        ],
+    )
+
+
 def _logs_root() -> Path:
     """Return the base logs directory."""
     return Path("logs").resolve()
@@ -772,50 +860,13 @@ async def generate_session_summary(session_id: str) -> dict[str, Any]:
 
     config = _get_config()
 
-    from rpg_scribe.core.models import (
-        CampaignContext,
-        LocationInfo,
-        PlayerInfo,
-        SummarizerConfig,
-    )
+    from rpg_scribe.core.models import CampaignContext, SummarizerConfig
     from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
 
     campaign = None
-    if config is not None and getattr(config, "campaign", None):
-        campaign = config.campaign
-    else:
-        campaign_id = session.get("campaign_id")
-        if campaign_id:
-            camp_row = await db.get_campaign(campaign_id)
-            if camp_row:
-                players_rows = await db.get_players(campaign_id)
-                locations_rows = await db.get_locations(campaign_id)
-                campaign = CampaignContext(
-                    campaign_id=campaign_id,
-                    name=camp_row.get("name", ""),
-                    game_system=camp_row.get("game_system", ""),
-                    language=camp_row.get("language", "es"),
-                    description=camp_row.get("description", ""),
-                    custom_instructions=camp_row.get("custom_instructions", ""),
-                    players=[
-                        PlayerInfo(
-                            discord_id=p.get("discord_id", ""),
-                            discord_name=p.get("discord_name", ""),
-                            character_name=p.get("character_name", ""),
-                            character_description=p.get("character_description", ""),
-                        )
-                        for p in players_rows
-                    ],
-                    locations=[
-                        LocationInfo(
-                            name=loc.get("name", ""),
-                            description=loc.get("description", ""),
-                        )
-                        for loc in locations_rows
-                    ],
-                    speaker_map=camp_row.get("speaker_map") or {},
-                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
-                )
+    campaign_id = session.get("campaign_id")
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
     if campaign is None:
         campaign = CampaignContext.create_generic()
 
@@ -867,51 +918,13 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
             detail="No transcriptions found for this session",
         )
 
-    from rpg_scribe.core.models import (
-        CampaignContext,
-        LocationInfo,
-        PlayerInfo,
-        SummarizerConfig,
-    )
+    from rpg_scribe.core.models import CampaignContext, SummarizerConfig
     from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
 
-    # Prefer in-memory campaign; fall back to loading from DB
     campaign = None
-    if config is not None and getattr(config, "campaign", None):
-        campaign = config.campaign
-    else:
-        campaign_id = session.get("campaign_id")
-        if campaign_id:
-            camp_row = await db.get_campaign(campaign_id)
-            if camp_row:
-                players_rows = await db.get_players(campaign_id)
-                locations_rows = await db.get_locations(campaign_id)
-                campaign = CampaignContext(
-                    campaign_id=campaign_id,
-                    name=camp_row.get("name", ""),
-                    game_system=camp_row.get("game_system", ""),
-                    language=camp_row.get("language", "es"),
-                    description=camp_row.get("description", ""),
-                    custom_instructions=camp_row.get("custom_instructions", ""),
-                    players=[
-                        PlayerInfo(
-                            discord_id=p.get("discord_id", ""),
-                            discord_name=p.get("discord_name", ""),
-                            character_name=p.get("character_name", ""),
-                            character_description=p.get("character_description", ""),
-                        )
-                        for p in players_rows
-                    ],
-                    locations=[
-                        LocationInfo(
-                            name=loc.get("name", ""),
-                            description=loc.get("description", ""),
-                        )
-                        for loc in locations_rows
-                    ],
-                    speaker_map=camp_row.get("speaker_map") or {},
-                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
-                )
+    campaign_id = session.get("campaign_id")
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
     if campaign is None:
         campaign = CampaignContext.create_generic()
     summarizer_config = (
@@ -2652,23 +2665,21 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
 async def extract_entities(session_id: str) -> dict[str, Any]:
     """Trigger entity extraction (NPCs, locations, relationships) for a session.
 
-    Works for both the active live session and historical sessions.
-    For the active session, uses the in-memory session summary.
-    For historical sessions, loads the saved summary from the database.
+    Always loads the campaign that owns the session from the database so
+    that extraction works in browse mode (no ``--campaign`` flag).
+    For the active session, uses the in-memory session summary; for
+    historical sessions, loads the saved summary from the database.
     """
     state = _get_state()
     db = _get_database()
     config = _get_config()
     event_bus = _get_event_bus()
 
-    if config is None or not getattr(config, "campaign", None):
-        return {"ok": False, "error": "No campaign configured"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
 
-    campaign = config.campaign
-
-    # Determine session summary to use
+    # ── Load session row (needed for both summary and campaign_id) ──
+    session_row = None
     if session_id == state.active_session_id:
         session_summary = state.session_summary
     else:
@@ -2683,12 +2694,32 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
     if not session_summary:
         return {"ok": False, "error": "No session summary available to extract from"}
 
+    # ── Always load campaign from DB for the session's campaign_id ──
+    # This ensures extraction works in browse mode (generic startup).
+    campaign_id = None
+    if session_row:
+        campaign_id = session_row.get("campaign_id")
+    elif state.active_campaign:
+        campaign_id = state.active_campaign.get("id")
+
+    campaign = None
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
+    if campaign is None:
+        return {"ok": False, "error": "No campaign found for this session"}
+
     try:
         from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+        from rpg_scribe.core.models import SummarizerConfig
 
+        summarizer_config = (
+            config.summarizer
+            if config is not None and getattr(config, "summarizer", None)
+            else SummarizerConfig()
+        )
         summarizer = ClaudeSummarizer(
             event_bus,
-            config.summarizer,
+            summarizer_config,
             campaign,
             database=db,
         )
@@ -2705,6 +2736,7 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
                     session_id=session_id,
                     new_npcs=tuple(results["new_npcs"]),
                     new_locations=tuple(results["new_locations"]),
+                    new_entities=tuple(results["new_entities"]),
                     new_relationships=tuple(results["new_relationships"]),
                 )
             )

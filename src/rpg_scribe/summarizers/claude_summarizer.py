@@ -71,7 +71,9 @@ RELACIONES CONOCIDAS:
 {custom_instructions}
 
 INSTRUCCIONES:
-1. Escribe en tercera persona, estilo narrativo.
+1. Escribe en tercera persona, estilo narrativo. Los personajes \
+jugadores (PJs) son los PROTAGONISTAS de la historia — el relato \
+debe centrarse en sus acciones, decisiones y experiencias.
 2. Distingue entre lo que dicen los personajes (in-game) y las \
 conversaciones de los jugadores (meta-rol). El meta-rol NO va \
 en el resumen narrativo, pero puedes anotarlo como [META] si \
@@ -80,7 +82,8 @@ es relevante (decisiones de grupo, dudas de reglas, etc.).
 de escena. Cuando habla el DM, su texto puede ser ambientación, \
 resultados de tiradas, consecuencias de acciones, eventos del mundo \
 o interpretación de distintos PNJs. No lo atribuyas automáticamente \
-a un único PNJ sin evidencia contextual.
+a un único PNJ sin evidencia contextual. Las líneas del DM marcadas \
+con [MASTER] en la transcripción indican que es el director narrando.
 4. Mantén el resumen coherente y fluido. Reescribe secciones \
 anteriores si nueva información las clarifica.
 5. Si algo no está claro, márcalo con [PREGUNTA: ...].
@@ -247,11 +250,24 @@ Genera la continuación empezando desde la última escena (reescríbela si \
 necesita completarse) y las escenas nuevas. Sin explicaciones adicionales."""
 
 EXTRACTION_USER = """\
-A partir del siguiente resumen de sesión, extrae:
-- PNJs nuevos
-- Localizaciones nuevas
-- Entidades nuevas (clanes, corporaciones, facciones, grupos...)
-- Relaciones nuevas entre entidades de campaña
+A partir del siguiente resumen de sesión, extrae TODOS los elementos \
+narrativos relevantes:
+
+1. **PNJs nuevos**: cualquier personaje con nombre propio que NO sea un jugador
+2. **Localizaciones nuevas**: lugares con nombre propio mencionados
+3. **Entidades nuevas**: corporaciones, facciones, clanes, grupos, organizaciones, \
+fuerzas militares/policiales, o cualquier entidad con nombre propio que no sea \
+un personaje individual ni un lugar. IMPORTANTE: incluye TODA corporación, grupo \
+u organización mencionada, aunque parezca secundaria o de contexto.
+4. **Relaciones nuevas**: vínculos entre personajes, organizaciones y lugares
+
+REGLA CRÍTICA: Si una entidad aparece en una relación (source o target), \
+DEBE existir previamente en las listas de NPCs, localizaciones o entidades \
+(ya conocidas o recién extraídas en esta respuesta). No crees relaciones \
+que referencien entidades que no existen en ninguna lista.
+
+JUGADORES (NO son PNJs, no los extraigas como NPCs):
+{players_block}
 
 RESUMEN DE LA SESIÓN:
 {session_summary}
@@ -273,7 +289,7 @@ texto adicional antes o después:
 
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
 "locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
-"entities": [{{"name": "Nombre de la entidad", "entity_type": "clan|corporacion|faccion|grupo", "description": "Breve descripción"}}], \
+"entities": [{{"name": "Nombre de la entidad", "entity_type": "corporacion|faccion|clan|grupo|fuerza|otro", "description": "Breve descripción"}}], \
 "relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
 "target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
 "relation_type": "aliado de|enemigo de|miembro de...", \
@@ -331,13 +347,40 @@ class ClaudeSummarizer(BaseSummarizer):
     # ------------------------------------------------------------------
 
     def _build_players_block(self) -> str:
-        """Build player→character mapping lines."""
-        lines = [
-            f"- {p.discord_name} juega como {p.character_name}"
-            + (f" ({p.character_description})" if p.character_description else "")
-            for p in self.campaign.players
-        ] or ["(ninguno registrado)"]
-        return "\n".join(lines)
+        """Build player→character mapping lines.
+
+        Separates the DM/master from player characters (protagonists) so the
+        summariser clearly understands who drives the narrative vs. who narrates.
+        """
+        dm_id = self.campaign.dm_speaker_id or ""
+        dm_lines: list[str] = []
+        pc_lines: list[str] = []
+
+        for p in self.campaign.players:
+            desc = f" — {p.character_description}" if p.character_description else ""
+            if dm_id and p.discord_id == dm_id:
+                dm_lines.append(
+                    f"- {p.discord_name} es el Director de Juego (DM/Master). "
+                    "Narra las escenas, describe el entorno, interpreta a todos "
+                    "los PNJs y controla los eventos del mundo."
+                )
+            else:
+                pc_lines.append(
+                    f"- {p.discord_name} juega como {p.character_name} "
+                    f"(personaje jugador / protagonista){desc}"
+                )
+
+        if not pc_lines:
+            pc_lines = ["(ninguno registrado)"]
+
+        parts: list[str] = []
+        if dm_lines:
+            parts.append("DIRECTOR DE JUEGO:\n" + "\n".join(dm_lines))
+        parts.append(
+            "PERSONAJES JUGADORES (protagonistas de la historia):\n"
+            + "\n".join(pc_lines)
+        )
+        return "\n".join(parts)
 
     def _build_npcs_block(self) -> str:
         """Build known NPC lines."""
@@ -1288,8 +1331,16 @@ class ClaudeSummarizer(BaseSummarizer):
             for rel in self.campaign.relationships
         ] or ["(ninguna)"]
 
+        # Build a simple player list so the LLM knows who is a PC (not NPC)
+        players_lines = [
+            f"- {p.discord_name} juega como {p.character_name}"
+            for p in self.campaign.players
+            if p.character_name
+        ] or ["(ninguno registrado)"]
+
         user_msg = EXTRACTION_USER.format(
             session_summary=session_summary,
+            players_block="\n".join(players_lines),
             known_npcs="\n".join(known_npcs_lines),
             known_locations="\n".join(known_locations_lines),
             known_entities="\n".join(known_entities_lines),
@@ -1399,6 +1450,31 @@ class ClaudeSummarizer(BaseSummarizer):
                     return relation_seed_map.get(candidate.casefold(), "")
                 return ""
 
+            # ── Auto-create entities referenced in relationships ──
+            async def _ensure_entity_from_key(key: str) -> None:
+                """If key is ent:Name and the entity doesn't exist, create it."""
+                if not key.startswith("ent:"):
+                    return
+                ent_name = key[4:].strip()
+                if not ent_name:
+                    return
+                if await self._database.entity_exists(
+                    self.campaign.campaign_id, ent_name
+                ):
+                    return
+                await self._database.save_entity(
+                    campaign_id=self.campaign.campaign_id,
+                    name=ent_name,
+                    entity_type="group",
+                    description="",
+                    first_seen_session=session_id,
+                )
+                self.campaign.entities.append(
+                    EntityInfo(name=ent_name, entity_type="group", description="")
+                )
+                relation_seed_map[ent_name.casefold()] = f"ent:{ent_name}"
+                results["new_entities"].append(ent_name)
+
             # ── Relationships ──────────────────────────────────────
             for rel in extracted["relationships"]:
                 source_key = _resolve_relation_key(
@@ -1418,6 +1494,9 @@ class ClaudeSummarizer(BaseSummarizer):
                 if not source_key or not target_key or not relation_type:
                     continue
                 try:
+                    # Auto-create entities referenced in relationships
+                    await _ensure_entity_from_key(source_key)
+                    await _ensure_entity_from_key(target_key)
                     await self._database.save_character_relationship(
                         self.campaign.campaign_id,
                         source_key,
@@ -1456,6 +1535,7 @@ class ClaudeSummarizer(BaseSummarizer):
                     session_id=self._session_id,
                     new_npcs=tuple(results["new_npcs"]),
                     new_locations=tuple(results["new_locations"]),
+                    new_entities=tuple(results["new_entities"]),
                     new_relationships=tuple(results["new_relationships"]),
                 )
             )

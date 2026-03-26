@@ -1068,3 +1068,94 @@ header h1 { font-size: 1.25rem; }
 .detail-tab-content.active {
   display: block;
 }
+
+/* Loading States & UX Components */
+
+/* Spinner animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Inline spinner for buttons */
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.4em;
+  animation: spin 0.6s linear infinite;
+}
+
+.btn-small .spinner-inline {
+  width: 12px;
+  height: 12px;
+}
+
+/* Panel loading overlay */
+.panel-loadable {
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 17, 23, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: inherit;
+}
+
+.loading-overlay .spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid transparent;
+  border-top: 3px solid #ffffff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Skeleton shimmer effect */
+.skeleton-line {
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-block {
+  height: 3em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-line + .skeleton-line,
+.skeleton-block + .skeleton-line,
+.skeleton-line + .skeleton-block,
+.skeleton-block + .skeleton-block {
+  margin-top: 0.5rem;
+}
+
+/* Natural width variation for skeleton lines */
+.skeleton-line:nth-child(odd) { width: 85%; }
+.skeleton-line:nth-child(even) { width: 65%; }
+
+/* Content refresh state (for polling updates) */
+.content-refreshing {
+  opacity: 0.5;
+  filter: blur(1px);
+  pointer-events: none;
+  transition: opacity 0.2s, filter 0.2s;
+}

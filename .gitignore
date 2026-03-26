@@ -16,6 +16,7 @@ build/
 .superpowers/
 logs/
 exports/
+data/
 *.db
 *.sqlite
 *.sqlite3

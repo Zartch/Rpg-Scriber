@@ -76,6 +76,7 @@ class EntitiesUpdatedEvent:
     session_id: str
     new_npcs: tuple[str, ...]  # Names of newly-saved NPCs
     new_locations: tuple[str, ...]  # Names of newly-saved locations
+    new_entities: tuple[str, ...]  # Names of newly-saved entities (groups, factions…)
     new_relationships: tuple[str, ...]  # "source -> target: type" labels
     timestamp: float = field(default_factory=time.time)
 

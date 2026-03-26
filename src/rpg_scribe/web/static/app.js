@@ -25,6 +25,7 @@
   var browseCampaignListEl = document.getElementById("browse-campaign-list");
   var sessionsTitleEl = document.getElementById("sessions-title");
   var statusPanel = document.getElementById("status-panel");
+  var summaryPanel = document.getElementById("summary-panel");
   var questionsPanel = document.getElementById("questions-panel");
   var sessionLogLinkEl = document.getElementById("session-log-link");
   var sessionExportListEl = document.getElementById("session-export-list");
@@ -122,6 +123,7 @@
   var appMode = "live";         // live | browse
   var browseCampaignId = null;
   var UNCATEGORIZED_BROWSE_ID = "__uncategorized__";
+  var sessionListLoaded = false; // flag for skeleton loading on first fetch
   var browseCampaignsCache = [];
   var relationshipGraphVisible = false;
   var relationshipNodePositions = {};
@@ -132,6 +134,96 @@
   var relationshipEditOriginal = null;
   var mergeMode = false;
   var mergeSelected = [];  // session objects selected for merge (max 2)
+
+  // Loading state helpers
+
+  function createSpinner() {
+    var el = document.createElement("span");
+    el.className = "spinner-inline";
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  }
+
+  function withLoading(btn, asyncFn, options) {
+    options = options || {};
+    var originalHTML = btn.innerHTML;
+    var originalDisabled = btn.disabled;
+
+    btn.disabled = true;
+    btn.innerHTML = "";
+    btn.appendChild(createSpinner());
+    btn.appendChild(document.createTextNode(options.loadingText || "Loading..."));
+
+    var promise = asyncFn();
+
+    promise.finally(function() {
+      btn.disabled = originalDisabled;
+      btn.innerHTML = originalHTML;
+    });
+
+    return promise;
+  }
+
+  function withPanelLoading(container, asyncFn) {
+    // Ensure container has relative positioning
+    if (!container.classList.contains('panel-loadable')) {
+      container.classList.add('panel-loadable');
+    }
+
+    // Create overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    var spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    overlay.appendChild(spinner);
+    container.appendChild(overlay);
+
+    var promise = asyncFn();
+
+    promise.finally(function() {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    });
+
+    return promise;
+  }
+
+  function showSkeleton(container, lineCount) {
+    lineCount = lineCount || 3;
+    // Store original content if not already stored
+    if (!container.dataset.preSkeletonContent) {
+      container.dataset.preSkeletonContent = container.innerHTML;
+    }
+
+    var skeletonHTML = "";
+    for (var i = 0; i < lineCount; i++) {
+      skeletonHTML += '<div class="skeleton-line"></div>';
+    }
+    container.innerHTML = skeletonHTML;
+  }
+
+  function hideSkeleton(container) {
+    // Remove skeleton elements
+    var skeletonElements = container.querySelectorAll('.skeleton-line, .skeleton-block');
+    for (var i = 0; i < skeletonElements.length; i++) {
+      skeletonElements[i].remove();
+    }
+
+    // Restore original content if available
+    if (container.dataset.preSkeletonContent) {
+      container.innerHTML = container.dataset.preSkeletonContent;
+      delete container.dataset.preSkeletonContent;
+    }
+  }
+
+  function setRefreshing(container, active) {
+    if (active) {
+      container.classList.add('content-refreshing');
+    } else {
+      container.classList.remove('content-refreshing');
+    }
+  }
 
   // WebSocket
 
@@ -321,11 +413,17 @@
     var entry = btn.closest(".feed-entry");
     if (!entry) return;
     if (!confirm("¿Eliminar esta transcripción?")) return;
-    resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
-      fetch("/api/transcriptions/" + id, { method: "DELETE" })
-        .then(function (r) { if (r.ok) entry.remove(); });
-    });
+
+    withLoading(btn, function () {
+      return resolveTranscriptionId(entry).then(function (id) {
+        if (!id) return Promise.reject(new Error("No transcription ID"));
+        return fetch("/api/transcriptions/" + id, { method: "DELETE" })
+          .then(function (r) {
+            if (r.ok) entry.remove();
+            else return Promise.reject(new Error("Delete failed"));
+          });
+      });
+    }, { loadingText: "Eliminando..." });
   });
 
   // ── META toggle ───────────────────────────────────────────
@@ -337,8 +435,13 @@
     if (!entry) return;
     var currentlyIngame = entry.dataset.isIngame !== "false";
     var newIngame = !currentlyIngame;
+
+    setRefreshing(entry, true);
     resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
+      if (!id) {
+        setRefreshing(entry, false);
+        return;
+      }
       fetch("/api/transcriptions/" + id + "/meta", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -352,6 +455,8 @@
             entry.classList.add("meta");
           }
         }
+      }).finally(function () {
+        setRefreshing(entry, false);
       });
     });
   });
@@ -444,38 +549,59 @@
   function saveWordEdit(entry, wordIndex, originalWord, newWord, alwaysReplace) {
     // Update the span immediately
     var wordSpans = entry.querySelectorAll(".editable-word");
+    var targetWordSpan = null;
     for (var i = 0; i < wordSpans.length; i++) {
       if (parseInt(wordSpans[i].dataset.wordIndex, 10) === wordIndex) {
+        targetWordSpan = wordSpans[i];
         wordSpans[i].textContent = newWord;
         break;
       }
+    }
+
+    // Add refreshing state to the word span
+    if (targetWordSpan) {
+      setRefreshing(targetWordSpan, true);
     }
 
     // Rebuild full text
     var textSpan = entry.querySelector(".transcription-text");
     var fullText = textSpan ? textSpan.textContent : "";
 
-    resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
-      fetch("/api/transcriptions/" + id, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: fullText,
-          edits: [{ original: originalWord, "new": newWord, position: wordIndex }],
-        }),
-      });
+    var promises = [];
 
-      if (alwaysReplace && activeCampaignId) {
-        fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements", {
-          method: "POST",
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) {
+        if (targetWordSpan) setRefreshing(targetWordSpan, false);
+        return;
+      }
+
+      promises.push(
+        fetch("/api/transcriptions/" + id, {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            original_word: originalWord,
-            replacement_word: newWord,
+            text: fullText,
+            edits: [{ original: originalWord, "new": newWord, position: wordIndex }],
           }),
-        });
+        })
+      );
+
+      if (alwaysReplace && activeCampaignId) {
+        promises.push(
+          fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              original_word: originalWord,
+              replacement_word: newWord,
+            }),
+          })
+        );
       }
+
+      Promise.all(promises).finally(function () {
+        if (targetWordSpan) setRefreshing(targetWordSpan, false);
+      });
     });
   }
 
@@ -518,27 +644,24 @@
     btn.onclick = sessionId ? function () {
       clearLog(sessionChronologyTab);
       addLogEntry(sessionChronologyTab, "Generating chronology...");
-      btn.disabled = true;
-      btn.textContent = "Generating...";
-      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-chronology", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.session_chronology) {
-            renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sessionId);
-            addLogEntry(sessionChronologyTab, "Chronology generated");
-          } else {
-            addLogEntry(sessionChronologyTab, "Error: no chronology returned");
-          }
-          btn.disabled = false;
-          btn.textContent = "Generate Chronology";
+
+      withLoading(btn, function () {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-chronology", {
+          method: "POST",
         })
-        .catch(function () {
-          addLogEntry(sessionChronologyTab, "Error: request failed");
-          btn.disabled = false;
-          btn.textContent = "Generate Chronology";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.session_chronology) {
+              renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sessionId);
+              addLogEntry(sessionChronologyTab, "Chronology generated");
+            } else {
+              addLogEntry(sessionChronologyTab, "Error: no chronology returned");
+            }
+          })
+          .catch(function () {
+            addLogEntry(sessionChronologyTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     } : null;
   }
 
@@ -660,6 +783,8 @@
     var payload = {};
     payload[bodyKey] = fullText;
 
+    setRefreshing(container, true);
+
     fetch(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -670,6 +795,9 @@
       })
       .catch(function (err) {
         console.error("Failed to save summary:", err);
+      })
+      .finally(function () {
+        setRefreshing(container, false);
       });
   }
 
@@ -1020,23 +1148,19 @@
         else if (kind === "entities") endpoint = "/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(id);
         if (!endpoint) return;
 
-        btn.disabled = true;
-        btn.textContent = "Saving...";
-        fetch(endpoint, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) fetchCampaignInfo();
-            else alert("Error: " + (data.error || "Unknown error"));
+        withLoading(btn, function () {
+          return fetch(endpoint, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
           })
-          .catch(function () { alert("Failed to update merged alias."); })
-          .finally(function () {
-            btn.disabled = false;
-            btn.textContent = "Save Alias";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to update merged alias."); });
+        }, { loadingText: "Saving..." });
       });
     });
   }
@@ -1044,7 +1168,8 @@
   // Campaign info
 
   function fetchCampaignInfo() {
-    fetch("/api/campaigns")
+    withPanelLoading(campaignBar, function () {
+      return fetch("/api/campaigns")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.campaign) {
@@ -1101,6 +1226,7 @@
         }
       })
       .catch(function () {});
+    });
   }
 
   function renderCampaignBar(campaign) {
@@ -1189,31 +1315,27 @@
     };
 
     var saveBtn = campaignEditForm.querySelector(".btn-save");
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
 
-    fetch("/api/campaigns/" + activeCampaignId, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.ok && data.campaign) {
-          currentCampaign = data.campaign;
-          renderCampaignBar(data.campaign);
-          closeCampaignEdit();
-        } else {
-          alert("Error: " + (data.error || "Unknown error"));
-        }
+    withLoading(saveBtn, function () {
+      return fetch("/api/campaigns/" + activeCampaignId, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       })
-      .catch(function () {
-        alert("Failed to save campaign changes.");
-      })
-      .finally(function () {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save";
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok && data.campaign) {
+            currentCampaign = data.campaign;
+            renderCampaignBar(data.campaign);
+            closeCampaignEdit();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () {
+          alert("Failed to save campaign changes.");
+        });
+    }, { loadingText: "Saving..." });
   }
 
   campaignEditBtn.addEventListener("click", openCampaignEdit);
@@ -1280,28 +1402,25 @@
           character_description: formEl.querySelector(".edit-char-desc").value.trim(),
         };
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
         if (!activeCampaignId) return;
-        fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) {
-              fetchCampaignInfo();
-            } else {
-              alert("Error: " + (data.error || "Unknown error"));
-            }
+
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save player."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                fetchCampaignInfo();
+              } else {
+                alert("Error: " + (data.error || "Unknown error"));
+              }
+            })
+            .catch(function () { alert("Failed to save player."); });
+        }, { loadingText: "Saving..." });
       });
 
       playersList.appendChild(card);
@@ -1374,25 +1493,22 @@
           description: formEl.querySelector(".edit-npc-desc").value.trim(),
         };
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
         if (!activeCampaignId) return;
-        fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) { fetchCampaignInfo(); }
-            else { alert("Error: " + (data.error || "Unknown error")); }
+
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save NPC."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) { fetchCampaignInfo(); }
+              else { alert("Error: " + (data.error || "Unknown error")); }
+            })
+            .catch(function () { alert("Failed to save NPC."); });
+        }, { loadingText: "Saving..." });
       });
 
       var mergeNpcBtn = formEl.querySelector(".btn-merge-entity");
@@ -1414,26 +1530,22 @@
             alert("Select a merge target first.");
             return;
           }
-          mergeNpcBtn.disabled = true;
-          mergeNpcBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: n.name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeNpcBtn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: n.name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge NPC."); })
-            .finally(function () {
-              mergeNpcBtn.disabled = false;
-              mergeNpcBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge NPC."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
@@ -1456,23 +1568,19 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
 
@@ -1561,24 +1669,20 @@
         };
         if (!reqBody.name) return;
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
-        fetch("/api/campaigns/" + activeCampaignId + "/locations", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) { fetchCampaignInfo(); }
-            else { alert("Error: " + (data.error || "Unknown error")); }
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save location."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) { fetchCampaignInfo(); }
+              else { alert("Error: " + (data.error || "Unknown error")); }
+            })
+            .catch(function () { alert("Failed to save location."); });
+        }, { loadingText: "Saving..." });
       });
 
       var mergeLocBtn = formEl.querySelector(".btn-merge-entity");
@@ -1600,26 +1704,22 @@
             alert("Select a merge target first.");
             return;
           }
-          mergeLocBtn.disabled = true;
-          mergeLocBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeLocBtn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge location."); })
-            .finally(function () {
-              mergeLocBtn.disabled = false;
-              mergeLocBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge location."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
@@ -1642,23 +1742,19 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
 
@@ -1756,24 +1852,19 @@
           if (!reqBody.entity_type) reqBody.entity_type = "group";
 
           var saveBtn = form.querySelector(".btn-save");
-          saveBtn.disabled = true;
-          saveBtn.textContent = "Saving...";
-
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/" + ent.id, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) { fetchCampaignInfo(); }
-              else { alert("Error: " + (data.error || "Unknown error")); }
+          withLoading(saveBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/" + ent.id, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update entity."); })
-            .finally(function () {
-              saveBtn.disabled = false;
-              saveBtn.textContent = "Save";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) { fetchCampaignInfo(); }
+                else { alert("Error: " + (data.error || "Unknown error")); }
+              })
+              .catch(function () { alert("Failed to update entity."); });
+          }, { loadingText: "Saving..." });
         });
       }
 
@@ -1796,26 +1887,22 @@
             alert("Select a merge target first.");
             return;
           }
-          mergeEntBtn.disabled = true;
-          mergeEntBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: ent.name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeEntBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: ent.name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge entity."); })
-            .finally(function () {
-              mergeEntBtn.disabled = false;
-              mergeEntBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge entity."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
@@ -1840,23 +1927,19 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
 
@@ -2452,26 +2535,22 @@
             alert("Select a merge target first.");
             return;
           }
-          mergeTypeConfirmBtn.disabled = true;
-          mergeTypeConfirmBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_type_key: typeKey,
-              target_type_key: targetTypeKey,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeTypeConfirmBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_type_key: typeKey,
+                target_type_key: targetTypeKey,
+              }),
             })
-            .catch(function () { alert("Failed to merge relationship type."); })
-            .finally(function () {
-              mergeTypeConfirmBtn.disabled = false;
-              mergeTypeConfirmBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge relationship type."); });
+          }, { loadingText: "Merging..." });
         });
       }
       relationshipsList.appendChild(card);
@@ -2563,51 +2642,53 @@
   // ── Word replacements UI ───────────────────────────────────
 
   function fetchWordReplacements(campaignId) {
-    fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var rules = data.replacements || [];
-        if (replacementsCount) replacementsCount.textContent = "(" + rules.length + ")";
-        replacementsList.innerHTML = "";
-        if (rules.length === 0) {
-          replacementsList.innerHTML = '<p class="placeholder">No replacement rules.</p>';
-          return;
-        }
-        rules.forEach(function (rule) {
-          var row = document.createElement("div");
-          row.className = "replacement-row";
-          row.innerHTML =
-            '<span class="replacement-original">' + escapeHtml(rule.original_word) + "</span>" +
-            '<span class="replacement-arrow">\u2192</span>' +
-            '<span class="replacement-new">' + escapeHtml(rule.replacement_word) + "</span>" +
-            '<button class="replacement-delete" title="Eliminar">\u2717</button>';
-          row.querySelector(".replacement-delete").addEventListener("click", function () {
-            fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements/" + rule.id, {
-              method: "DELETE",
-            }).then(function () { fetchWordReplacements(campaignId); });
+    withPanelLoading(replacementsSection, function () {
+      return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var rules = data.replacements || [];
+          if (replacementsCount) replacementsCount.textContent = "(" + rules.length + ")";
+          replacementsList.innerHTML = "";
+          if (rules.length === 0) {
+            replacementsList.innerHTML = '<p class="placeholder">No replacement rules.</p>';
+            return;
+          }
+          rules.forEach(function (rule) {
+            var row = document.createElement("div");
+            row.className = "replacement-row";
+            row.innerHTML =
+              '<span class="replacement-original">' + escapeHtml(rule.original_word) + "</span>" +
+              '<span class="replacement-arrow">\u2192</span>' +
+              '<span class="replacement-new">' + escapeHtml(rule.replacement_word) + "</span>" +
+              '<button class="replacement-delete" title="Eliminar">\u2717</button>';
+            row.querySelector(".replacement-delete").addEventListener("click", function (e) {
+              var btn = e.target;
+              withLoading(btn, function () {
+                return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements/" + rule.id, {
+                  method: "DELETE",
+                }).then(function () { fetchWordReplacements(campaignId); });
+              }, { loadingText: "×" });
+            });
+            replacementsList.appendChild(row);
           });
-          replacementsList.appendChild(row);
         });
-      });
+    });
   }
 
   if (applyReplacementsBtn) {
     applyReplacementsBtn.addEventListener("click", function () {
       if (!activeCampaignId) return;
-      applyReplacementsBtn.disabled = true;
-      applyReplacementsBtn.textContent = "Applying\u2026";
-      fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements/apply", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          alert("Modified " + (data.modified_count || 0) + " transcription(s).");
+
+      withLoading(applyReplacementsBtn, function () {
+        return fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements/apply", {
+          method: "POST",
         })
-        .catch(function () { alert("Error applying replacements."); })
-        .finally(function () {
-          applyReplacementsBtn.disabled = false;
-          applyReplacementsBtn.textContent = "Apply All Retroactively";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            alert("Modified " + (data.modified_count || 0) + " transcription(s).");
+          })
+          .catch(function () { alert("Error applying replacements."); });
+      }, { loadingText: "Applying\u2026" });
     });
   }
 
@@ -2640,31 +2721,26 @@
       if (!reqBody.name) return;
 
       var saveBtn = addLocationForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
-      fetch("/api/campaigns/" + activeCampaignId + "/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (nameInput) nameInput.value = "";
-            if (descInput) descInput.value = "";
-            addLocationForm.classList.add("hidden");
-            addLocationBtn.classList.remove("hidden");
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      withLoading(saveBtn, function () {
+        return fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to add location."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-      });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (nameInput) nameInput.value = "";
+              if (descInput) descInput.value = "";
+              addLocationForm.classList.add("hidden");
+              addLocationBtn.classList.remove("hidden");
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to add location."); });
+      }, { loadingText: "Saving..." });
     });
   }
 
@@ -2700,32 +2776,27 @@
       if (!reqBody.entity_type) reqBody.entity_type = "group";
 
       var saveBtn = addEntityForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
-      fetch("/api/campaigns/" + activeCampaignId + "/entities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (nameInput) nameInput.value = "";
-            if (typeInput) typeInput.value = "group";
-            if (descInput) descInput.value = "";
-            addEntityForm.classList.add("hidden");
-            addEntityBtn.classList.remove("hidden");
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      withLoading(saveBtn, function () {
+        return fetch("/api/campaigns/" + activeCampaignId + "/entities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to add entity."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (nameInput) nameInput.value = "";
+              if (typeInput) typeInput.value = "group";
+              if (descInput) descInput.value = "";
+              addEntityForm.classList.add("hidden");
+              addEntityBtn.classList.remove("hidden");
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to add entity."); });
+      }, { loadingText: "Saving..." });
     });
   }
   // Add NPC form
@@ -2746,32 +2817,27 @@
     };
     if (!reqBody.name) return;
     var saveBtn = addNpcForm.querySelector(".btn-save");
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
-
     if (!activeCampaignId) return;
-    fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reqBody),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.ok) {
-          document.getElementById("new-npc-name").value = "";
-          document.getElementById("new-npc-desc").value = "";
-          addNpcForm.classList.add("hidden");
-          addNpcBtn.classList.remove("hidden");
-          fetchCampaignInfo();
-        } else {
-          alert("Error: " + (data.error || "Unknown error"));
-        }
+    withLoading(saveBtn, function () {
+      return fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
       })
-      .catch(function () { alert("Failed to add NPC."); })
-      .finally(function () {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save";
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            document.getElementById("new-npc-name").value = "";
+            document.getElementById("new-npc-desc").value = "";
+            addNpcForm.classList.add("hidden");
+            addNpcBtn.classList.remove("hidden");
+            fetchCampaignInfo();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to add NPC."); });
+    }, { loadingText: "Saving..." });
   });
 
   // Questions polling
@@ -2823,9 +2889,6 @@
       if (!reqBody.source_key || !reqBody.target_key || !reqBody.relation_type) return;
 
       var saveBtn = addRelationshipForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
       var isEditing = !!relationshipEditOriginal;
       var url = "/api/campaigns/" + activeCampaignId + "/relationships";
       if (isEditing) {
@@ -2835,34 +2898,32 @@
       }
 
       if (!activeCampaignId) return;
-      fetch(url, {
-        method: isEditing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (relTypeInput) relTypeInput.value = "";
-            if (relNotesInput) relNotesInput.value = "";
-            if (relCategoryInput) relCategoryInput.value = "general";
-            addRelationshipForm.classList.add("hidden");
-            addRelationshipBtn.classList.remove("hidden");
-            relationshipEditOriginal = null;
-            if (relationshipEditParentsPanel) {
-              relationshipEditParentsPanel.classList.add("hidden");
-              relationshipEditParentsPanel.innerHTML = "";
-            }
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      withLoading(saveBtn, function () {
+        return fetch(url, {
+          method: isEditing ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to save relationship."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (relTypeInput) relTypeInput.value = "";
+              if (relNotesInput) relNotesInput.value = "";
+              if (relCategoryInput) relCategoryInput.value = "general";
+              addRelationshipForm.classList.add("hidden");
+              addRelationshipBtn.classList.remove("hidden");
+              relationshipEditOriginal = null;
+              if (relationshipEditParentsPanel) {
+                relationshipEditParentsPanel.classList.add("hidden");
+                relationshipEditParentsPanel.innerHTML = "";
+              }
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to save relationship."); });
+      }, { loadingText: "Saving..." });
     });
   }
 
@@ -2921,22 +2982,31 @@
         var btn = form.querySelector("button");
         var feedback = card.querySelector(".q-feedback");
 
-        btn.disabled = true;
-        btn.textContent = "Sending...";
-
-        submitAnswer(q.id, input.value, function (ok) {
-          if (ok) {
-            feedback.textContent = "Answer saved!";
-            feedback.className = "q-feedback success";
-            form.classList.add("hidden");
-            setTimeout(function () { pollQuestions(); }, 1200);
-          } else {
-            feedback.textContent = "Failed to save. Try again.";
-            feedback.className = "q-feedback error";
-            btn.disabled = false;
-            btn.textContent = "Answer";
-          }
-        });
+        withLoading(btn, function () {
+          return fetch("/api/questions/" + q.id + "/answer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answer: input.value }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                feedback.textContent = "Answer saved!";
+                feedback.className = "q-feedback success";
+                form.classList.add("hidden");
+                setTimeout(function () { pollQuestions(); }, 1200);
+              } else {
+                feedback.textContent = "Failed to save. Try again.";
+                feedback.className = "q-feedback error";
+                throw new Error("Failed to save answer");
+              }
+            })
+            .catch(function () {
+              feedback.textContent = "Failed to save. Try again.";
+              feedback.className = "q-feedback error";
+              throw new Error("Failed to save answer");
+            });
+        }, { loadingText: "Sending..." });
       });
       questionsList.appendChild(card);
     });
@@ -2996,28 +3066,32 @@
   }
 
   function fetchBrowseCampaigns() {
-    fetch("/api/browse/campaigns")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var campaigns = [{
-          id: UNCATEGORIZED_BROWSE_ID,
-          name: "Sin campana",
-          game_system: "",
-          is_active: false
-        }].concat(data.campaigns || []);
-        browseCampaignsCache = campaigns.slice();
-        renderBrowseCampaignList(campaigns);
+    if (browseCampaignListEl) showSkeleton(browseCampaignListEl, 4);
 
-        var preferred = browseCampaignId || data.active_campaign_id || UNCATEGORIZED_BROWSE_ID;
-        if (preferred) {
-          selectBrowseCampaign(preferred);
-        } else {
-          sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
-        }
-      })
-      .catch(function () {
-        if (browseCampaignListEl) browseCampaignListEl.innerHTML = '<p class="placeholder">Failed to load campaigns.</p>';
-      });
+    withPanelLoading(browseCampaignsPanel, function () {
+      return fetch("/api/browse/campaigns")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var campaigns = [{
+            id: UNCATEGORIZED_BROWSE_ID,
+            name: "Sin campana",
+            game_system: "",
+            is_active: false
+          }].concat(data.campaigns || []);
+          browseCampaignsCache = campaigns.slice();
+          renderBrowseCampaignList(campaigns);
+
+          var preferred = browseCampaignId || data.active_campaign_id || UNCATEGORIZED_BROWSE_ID;
+          if (preferred) {
+            selectBrowseCampaign(preferred);
+          } else {
+            sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
+          }
+        })
+        .catch(function () {
+          if (browseCampaignListEl) browseCampaignListEl.innerHTML = '<p class="placeholder">Failed to load campaigns.</p>';
+        });
+    });
   }
 
   function renderBrowseCampaignList(campaigns) {
@@ -3065,30 +3139,32 @@
       return;
     }
 
-    fetch("/api/browse/campaigns/" + encodeURIComponent(campaignId))
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var campaign = data.campaign;
-        if (!campaign) {
-          return;
-        }
-        currentCampaign = campaign;
-        activeCampaignId = campaign.id;
-        renderCampaignBar(campaign);
-        if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
-        renderPlayers(campaign.players || []);
-        renderNpcs(campaign.npcs || []);
-        renderLocations(campaign.locations || []);
-        renderEntities(campaign.entities || []);
-        renderRelationships(campaign.relationships || [], campaign);
-        if (replacementsSection && campaign.id) {
-          replacementsSection.classList.remove("hidden");
-          fetchWordReplacements(campaign.id);
-        }
-        renderBrowseCampaignList(browseCampaignsCache);
-        fetchSessionList();
-      })
-      .catch(function () {});
+    withPanelLoading(campaignBar, function () {
+      return fetch("/api/browse/campaigns/" + encodeURIComponent(campaignId))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var campaign = data.campaign;
+          if (!campaign) {
+            return;
+          }
+          currentCampaign = campaign;
+          activeCampaignId = campaign.id;
+          renderCampaignBar(campaign);
+          if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
+          renderPlayers(campaign.players || []);
+          renderNpcs(campaign.npcs || []);
+          renderLocations(campaign.locations || []);
+          renderEntities(campaign.entities || []);
+          renderRelationships(campaign.relationships || [], campaign);
+          if (replacementsSection && campaign.id) {
+            replacementsSection.classList.remove("hidden");
+            fetchWordReplacements(campaign.id);
+          }
+          renderBrowseCampaignList(browseCampaignsCache);
+          fetchSessionList();
+        })
+        .catch(function () {});
+    });
   }
 
   function renderSessionLogLink(sessionId) {
@@ -3173,12 +3249,22 @@
       sessionsUrl = "/api/sessions";
     }
 
+    if (!sessionListLoaded) {
+      showSkeleton(sessionListEl, 5);
+    } else {
+      setRefreshing(sessionListEl, true);
+    }
+
     fetch(sessionsUrl)
       .then(function (r) { return r.json(); })
       .then(function (data) {
         renderSessionList(data.sessions || []);
+        sessionListLoaded = true;
       })
-      .catch(function () {});
+      .catch(function () {})
+      .finally(function () {
+        setRefreshing(sessionListEl, false);
+      });
   }
 
   function renderSessionList(sessions) {
@@ -3256,36 +3342,40 @@
   }
 
   function loadLiveSessionSnapshot(sessionId) {
-    Promise.all([
-      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
-      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
-    ])
-      .then(function (results) {
-        var transData = results[0];
-        var summData = results[1];
+    showSkeleton(transcriptionFeed, 6);
 
-        transcriptionFeed.innerHTML = "";
-        var transcriptions = transData.transcriptions || [];
-        if (transcriptions.length === 0) {
-          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions yet.</p>';
-        } else {
-          transcriptions.forEach(function (t) { addTranscription(t); });
-        }
+    withPanelLoading(summaryPanel, function () {
+      return Promise.all([
+        fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+        fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+      ])
+        .then(function (results) {
+          var transData = results[0];
+          var summData = results[1];
 
-        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        if (summData.session_chronology) {
-          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
-          updateGenerateChronologyBtn(sessionId);
-        } else {
-          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
-          updateGenerateChronologyBtn(sessionId);
-        }
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
-        loadedLiveSessionId = sessionId;
-        renderSessionLogLink(sessionId);
-        renderSessionExports(sessionId);
-      })
-      .catch(function () {});
+          transcriptionFeed.innerHTML = "";
+          var transcriptions = transData.transcriptions || [];
+          if (transcriptions.length === 0) {
+            transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions yet.</p>';
+          } else {
+            transcriptions.forEach(function (t) { addTranscription(t); });
+          }
+
+          renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+          if (summData.session_chronology) {
+            renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+            updateGenerateChronologyBtn(sessionId);
+          } else {
+            sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+            updateGenerateChronologyBtn(sessionId);
+          }
+          renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
+          loadedLiveSessionId = sessionId;
+          renderSessionLogLink(sessionId);
+          renderSessionExports(sessionId);
+        })
+        .catch(function () {});
+    });
   }
 
   function loadHistoricalSession(sessionId) {
@@ -3296,35 +3386,39 @@
     renderSessionExports(sessionId);
     updateFinalizeButton();
 
-    Promise.all([
-      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
-      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
-    ])
-      .then(function (results) {
-        var transData = results[0];
-        var summData = results[1];
+    showSkeleton(transcriptionFeed, 6);
 
-        transcriptionFeed.innerHTML = "";
-        var transcriptions = transData.transcriptions || [];
-        if (transcriptions.length === 0) {
-          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions for this session.</p>';
-        } else {
-          transcriptions.forEach(function (t) { addTranscription(t); });
-        }
+    withPanelLoading(summaryPanel, function () {
+      return Promise.all([
+        fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+        fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+      ])
+        .then(function (results) {
+          var transData = results[0];
+          var summData = results[1];
 
-        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        if (summData.session_chronology) {
-          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
-          updateGenerateChronologyBtn(sessionId);
-        } else {
-          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
-          updateGenerateChronologyBtn(sessionId);
-        }
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
-      })
-      .catch(function () {
-        transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
-      });
+          transcriptionFeed.innerHTML = "";
+          var transcriptions = transData.transcriptions || [];
+          if (transcriptions.length === 0) {
+            transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions for this session.</p>';
+          } else {
+            transcriptions.forEach(function (t) { addTranscription(t); });
+          }
+
+          renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+          if (summData.session_chronology) {
+            renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+            updateGenerateChronologyBtn(sessionId);
+          } else {
+            sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+            updateGenerateChronologyBtn(sessionId);
+          }
+          renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
+        })
+        .catch(function () {
+          transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
+        });
+    });
   }
 
   function switchToLive() {
@@ -3388,32 +3482,29 @@
         alert("No active or selected session.");
         return;
       }
-      exportSessionBtn.disabled = true;
-      exportSessionBtn.textContent = "Exporting...";
-      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/export", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (!data.ok) {
+      withLoading(exportSessionBtn, function() {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/export", {
+          method: "POST",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.ok) {
+              alert("Failed to generate export.");
+              return;
+            }
+            renderSessionExports(sessionId);
+            // Show success feedback for 1.8s
+            exportSessionBtn.textContent = "Exported";
+            setTimeout(function () {
+              if (exportSessionBtn.textContent === "Exported") {
+                exportSessionBtn.textContent = "Export";
+              }
+            }, 1800);
+          })
+          .catch(function () {
             alert("Failed to generate export.");
-            return;
-          }
-          renderSessionExports(sessionId);
-          exportSessionBtn.textContent = "Exported";
-          setTimeout(function () {
-            exportSessionBtn.textContent = "Export";
-          }, 1800);
-        })
-        .catch(function () {
-          alert("Failed to generate export.");
-        })
-        .finally(function () {
-          exportSessionBtn.disabled = false;
-          if (exportSessionBtn.textContent === "Exporting...") {
-            exportSessionBtn.textContent = "Export";
-          }
-        });
+          });
+      }, { loadingText: "Exporting..." });
     });
   }
 
@@ -3455,30 +3546,26 @@
 
       clearLog(sessionSummaryTab);
       addLogEntry(sessionSummaryTab, "Generating summary...");
-      refreshSummaryBtn.disabled = true;
-      refreshSummaryBtn.textContent = "Generating...";
 
-      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-summary", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (data.session_summary) {
-              renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sessionId);
+      withLoading(refreshSummaryBtn, function() {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-summary", {
+          method: "POST",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (data.session_summary) {
+                renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sessionId);
+              }
+              addLogEntry(sessionSummaryTab, "Summary updated");
+            } else {
+              addLogEntry(sessionSummaryTab, "Error: " + (data.error || "Failed"));
             }
-            addLogEntry(sessionSummaryTab, "Summary updated");
-          } else {
-            addLogEntry(sessionSummaryTab, "Error: " + (data.error || "Failed"));
-          }
-        })
-        .catch(function () {
-          addLogEntry(sessionSummaryTab, "Error: request failed");
-        })
-        .finally(function () {
-          refreshSummaryBtn.disabled = false;
-          refreshSummaryBtn.textContent = "Update Summary";
-        });
+          })
+          .catch(function () {
+            addLogEntry(sessionSummaryTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     });
   }
 
@@ -3487,32 +3574,28 @@
       var sessionId = getSessionIdForTranscriptView();
       if (!sessionId) return;
 
-      extractEntitiesBtn.disabled = true;
-      extractEntitiesBtn.textContent = "Extracting...";
-
-      fetch("/api/sessions/" + sessionId + "/extract-entities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            var total = (data.new_npcs || []).length + (data.new_locations || []).length + (data.new_relationships || []).length;
-            extractEntitiesBtn.textContent = total > 0 ? ("+" + total + " found!") : "Nothing new";
-            fetchCampaignInfo();
-            setTimeout(function () {
-              extractEntitiesBtn.textContent = "Extract Entities";
-            }, 3000);
-          } else {
-            alert("Extraction failed: " + (data.error || "Unknown error"));
-          }
+      withLoading(extractEntitiesBtn, function () {
+        return fetch("/api/sessions/" + sessionId + "/extract-entities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
         })
-        .catch(function () {
-          alert("Failed to run entity extraction.");
-        })
-        .finally(function () {
-          extractEntitiesBtn.disabled = false;
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              var total = (data.new_npcs || []).length + (data.new_locations || []).length + (data.new_entities || []).length + (data.new_relationships || []).length;
+              extractEntitiesBtn.textContent = total > 0 ? ("+" + total + " found!") : "Nothing new";
+              fetchCampaignInfo();
+              setTimeout(function () {
+                extractEntitiesBtn.textContent = "Extract Entities";
+              }, 3000);
+            } else {
+              alert("Extraction failed: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () {
+            alert("Failed to run entity extraction.");
+          });
+      }, { loadingText: "Extracting..." });
     });
   }
 
@@ -3522,30 +3605,25 @@
       if (!confirm("Finalize the current session? This will generate the final summary and end the session.")) {
         return;
       }
-      finalizeBtn.disabled = true;
-      finalizeBtn.textContent = "Finalizing...";
-
-      fetch("/api/sessions/" + activeSessionId + "/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            activeSessionId = null;
-            updateFinalizeButton();
-            setTimeout(fetchSessionList, 2000);
-          } else {
-            alert("Error: " + (data.error || "Failed to finalize"));
-          }
+      withLoading(finalizeBtn, function () {
+        return fetch("/api/sessions/" + activeSessionId + "/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
         })
-        .catch(function () {
-          alert("Failed to finalize session.");
-        })
-        .finally(function () {
-          finalizeBtn.disabled = false;
-          finalizeBtn.textContent = "Finalize Session";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              activeSessionId = null;
+              updateFinalizeButton();
+              setTimeout(fetchSessionList, 2000);
+            } else {
+              alert("Error: " + (data.error || "Failed to finalize"));
+            }
+          })
+          .catch(function () {
+            alert("Failed to finalize session.");
+          });
+      }, { loadingText: "Finalizing..." });
     });
   }
 
@@ -3572,33 +3650,29 @@
       clearLog(campaignSummaryTab);
       addLogEntry(campaignSummaryTab, "Requesting campaign summary generation...");
       var originalText = generateCampaignSummaryBtn.textContent;
-      generateCampaignSummaryBtn.disabled = true;
-      generateCampaignSummaryBtn.textContent = "Generating...";
-      fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.status === "ok") {
-            if (data.campaign_summary && campaignSummaryEl) {
-              renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
-            }
-            var msg = "Completed: " + data.session_count + " session(s)";
-            if (data.sessions_processed > 0) {
-              msg += ", " + data.sessions_processed + " missing summary(s) generated";
-            }
-            addLogEntry(campaignSummaryTab, msg);
-          } else {
-            addLogEntry(campaignSummaryTab, "Error: " + (data.detail || "Unknown error"));
-          }
+      withLoading(generateCampaignSummaryBtn, function () {
+        return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
+          method: "POST",
         })
-        .catch(function () {
-          addLogEntry(campaignSummaryTab, "Error: request failed");
-        })
-        .finally(function () {
-          generateCampaignSummaryBtn.disabled = false;
-          generateCampaignSummaryBtn.textContent = originalText;
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.status === "ok") {
+              if (data.campaign_summary && campaignSummaryEl) {
+                renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
+              }
+              var msg = "Completed: " + data.session_count + " session(s)";
+              if (data.sessions_processed > 0) {
+                msg += ", " + data.sessions_processed + " missing summary(s) generated";
+              }
+              addLogEntry(campaignSummaryTab, msg);
+            } else {
+              addLogEntry(campaignSummaryTab, "Error: " + (data.detail || "Unknown error"));
+            }
+          })
+          .catch(function () {
+            addLogEntry(campaignSummaryTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     });
   }
 
@@ -3676,30 +3750,26 @@
     if (mergeSelected.length !== 2) return;
     var target = mergeSelected[0];
     var source = mergeSelected[1];
-    mergeExecuteBtn.disabled = true;
-    mergeExecuteBtn.textContent = "Merging...";
 
-    fetch("/api/sessions/merge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_id: source.id, target_id: target.id })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        mergeExecuteBtn.disabled = false;
-        mergeExecuteBtn.textContent = "Merge";
-        if (data.ok) {
-          exitMergeMode();
-          fetchSessionList();
-        } else {
-          alert("Merge failed: " + (data.error || "Unknown error"));
-        }
+    withLoading(mergeExecuteBtn, function () {
+      return fetch("/api/sessions/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: source.id, target_id: target.id })
       })
-      .catch(function (err) {
-        mergeExecuteBtn.disabled = false;
-        mergeExecuteBtn.textContent = "Merge";
-        alert("Merge error: " + err.message);
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            exitMergeMode();
+            fetchSessionList();
+          } else {
+            alert("Merge failed: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function (err) {
+          alert("Merge error: " + err.message);
+        });
+    }, { loadingText: "Merging..." });
   }
 
   if (mergeBtnEl) {
