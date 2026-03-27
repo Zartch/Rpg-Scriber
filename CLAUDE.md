@@ -249,3 +249,16 @@ Toda operación async en el Web UI usa feedback visual consistente:
 - **Animaciones**: `@keyframes spin` (rotación spinner 0.6s), `@keyframes shimmer` (gradiente skeleton 1.5s)
 
 Al añadir nuevas operaciones async, usar estos helpers en vez de `btn.disabled/textContent` manual. 47 operaciones catalogadas, 26 son button operations, 21 son panel/background loads.
+
+### TTS Narration
+
+- Arquitectura pluggable: `BaseTTSProvider` ABC en `src/rpg_scribe/tts/base.py`
+- Primer provider: OpenAI TTS (`tts-1` / `tts-1-hd`) en `tts/openai_provider.py`
+- Caché en disco: `data/tts_cache/` con clave `sha256(text|provider|voice|model)`, escritura atómica
+- Endpoint streaming: `POST /api/tts/narrate` → NDJSON, una línea por párrafo: `{index, total, audio_url, cached}`
+- Servicio estático: `GET /api/tts/cache/{hash}.mp3` → archivos mp3 desde `data/tts_cache/`
+- Endpoint info: `GET /api/tts/voices` → `{provider, voices, current}`, 503 si TTS deshabilitado
+- Frontend: botón "Narrar" en session summary, chronology y campaign summary; oculto si TTS no está disponible
+- Playback con cola: reproduce primer párrafo al llegar, encola el resto; toggle para detener
+- Config en TOML: sección `[tts]` con campos `enabled`, `provider`, `voice`, `model`, `cache_dir`
+- Para añadir un provider nuevo: extender `BaseTTSProvider` e instanciar en `web/app.py` según `tts_config.provider`

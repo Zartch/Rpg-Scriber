@@ -237,3 +237,73 @@ class TestTTSVoicesEndpoint:
 
         resp = client.get("/api/tts/voices")
         assert resp.status_code == 503
+
+
+class TestTTSIntegration:
+    """End-to-end integration tests for the full narration flow."""
+
+    def test_full_narration_flow_with_cache(self, tmp_path) -> None:
+        """Second narration of same text must use cache (0 API calls)."""
+        import json
+        fake_audio = b"\xff\xfb\x90\x00" * 50
+        call_count = 0
+
+        async def mock_synthesize(text, voice):
+            nonlocal call_count
+            call_count += 1
+            return fake_audio
+
+        mock_provider = MagicMock()
+        mock_provider.name = "openai"
+        mock_provider.synthesize = AsyncMock(side_effect=mock_synthesize)
+
+        tts_config = TTSConfig(enabled=True, voice="nova", model="tts-1")
+        tts_cache = TTSCache(str(tmp_path))
+        app = _make_test_app(tts_provider=mock_provider, tts_cache=tts_cache, tts_config=tts_config)
+        client = TestClient(app)
+
+        text = "Paragraph one.\n\nParagraph two.\n\nParagraph three."
+
+        # First narration — 3 API calls
+        resp1 = client.post("/api/tts/narrate", json={"text": text})
+        assert resp1.status_code == 200
+        assert call_count == 3
+        lines1 = [json.loads(l) for l in resp1.text.strip().split("\n") if l.strip()]
+        assert all(l["cached"] is False for l in lines1)
+
+        # Second narration — 0 API calls (all cached)
+        call_count = 0
+        resp2 = client.post("/api/tts/narrate", json={"text": text})
+        assert resp2.status_code == 200
+        assert call_count == 0
+        lines2 = [json.loads(l) for l in resp2.text.strip().split("\n") if l.strip()]
+        assert all(l["cached"] is True for l in lines2)
+        assert [l["audio_url"] for l in lines1] == [l["audio_url"] for l in lines2]
+
+    def test_narrate_handles_provider_error_gracefully(self, tmp_path) -> None:
+        """If one paragraph fails, endpoint yields an error and continues."""
+        import json
+        fake_audio = b"\xff\xfb\x90\x00" * 50
+
+        async def flaky_synthesize(text, voice):
+            if "fail" in text.lower():
+                raise RuntimeError("API timeout")
+            return fake_audio
+
+        mock_provider = MagicMock()
+        mock_provider.name = "openai"
+        mock_provider.synthesize = AsyncMock(side_effect=flaky_synthesize)
+
+        tts_config = TTSConfig(enabled=True, voice="nova", model="tts-1")
+        tts_cache = TTSCache(str(tmp_path))
+        app = _make_test_app(tts_provider=mock_provider, tts_cache=tts_cache, tts_config=tts_config)
+        client = TestClient(app)
+
+        text = "Good paragraph.\n\nThis will fail.\n\nAnother good one."
+        resp = client.post("/api/tts/narrate", json={"text": text})
+        assert resp.status_code == 200
+        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        assert len(lines) == 3
+        assert "audio_url" in lines[0]
+        assert "error" in lines[1]
+        assert "audio_url" in lines[2]
