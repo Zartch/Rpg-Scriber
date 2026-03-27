@@ -80,6 +80,11 @@
   var applyReplacementsBtn = document.getElementById("apply-replacements-btn");
   var relationshipsList = document.getElementById("relationships-list");
   var relationshipsCount = document.getElementById("relationships-count");
+  var statPlayers = document.getElementById("stat-players");
+  var statNpcs = document.getElementById("stat-npcs");
+  var statLocations = document.getElementById("stat-locations");
+  var statEntities = document.getElementById("stat-entities");
+  var statRelationships = document.getElementById("stat-relationships");
   var addRelationshipBtn = document.getElementById("add-relationship-btn");
   var addRelationshipForm = document.getElementById("add-relationship-form");
   var addRelationshipCancel = document.getElementById("add-relationship-cancel");
@@ -1186,6 +1191,7 @@
             renderLocations(data.campaign.locations || []);
             renderEntities(data.campaign.entities || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
+            updateCampaignSummaryStats(data.campaign);
             if (replacementsSection && data.campaign.id) {
               replacementsSection.classList.remove("hidden");
               fetchWordReplacements(data.campaign.id);
@@ -1249,9 +1255,27 @@
       campaignMasterEl.textContent = "";
       if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
+      updateCampaignSummaryStats({});
     } else {
       campaignEditBtn.classList.remove("hidden");
     }
+  }
+
+  function updateCampaignSummaryStats(campaign) {
+    var mapping = [
+      { el: statPlayers, key: "players" },
+      { el: statNpcs, key: "npcs" },
+      { el: statLocations, key: "locations" },
+      { el: statEntities, key: "entities" },
+      { el: statRelationships, key: "relationships" }
+    ];
+    mapping.forEach(function(item) {
+      if (!item.el) return;
+      var count = (campaign[item.key] || []).length;
+      item.el.textContent = count;
+      var parent = item.el.closest(".summary-stat");
+      if (parent) parent.classList.toggle("dimmed", count === 0);
+    });
   }
 
   function getMasterDisplayName(campaign) {
@@ -3134,6 +3158,7 @@
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
       if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
+      updateCampaignSummaryStats({});
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
       return;
@@ -3156,6 +3181,7 @@
           renderLocations(campaign.locations || []);
           renderEntities(campaign.entities || []);
           renderRelationships(campaign.relationships || [], campaign);
+          updateCampaignSummaryStats(campaign);
           if (replacementsSection && campaign.id) {
             replacementsSection.classList.remove("hidden");
             fetchWordReplacements(campaign.id);
