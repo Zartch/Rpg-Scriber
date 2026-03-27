@@ -806,6 +806,150 @@
       });
   }
 
+  // ── TTS Narration ─────────────────────────────────────────
+  var ttsEnabled = false;
+  var ttsAudio = null;
+  var ttsQueue = [];
+  var ttsActiveBtn = null;
+  var ttsTotalChunks = 0;
+  var ttsPlayedChunks = 0;
+
+  // Check if TTS is available and show buttons
+  fetch("/api/tts/voices")
+    .then(function (r) {
+      if (r.ok) {
+        ttsEnabled = true;
+        document.querySelectorAll(".btn-narrate").forEach(function (btn) {
+          btn.style.display = "";
+        });
+      }
+    })
+    .catch(function () { /* TTS not available — buttons stay hidden */ });
+
+  function _getNarrateText(btnId) {
+    if (btnId === "btn-narrate-session") return sessionSummaryEl ? sessionSummaryEl.textContent.trim() : "";
+    if (btnId === "btn-narrate-chronology") return sessionChronologyEl ? sessionChronologyEl.textContent.trim() : "";
+    if (btnId === "btn-narrate-campaign") return campaignSummaryEl ? campaignSummaryEl.textContent.trim() : "";
+    return "";
+  }
+
+  function stopNarration() {
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio.src = "";
+      ttsAudio = null;
+    }
+    ttsQueue = [];
+    ttsTotalChunks = 0;
+    ttsPlayedChunks = 0;
+    if (ttsActiveBtn) {
+      ttsActiveBtn.innerHTML = "&#x1F50A; Narrar";
+      ttsActiveBtn.classList.remove("narrating");
+      ttsActiveBtn.disabled = false;
+      ttsActiveBtn = null;
+    }
+  }
+
+  function _updateNarrateProgress() {
+    if (ttsActiveBtn) {
+      ttsActiveBtn.textContent = "Narrando (" + ttsPlayedChunks + "/" + ttsTotalChunks + ")";
+    }
+  }
+
+  function _playNext() {
+    if (ttsQueue.length === 0) {
+      if (ttsActiveBtn) {
+        var doneBtn = ttsActiveBtn;
+        doneBtn.textContent = "Completado";
+        setTimeout(function () {
+          doneBtn.innerHTML = "&#x1F50A; Narrar";
+          doneBtn.classList.remove("narrating");
+          doneBtn.disabled = false;
+          if (ttsActiveBtn === doneBtn) ttsActiveBtn = null;
+        }, 2000);
+      }
+      ttsAudio = null;
+      return;
+    }
+    var url = ttsQueue.shift();
+    ttsPlayedChunks++;
+    _updateNarrateProgress();
+    ttsAudio = new Audio(url);
+    ttsAudio.addEventListener("ended", _playNext);
+    ttsAudio.addEventListener("error", function () {
+      console.error("TTS audio error:", url);
+      _playNext();
+    });
+    ttsAudio.play().catch(function (err) {
+      console.error("TTS play failed:", err);
+      _playNext();
+    });
+  }
+
+  async function startNarration(btn) {
+    var text = _getNarrateText(btn.id);
+    if (!text) return;
+
+    if (ttsActiveBtn === btn) { stopNarration(); return; }
+    if (ttsActiveBtn) stopNarration();
+
+    ttsActiveBtn = btn;
+    btn.classList.add("narrating");
+    btn.disabled = true;
+    btn.innerHTML = "";
+    btn.appendChild(createSpinner());
+    btn.appendChild(document.createTextNode("Generando..."));
+
+    try {
+      var resp = await fetch("/api/tts/narrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text }),
+      });
+      if (!resp.ok) throw new Error("TTS request failed: " + resp.status);
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      var firstChunkPlayed = false;
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+        buffer += decoder.decode(result.value, { stream: true });
+        var lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line) continue;
+          try {
+            var chunk = JSON.parse(line);
+            if (chunk.error) { console.warn("TTS paragraph error:", chunk.error); continue; }
+            ttsTotalChunks = chunk.total;
+            if (!firstChunkPlayed) {
+              firstChunkPlayed = true;
+              btn.disabled = false;
+              ttsPlayedChunks = 0;
+              ttsQueue = [chunk.audio_url];
+              _playNext();
+            } else {
+              ttsQueue.push(chunk.audio_url);
+            }
+          } catch (e) { console.warn("TTS NDJSON parse error:", line); }
+        }
+      }
+    } catch (err) {
+      console.error("TTS narration failed:", err);
+      stopNarration();
+    }
+  }
+
+  ["btn-narrate-session", "btn-narrate-chronology", "btn-narrate-campaign"].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.addEventListener("click", function () { startNarration(btn); });
+  });
+  // ── End TTS Narration ─────────────────────────────────────
+
   function updateStatus(data) {
     var card = componentStatusEl.querySelector(
       '[data-component="' + data.component + '"]'

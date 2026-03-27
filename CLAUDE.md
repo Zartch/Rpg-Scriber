@@ -138,6 +138,12 @@ config/
 | GET | `/api/browse/sessions/uncategorized` | Sesiones sin campaña |
 | WS | `/ws/live` | WebSocket para eventos en tiempo real |
 
+## Planes de Implementación
+
+- Todos los planes deben estar organizados en **fases** numeradas
+- Indicar explícitamente qué fases son **paralelizables** (pueden ejecutarse simultáneamente) y cuáles son **secuenciales** (dependen de fases anteriores)
+- Formato: `Fase N (parallelizable con Fase M)` o `Fase N (requiere Fase M completada)`
+
 ## Convenciones de Código
 
 - Python 3.10+

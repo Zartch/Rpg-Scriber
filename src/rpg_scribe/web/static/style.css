@@ -1193,3 +1193,13 @@ header h1 { font-size: 1.25rem; }
   pointer-events: none;
   transition: opacity 0.2s, filter 0.2s;
 }
+
+/* ── TTS Narrate ──────────────────────────────────────────── */
+.btn-narrate {
+  gap: 0.3em;
+}
+
+.btn-narrate.narrating {
+  background: var(--accent);
+  color: var(--bg);
+}
