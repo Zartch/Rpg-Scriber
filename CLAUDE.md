@@ -2,6 +2,10 @@
 
 Guía de referencia para Claude Code al trabajar en este proyecto.
 
+## Instrucciones Generales
+
+- **NO hacer commits** a menos que el usuario lo pida explícitamente. El usuario probará antes de hacer commit.
+
 ## Descripción del Proyecto
 
 RPG Scribe es una herramienta en Python que escucha partidas de rol en tiempo real (vía Discord), transcribe y diariza quién dice qué, y genera un resumen narrativo vivo de la sesión usando IA. Distingue entre diálogo in-game y meta-rol. Incluye un Web UI para monitorizar sesiones, editar campaña/jugadores/NPCs y revisar historial.
@@ -87,56 +91,22 @@ config/
 
 - **Patrón**: Event-driven async con pub/sub via `EventBus`
 - **Eventos**: `AudioChunkEvent` → `TranscriptionEvent` → `SummaryUpdateEvent` + `SystemStatusEvent`
-- **Flujo**: Listener captura audio → Transcriber genera texto → Summarizer resume narrativamente. Documentación detallada del summarizer en [`docs/summarizer-context.md`](docs/summarizer-context.md)
+- **Flujo**: Listener captura audio → Transcriber genera texto → Summarizer resume narrativamente
 - **Base de datos**: SQLite async (aiosqlite), 7 tablas: campaigns, players, npcs, sessions, transcriptions, questions, campaign_summaries
 - **Web**: FastAPI con WebSocket para actualizaciones en tiempo real
 - **Modo genérico**: Si no se pasa `--campaign`, crea un `CampaignContext.create_generic()` con prompt genérico
 
-### Web UI Features
+### Documentación Detallada
 
-- **Campaign Details**: panel colapsable con tabs internas (Players, NPCs, Locations, Entities, Relationships). Documentación detallada en [`docs/web-ui-entities.md`](docs/web-ui-entities.md)
-- **Campaign bar**: muestra/edita nombre, sistema, descripción, instrucciones (PATCH `/api/campaigns/{id}`)
-- **Players**: tab con edición inline (PUT `/api/campaigns/{id}/players/{pid}`)
-- **NPCs**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/npcs`)
-- **Locations**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/locations`)
-- **Entities**: tab con edición inline + crear + merge (POST/PUT `/api/campaigns/{id}/entities`)
-- **Relationships**: tab con grafo de relaciones entre personajes (POST `/api/campaigns/{id}/relationships`)
-- **Session sidebar**: lista sesiones con duración, indicador de resumen, preview
-- **Session history**: click en sesión histórica carga transcripciones + resumen desde DB
-- **Live mode**: WebSocket para transcripciones y resúmenes en tiempo real
-- **Browse mode**: navegar y editar sesiones de cualquier campaña sin estar en sesión activa
-- **Questions**: panel de preguntas pendientes del summarizer con respuesta inline
-- **Merge sessions**: seleccionar 2 sesiones completadas y fusionarlas en una (transcripciones + resúmenes concatenados); patrón tombstone con `merged_into`
-- **Campaign summaries**: resumen acumulado de campaña; botón "Generate" para generar bajo demanda (también genera resúmenes de sesión faltantes); "View all" abre `campaign-summaries.html` con historial completo
-
-### REST API Endpoints
-
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| GET | `/api/status` | Estado de componentes y sesión activa |
-| GET | `/api/campaigns` | Info campaña activa + players + NPCs |
-| PATCH | `/api/campaigns/{id}` | Editar campaña |
-| PUT | `/api/campaigns/{id}/players/{pid}` | Editar jugador |
-| POST | `/api/campaigns/{id}/npcs` | Crear NPC |
-| PUT | `/api/campaigns/{id}/npcs/{nid}` | Editar NPC |
-| POST | `/api/campaigns/{id}/locations` | Crear localización |
-| PUT | `/api/campaigns/{id}/locations/{lid}` | Editar localización |
-| POST | `/api/campaigns/{id}/relationships` | Crear relación entre personajes |
-| POST | `/api/campaigns/{id}/campaign-summaries/generate` | Generar resumen de campaña bajo demanda (también genera resúmenes de sesión faltantes) |
-| GET | `/api/campaigns/{id}/campaign-summaries` | Listar todos los resúmenes de campaña (más reciente primero) |
-| GET | `/api/campaigns/{id}/campaign-summaries/latest` | Resumen de campaña más reciente |
-| GET | `/api/campaigns/{id}/campaign-summaries/{sid}` | Resumen de campaña por ID |
-| GET | `/api/sessions` | Listar todas las sesiones |
-| GET | `/api/campaigns/{id}/sessions` | Sesiones de una campaña |
-| GET | `/api/sessions/{id}/transcriptions` | Transcripciones (memoria o DB) |
-| GET | `/api/sessions/{id}/summary` | Resumen (memoria o DB) |
-| POST | `/api/sessions/merge` | Fusionar dos sesiones (source_id + target_id) |
-| GET | `/api/questions` | Preguntas pendientes |
-| POST | `/api/questions/{id}/answer` | Responder pregunta |
-| GET | `/api/browse/campaigns` | Listar todas las campañas (modo browse) |
-| GET | `/api/browse/campaigns/{id}` | Detalle de campaña (modo browse) |
-| GET | `/api/browse/sessions/uncategorized` | Sesiones sin campaña |
-| WS | `/ws/live` | WebSocket para eventos en tiempo real |
+- Summarizer y prompts: [`docs/summarizer-context.md`](docs/summarizer-context.md)
+- Web UI features: [`docs/web-ui-features.md`](docs/web-ui-features.md)
+- Entidades, locations, relationships: [`docs/web-ui-entities.md`](docs/web-ui-entities.md)
+- REST API endpoints: [`docs/api-endpoints.md`](docs/api-endpoints.md)
+- Loading states y UX patterns: [`docs/loading-states-ux.md`](docs/loading-states-ux.md)
+- Audio chunks: [`docs/audio-chunks-design.md`](docs/audio-chunks-design.md)
+- Discord voice y DAVE E2EE: [`docs/discord-voice.md`](docs/discord-voice.md)
+- Campaign summaries y sync TOML→DB: [`docs/campaign-summaries.md`](docs/campaign-summaries.md)
+- TTS narración: [`docs/tts-narration.md`](docs/tts-narration.md)
 
 ## Planes de Implementación
 
@@ -190,75 +160,3 @@ config/
 - La configuración de campaña se define en archivos TOML (`config/campaigns/`)
 - `pydub` del documento de arquitectura fue reemplazado por `soundfile` + `numpy`
 - `webrtcvad` fue reemplazado por `webrtcvad-wheels` (versión precompilada)
-
-### DAVE E2EE y Discord Voice
-
-- discord.py 2.7+ incluye DAVE (Discord Audio-Visual Experience) E2EE para voz
-- `discord-ext-voice-recv` NO soporta descifrado DAVE → audio es ruido, no silencio
-- **Fix**: monkey-patch `_patch_disable_dave()` en `discord_listener.py` que fuerza `max_dave_protocol_version = 0`
-- También hay `_patch_packet_router()` que hace PacketRouter resiliente a OpusError por paquete
-
-### Particularidades Windows
-
-- asyncio ProactorEventLoop requiere `os._exit(0)` para SIGINT handler
-- uvicorn signal handlers deben ser `lambda: None` (no `False`)
-- Python 3.10: no tiene `tomllib` → se usa `tomli` como fallback
-
-### Sync TOML → DB
-
-- Al arrancar con `--campaign`, los players, NPCs y locations del TOML se persisten idempotentemente a la DB
-- Si ya existen (por discord_id / name), no se duplican
-- Cambios hechos via Web UI se guardan en DB y en memoria (no modifican el TOML)
-
-### Campaign Summaries
-
-- Tabla `campaign_summaries`: historial append-only de resúmenes de campaña (no se sobreescriben)
-- `campaigns.campaign_summary`: columna cache con el último resumen, usada por el prompt del summarizer
-- Se generan automáticamente al finalizar cada sesión (si la sesión tiene resumen)
-- Se pueden generar bajo demanda desde el Web UI (botón "Generate")
-- El endpoint `POST /generate` genera primero resúmenes de sesión faltantes (post-hoc desde transcripciones), luego el resumen de campaña
-- La página `campaign-summaries.html` muestra el historial completo con navegación lateral
-
-### Audio Chunks
-
-- Diseño detallado en [`docs/audio-chunks-design.md`](docs/audio-chunks-design.md)
-- Los chunks de audio enviados a transcribir se guardan en `data/audio/{session_id}/{timestamp}_{speaker}.wav`
-- Se sirven como archivos estáticos en `/audio/` desde FastAPI
-- El Web UI muestra un botón ▶ en cada transcripción para reproducir el audio original
-- Al iniciar sesión se logea el tamaño de `logs/`, `exports/` y `data/audio/`
-
-### Loading States & UX Patterns
-
-Toda operación async en el Web UI usa feedback visual consistente:
-
-- **Button operations**: `withLoading(btn, asyncFn, { loadingText })` — spinner inline + texto + disabled
-  - Muestra spinner CSS giratorio junto al texto de carga
-  - Deshabilita automáticamente el botón y restaura el estado original al terminar
-  - Casos especiales (Export, Extract entities) manejan feedback temporal de éxito en el `.then()`
-- **Panel loads**: `withPanelLoading(container, asyncFn)` — overlay semi-transparente con spinner centrado
-  - Para cargas de datos grandes (campaign info, session history, browse campaigns)
-  - Overlay con `background: rgba(15,17,23,0.7)` y spinner blanco centrado
-- **Skeleton screens**: `showSkeleton(container, lineCount)` — placeholder shimmer para listas
-  - Para cargas iniciales donde se conoce la forma del contenido
-  - Líneas animadas con gradiente `var(--border)` → `#3a3d4a` → `var(--border)`
-  - `campaign-summaries.html` usa skeleton HTML directo (sin helpers JS)
-- **Background refresh**: `setRefreshing(container, bool)` — opacity reducida sin bloquear
-  - Para polling/refresh de contenido existente (session list cada 30s)
-  - `opacity: 0.5; filter: blur(1px); pointer-events: none`
-- **CSS classes**: `.spinner-inline`, `.loading-overlay`, `.skeleton-line`, `.skeleton-block`, `.content-refreshing`
-- **Animaciones**: `@keyframes spin` (rotación spinner 0.6s), `@keyframes shimmer` (gradiente skeleton 1.5s)
-
-Al añadir nuevas operaciones async, usar estos helpers en vez de `btn.disabled/textContent` manual. 47 operaciones catalogadas, 26 son button operations, 21 son panel/background loads.
-
-### TTS Narration
-
-- Arquitectura pluggable: `BaseTTSProvider` ABC en `src/rpg_scribe/tts/base.py`
-- Primer provider: OpenAI TTS (`tts-1` / `tts-1-hd`) en `tts/openai_provider.py`
-- Caché en disco: `data/tts_cache/` con clave `sha256(text|provider|voice|model)`, escritura atómica
-- Endpoint streaming: `POST /api/tts/narrate` → NDJSON, una línea por párrafo: `{index, total, audio_url, cached}`
-- Servicio estático: `GET /api/tts/cache/{hash}.mp3` → archivos mp3 desde `data/tts_cache/`
-- Endpoint info: `GET /api/tts/voices` → `{provider, voices, current}`, 503 si TTS deshabilitado
-- Frontend: botón "Narrar" en session summary, chronology y campaign summary; oculto si TTS no está disponible
-- Playback con cola: reproduce primer párrafo al llegar, encola el resto; toggle para detener
-- Config en TOML: sección `[tts]` con campos `enabled`, `provider`, `voice`, `model`, `cache_dir`
-- Para añadir un provider nuevo: extender `BaseTTSProvider` e instanciar en `web/app.py` según `tts_config.provider`
