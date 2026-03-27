@@ -44,3 +44,37 @@ class TestTTSConfigLoading:
         # Should have defaults from TOML
         assert config.tts.enabled is False
         assert config.tts.provider == "openai"
+
+
+class TestTTSCache:
+    def test_cache_key_is_deterministic(self):
+        from rpg_scribe.tts.cache import TTSCache
+        cache = TTSCache("/tmp/test_cache")
+        key1 = cache.make_key("hello world", "openai", "nova", "tts-1")
+        key2 = cache.make_key("hello world", "openai", "nova", "tts-1")
+        assert key1 == key2
+
+    def test_cache_key_differs_by_voice(self):
+        from rpg_scribe.tts.cache import TTSCache
+        cache = TTSCache("/tmp/test_cache")
+        key1 = cache.make_key("hello", "openai", "nova", "tts-1")
+        key2 = cache.make_key("hello", "openai", "echo", "tts-1")
+        assert key1 != key2
+
+    def test_cache_miss_then_hit(self, tmp_path):
+        from rpg_scribe.tts.cache import TTSCache
+        cache = TTSCache(str(tmp_path))
+        key = cache.make_key("test text", "openai", "nova", "tts-1")
+        assert cache.has(key) is False
+        assert cache.get(key) is None
+        audio_data = b"\xff\xfb\x90\x00" * 100  # fake mp3 bytes
+        cache.put(key, audio_data)
+        assert cache.has(key) is True
+        assert cache.get(key) == audio_data
+
+    def test_cache_url_for(self, tmp_path):
+        from rpg_scribe.tts.cache import TTSCache
+        cache = TTSCache(str(tmp_path))
+        key = cache.make_key("test", "openai", "nova", "tts-1")
+        url = cache.url_for(key)
+        assert url == f"/api/tts/cache/{key}.mp3"
