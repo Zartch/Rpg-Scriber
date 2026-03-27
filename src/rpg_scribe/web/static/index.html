@@ -165,6 +165,53 @@
       <span class="collapse-arrow">&#9660;</span>
     </div>
     <div id="relationships-body" class="entity-body">
+      <div id="relationship-list-filters" class="relationship-list-filters">
+        <div class="relationship-filter-field relationship-filter-search">
+          <label for="relationship-filter-query">Search</label>
+          <input id="relationship-filter-query" type="text" placeholder="Character, entity, type or notes..." />
+        </div>
+        <div class="relationship-filter-field">
+          <label for="relationship-filter-entity">Entity</label>
+          <select id="relationship-filter-entity">
+            <option value="">All entities</option>
+          </select>
+        </div>
+        <div class="relationship-filter-field">
+          <label for="relationship-filter-type">Type</label>
+          <select id="relationship-filter-type">
+            <option value="">All types</option>
+          </select>
+        </div>
+        <div class="relationship-filter-field">
+          <label for="relationship-filter-category">Category</label>
+          <select id="relationship-filter-category">
+            <option value="">All categories</option>
+          </select>
+        </div>
+        <div class="relationship-filter-field">
+          <label for="relationship-filter-source-kind">Source</label>
+          <select id="relationship-filter-source-kind">
+            <option value="all">Any source</option>
+            <option value="player">Players</option>
+            <option value="npc">NPCs</option>
+            <option value="location">Locations</option>
+            <option value="entity">Entities</option>
+          </select>
+        </div>
+        <div class="relationship-filter-field">
+          <label for="relationship-filter-target-kind">Target</label>
+          <select id="relationship-filter-target-kind">
+            <option value="all">Any target</option>
+            <option value="player">Players</option>
+            <option value="npc">NPCs</option>
+            <option value="location">Locations</option>
+            <option value="entity">Entities</option>
+          </select>
+        </div>
+        <div class="relationship-filter-actions">
+          <button id="relationship-filter-clear" type="button" class="btn-small">Clear Filters</button>
+        </div>
+      </div>
       <div id="relationships-list" class="entity-list">
         <p class="placeholder">No relationships loaded.</p>
       </div>

@@ -803,6 +803,41 @@ header h1 { font-size: 1.25rem; }
   margin-top: 0.5rem;
 }
 
+.relationship-list-filters {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(140px, 1fr)) minmax(140px, 1fr);
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.relationship-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.relationship-filter-field label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.relationship-filter-field input,
+.relationship-filter-field select {
+  width: 100%;
+}
+
+.relationship-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: end;
+}
+
+.relationship-filter-search {
+  grid-column: span 2;
+}
+
 .relationship-graph {
   margin-top: 0.65rem;
   background: var(--bg);
@@ -922,6 +957,30 @@ header h1 { font-size: 1.25rem; }
 
 .relationship-node-tooltip strong {
   color: var(--accent);
+}
+
+@media (max-width: 1200px) {
+  .relationship-list-filters {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .relationship-filter-search {
+    grid-column: span 3;
+  }
+
+  .relationship-filter-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .relationship-list-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .relationship-filter-search {
+    grid-column: span 1;
+  }
 }
 
 .panel-header-actions {

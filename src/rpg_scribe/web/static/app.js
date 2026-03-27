@@ -83,6 +83,13 @@
   var relationshipsBody = document.getElementById("relationships-body");
   var relationshipsList = document.getElementById("relationships-list");
   var relationshipsCount = document.getElementById("relationships-count");
+  var relationshipFilterQuery = document.getElementById("relationship-filter-query");
+  var relationshipFilterEntity = document.getElementById("relationship-filter-entity");
+  var relationshipFilterType = document.getElementById("relationship-filter-type");
+  var relationshipFilterCategory = document.getElementById("relationship-filter-category");
+  var relationshipFilterSourceKind = document.getElementById("relationship-filter-source-kind");
+  var relationshipFilterTargetKind = document.getElementById("relationship-filter-target-kind");
+  var relationshipFilterClearBtn = document.getElementById("relationship-filter-clear");
   var addRelationshipBtn = document.getElementById("add-relationship-btn");
   var addRelationshipForm = document.getElementById("add-relationship-form");
   var addRelationshipCancel = document.getElementById("add-relationship-cancel");
@@ -131,6 +138,7 @@
   var relationshipNodePositions = {};
   var relationshipGraphFilters = { players: true, npcs: true, locations: true, entities: true };
   var pinnedNodeTooltipKey = null;
+  var lastRelationshipAllItems = [];
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
   var relationshipEditOriginal = null;
@@ -1950,6 +1958,10 @@
     return rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "unknown";
   }
 
+  function relationCategory(rel) {
+    return rel.type_category || rel.relation_type_category || rel.category || "general";
+  }
+
   function relationPaletteColor(index) {
     var palette = [
       "#ff6b6b", "#22c55e", "#3b82f6", "#eab308", "#f97316",
@@ -2021,6 +2033,154 @@
     relationshipNodeTooltip.innerHTML = "";
   }
 
+  function hasActiveRelationshipListFilters() {
+    return !!(
+      (relationshipFilterQuery && (relationshipFilterQuery.value || "").trim()) ||
+      (relationshipFilterEntity && relationshipFilterEntity.value) ||
+      (relationshipFilterType && relationshipFilterType.value) ||
+      (relationshipFilterCategory && relationshipFilterCategory.value) ||
+      (relationshipFilterSourceKind && relationshipFilterSourceKind.value !== "all") ||
+      (relationshipFilterTargetKind && relationshipFilterTargetKind.value !== "all")
+    );
+  }
+
+  function setSelectOptions(selectEl, placeholder, options, selectedValue) {
+    if (!selectEl) return;
+    selectEl.innerHTML = "";
+
+    var placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = placeholder;
+    selectEl.appendChild(placeholderOpt);
+
+    (options || []).forEach(function (option) {
+      if (!option || !option.value) return;
+      var opt = document.createElement("option");
+      opt.value = option.value;
+      opt.textContent = option.label || option.value;
+      selectEl.appendChild(opt);
+    });
+
+    selectEl.value = selectedValue && selectEl.querySelector('option[value="' + cssEscapeValue(selectedValue) + '"]')
+      ? selectedValue
+      : "";
+  }
+
+  function populateRelationshipListFilterOptions(relationships, campaign) {
+    var items = relationships || [];
+    var entityMap = {};
+    var typeMap = {};
+    var categoryMap = {};
+    var relationshipTypes = ((campaign || {}).relationship_types || []).filter(function (row) {
+      return !!(row && row.canonical_key);
+    });
+
+    relationshipTypes.forEach(function (row) {
+      var typeValue = row.canonical_key;
+      var typeCategory = row.category || "general";
+      typeMap[typeValue] = {
+        value: typeValue,
+        label: (row.label || row.canonical_key) + " [" + typeCategory + "]",
+      };
+      categoryMap[String(typeCategory).toLowerCase()] = {
+        value: String(typeCategory).toLowerCase(),
+        label: typeCategory,
+      };
+    });
+
+    items.forEach(function (rel) {
+      [rel.source_key, rel.target_key].forEach(function (key) {
+        var normalized = normalizeEntityKey(key || "");
+        if (!normalized || entityMap[normalized]) return;
+        var details = entityDetailsFromKey(campaign || {}, normalized);
+        entityMap[normalized] = {
+          value: normalized,
+          label: details.label || normalized,
+        };
+      });
+
+      var typeValue = relationTypeKey(rel);
+      var typeLabel = relationTypeLabel(rel);
+      var typeCategory = relationCategory(rel);
+      if (typeValue && !typeMap[typeValue]) {
+        typeMap[typeValue] = {
+          value: typeValue,
+          label: typeLabel + " [" + typeCategory + "]",
+        };
+      }
+      categoryMap[String(typeCategory).toLowerCase()] = {
+        value: String(typeCategory).toLowerCase(),
+        label: typeCategory,
+      };
+    });
+
+    var entityOptions = Object.keys(entityMap)
+      .map(function (key) { return entityMap[key]; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    var typeOptions = Object.keys(typeMap)
+      .map(function (key) { return typeMap[key]; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    var categoryOptions = Object.keys(categoryMap)
+      .map(function (key) { return categoryMap[key]; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+
+    setSelectOptions(
+      relationshipFilterEntity,
+      "All entities",
+      entityOptions,
+      relationshipFilterEntity ? relationshipFilterEntity.value : ""
+    );
+    setSelectOptions(
+      relationshipFilterType,
+      "All types",
+      typeOptions,
+      relationshipFilterType ? relationshipFilterType.value : ""
+    );
+    setSelectOptions(
+      relationshipFilterCategory,
+      "All categories",
+      categoryOptions,
+      relationshipFilterCategory ? relationshipFilterCategory.value : ""
+    );
+  }
+
+  function filterRelationshipsForList(relationships, campaign) {
+    var query = relationshipFilterQuery ? (relationshipFilterQuery.value || "").trim().toLowerCase() : "";
+    var entity = relationshipFilterEntity ? normalizeEntityKey(relationshipFilterEntity.value || "") : "";
+    var typeValue = relationshipFilterType ? (relationshipFilterType.value || "") : "";
+    var categoryValue = relationshipFilterCategory ? (relationshipFilterCategory.value || "").toLowerCase() : "";
+    var sourceKind = relationshipFilterSourceKind ? (relationshipFilterSourceKind.value || "all") : "all";
+    var targetKind = relationshipFilterTargetKind ? (relationshipFilterTargetKind.value || "all") : "all";
+
+    return (relationships || []).filter(function (rel) {
+      var sourceKey = normalizeEntityKey(rel.source_key || "");
+      var targetKey = normalizeEntityKey(rel.target_key || "");
+      var sourceDetails = entityDetailsFromKey(campaign || {}, sourceKey);
+      var targetDetails = entityDetailsFromKey(campaign || {}, targetKey);
+      var relTypeValue = relationTypeKey(rel);
+      var relTypeLabel = relationTypeLabel(rel);
+      var relCategory = String(relationCategory(rel)).toLowerCase();
+
+      if (entity && sourceKey !== entity && targetKey !== entity) return false;
+      if (typeValue && relTypeValue !== typeValue) return false;
+      if (categoryValue && relCategory !== categoryValue) return false;
+      if (sourceKind !== "all" && sourceDetails.kind !== sourceKind) return false;
+      if (targetKind !== "all" && targetDetails.kind !== targetKind) return false;
+
+      if (!query) return true;
+
+      var haystack = [
+        sourceDetails.label || sourceKey,
+        targetDetails.label || targetKey,
+        relTypeLabel,
+        relationCategory(rel),
+        rel.notes || "",
+      ].join(" ").toLowerCase();
+
+      return haystack.indexOf(query) >= 0;
+    });
+  }
+
   function renderRelationshipGraph(relationships, campaign) {
     if (!relationshipGraphSvg || !relationshipLegend || !relationshipGraphPanel) return;
     relationshipGraphSvg.innerHTML = "";
@@ -2034,6 +2194,18 @@
     var visibleEntities = buildRelationshipEntities(campaign || {}).filter(function (entity) {
       return graphGroupIncluded(entity.kind);
     });
+    if (hasActiveRelationshipListFilters()) {
+      var visibleKeys = {};
+      items.forEach(function (rel) {
+        var sourceKey = normalizeEntityKey(rel.source_key || "");
+        var targetKey = normalizeEntityKey(rel.target_key || "");
+        if (sourceKey) visibleKeys[sourceKey] = true;
+        if (targetKey) visibleKeys[targetKey] = true;
+      });
+      visibleEntities = visibleEntities.filter(function (entity) {
+        return !!visibleKeys[normalizeEntityKey(entity.key)];
+      });
+    }
 
     visibleEntities.forEach(function (entity) {
       entityMap[normalizeEntityKey(entity.key)] = entity;
@@ -2335,20 +2507,11 @@
     if (previous && filtered.indexOf(previous) >= 0) selectEl.value = previous;
     else selectEl.value = "";
   }
-  function renderRelationships(relationships, campaign) {
-    if (!relationshipsSection) return;
-    relationshipsSection.classList.remove("hidden");
-
-    var items = relationships || [];
-    lastRelationshipItems = items.slice();
-    lastRelationshipCampaign = campaign || {};
-    relationshipsCount.textContent = "(" + items.length + ")";
-
-    populateRelationshipSelects(campaign || {});
-    renderRelationshipGraph(items, campaign || {});
-
+  function renderRelationshipCards(items, campaign) {
     if (!items.length) {
-      relationshipsList.innerHTML = '<p class="placeholder">No relationships yet.</p>';
+      relationshipsList.innerHTML = lastRelationshipAllItems.length
+        ? '<p class="placeholder">No relationships match the current filters.</p>'
+        : '<p class="placeholder">No relationships yet.</p>';
       return;
     }
 
@@ -2360,7 +2523,7 @@
       var source = entityLabelFromKey(campaign, rel.source_key || "");
       var target = entityLabelFromKey(campaign, rel.target_key || "");
       var typeLabel = rel.type_label || rel.relation_type_label || rel.type_key || rel.relation_type_key || "(unknown)";
-      var category = rel.type_category || "general";
+      var category = relationCategory(rel);
       var typeKey = rel.type_key || rel.relation_type_key || "";
       var mergeTypeOptions = relationshipTypes
         .filter(function (candidate) {
@@ -2484,6 +2647,34 @@
     });
   }
 
+  function renderRelationshipsFromCurrentState() {
+    var campaign = lastRelationshipCampaign || {};
+    var filteredItems = filterRelationshipsForList(lastRelationshipAllItems, campaign);
+    lastRelationshipItems = filteredItems.slice();
+
+    if (relationshipsCount) {
+      relationshipsCount.textContent = lastRelationshipAllItems.length === filteredItems.length
+        ? "(" + lastRelationshipAllItems.length + ")"
+        : "(" + filteredItems.length + " / " + lastRelationshipAllItems.length + ")";
+    }
+
+    renderRelationshipGraph(filteredItems, campaign);
+    renderRelationshipCards(filteredItems, campaign);
+  }
+
+  function renderRelationships(relationships, campaign) {
+    if (!relationshipsSection) return;
+    relationshipsSection.classList.remove("hidden");
+
+    var items = relationships || [];
+    lastRelationshipAllItems = items.slice();
+    lastRelationshipCampaign = campaign || {};
+
+    populateRelationshipSelects(campaign || {});
+    populateRelationshipListFilterOptions(items, campaign || {});
+    renderRelationshipsFromCurrentState();
+  }
+
   if (toggleRelationshipGraphBtn) {
     toggleRelationshipGraphBtn.addEventListener("click", function () {
       setRelationshipGraphVisible(!relationshipGraphVisible);
@@ -2509,6 +2700,23 @@
   if (graphFilterNpcs) graphFilterNpcs.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterLocations) graphFilterLocations.addEventListener("change", onGraphFiltersChanged);
   if (graphFilterEntities) graphFilterEntities.addEventListener("change", onGraphFiltersChanged);
+  if (relationshipFilterQuery) relationshipFilterQuery.addEventListener("input", renderRelationshipsFromCurrentState);
+  if (relationshipFilterEntity) relationshipFilterEntity.addEventListener("change", renderRelationshipsFromCurrentState);
+  if (relationshipFilterType) relationshipFilterType.addEventListener("change", renderRelationshipsFromCurrentState);
+  if (relationshipFilterCategory) relationshipFilterCategory.addEventListener("change", renderRelationshipsFromCurrentState);
+  if (relationshipFilterSourceKind) relationshipFilterSourceKind.addEventListener("change", renderRelationshipsFromCurrentState);
+  if (relationshipFilterTargetKind) relationshipFilterTargetKind.addEventListener("change", renderRelationshipsFromCurrentState);
+  if (relationshipFilterClearBtn) {
+    relationshipFilterClearBtn.addEventListener("click", function () {
+      if (relationshipFilterQuery) relationshipFilterQuery.value = "";
+      if (relationshipFilterEntity) relationshipFilterEntity.value = "";
+      if (relationshipFilterType) relationshipFilterType.value = "";
+      if (relationshipFilterCategory) relationshipFilterCategory.value = "";
+      if (relationshipFilterSourceKind) relationshipFilterSourceKind.value = "all";
+      if (relationshipFilterTargetKind) relationshipFilterTargetKind.value = "all";
+      renderRelationshipsFromCurrentState();
+    });
+  }
   if (relSourceSearch) {
     relSourceSearch.addEventListener("input", function () {
       applyRelationshipEntityFilters(relSourceSelect, relSourceSearch, relSourceKind);
