@@ -1,11 +1,14 @@
-"""Test TTS configuration."""
+"""Tests for TTS narration feature."""
 
 from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from rpg_scribe.core.models import TTSConfig
 from rpg_scribe.tts.cache import TTSCache
+from rpg_scribe.tts.openai_provider import OpenAITTSProvider
 
 
 class TestTTSConfig:
@@ -81,3 +84,46 @@ class TestTTSCache:
         key = cache.make_key("test", "openai", "nova", "tts-1")
         url = cache.url_for(key)
         assert url == f"/api/tts/cache/{key}.mp3"
+
+
+class TestOpenAITTSProvider:
+    """Test OpenAITTSProvider implementation."""
+
+    def test_provider_name(self) -> None:
+        """Provider name must be 'openai'."""
+        provider = OpenAITTSProvider(model="tts-1")
+        assert provider.name == "openai"
+
+    def test_supported_voices(self) -> None:
+        """Must return all 6 OpenAI TTS voices."""
+        provider = OpenAITTSProvider(model="tts-1")
+        voices = provider.supported_voices()
+        assert "nova" in voices
+        assert "alloy" in voices
+        assert len(voices) == 6
+
+    @pytest.mark.asyncio
+    async def test_synthesize_calls_openai(self) -> None:
+        """synthesize() must call OpenAI API with correct parameters."""
+        fake_audio = b"\xff\xfb\x90\x00" * 50
+        mock_response = MagicMock()
+        mock_response.read = MagicMock(return_value=fake_audio)
+
+        mock_speech = MagicMock()
+        mock_speech.create = AsyncMock(return_value=mock_response)
+
+        mock_client = MagicMock()
+        mock_client.audio = MagicMock()
+        mock_client.audio.speech = mock_speech
+
+        provider = OpenAITTSProvider(model="tts-1")
+        provider._client = mock_client
+
+        result = await provider.synthesize("Hola mundo", "nova")
+        assert result == fake_audio
+        mock_speech.create.assert_called_once_with(
+            model="tts-1",
+            voice="nova",
+            input="Hola mundo",
+            response_format="mp3",
+        )
