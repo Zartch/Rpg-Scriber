@@ -127,3 +127,113 @@ class TestOpenAITTSProvider:
             input="Hola mundo",
             response_format="mp3",
         )
+
+from fastapi.testclient import TestClient
+
+
+def _make_test_app(tts_provider=None, tts_cache=None, tts_config=None):
+    """Create a minimal FastAPI app with TTS routes for testing."""
+    from fastapi import FastAPI
+    from rpg_scribe.web.routes import router, WebState
+
+    app = FastAPI()
+    state = WebState()
+    router.state = state
+    router.database = None
+    router.config = None
+    router.event_bus = None
+    router.application = None
+    router.export_root = None
+    router.ws_manager = None
+    router.tts_provider = tts_provider
+    router.tts_cache = tts_cache
+    router.tts_config = tts_config
+    app.include_router(router)
+    return app
+
+
+class TestTTSNarrateEndpoint:
+    """Test POST /api/tts/narrate streaming endpoint."""
+
+    def test_narrate_disabled_returns_503(self) -> None:
+        """Endpoint must return 503 when TTS is disabled."""
+        tts_config = TTSConfig(enabled=False)
+        app = _make_test_app(tts_config=tts_config)
+        client = TestClient(app)
+        resp = client.post("/api/tts/narrate", json={"text": "Hello"})
+        assert resp.status_code == 503
+
+    def test_narrate_streams_ndjson(self, tmp_path) -> None:
+        """Endpoint must stream one NDJSON line per paragraph with audio_url."""
+        import json
+        fake_audio = b"\xff\xfb\x90\x00" * 50
+        mock_provider = MagicMock()
+        mock_provider.name = "openai"
+        mock_provider.synthesize = AsyncMock(return_value=fake_audio)
+
+        tts_config = TTSConfig(enabled=True)
+        tts_cache = TTSCache(str(tmp_path))
+        app = _make_test_app(tts_provider=mock_provider, tts_cache=tts_cache, tts_config=tts_config)
+        client = TestClient(app)
+
+        resp = client.post("/api/tts/narrate", json={"text": "First paragraph.\n\nSecond paragraph."})
+        assert resp.status_code == 200
+        assert "application/x-ndjson" in resp.headers["content-type"]
+
+        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        assert len(lines) == 2
+        assert lines[0]["index"] == 0
+        assert lines[0]["total"] == 2
+        assert lines[0]["audio_url"].startswith("/api/tts/cache/")
+        assert lines[1]["index"] == 1
+
+    def test_narrate_uses_cache(self, tmp_path) -> None:
+        """When paragraph is cached, synthesize() must not be called."""
+        import json
+        fake_audio = b"\xff\xfb\x90\x00" * 50
+        mock_provider = MagicMock()
+        mock_provider.name = "openai"
+        mock_provider.synthesize = AsyncMock(return_value=fake_audio)
+
+        tts_config = TTSConfig(enabled=True, voice="nova", model="tts-1")
+        tts_cache = TTSCache(str(tmp_path))
+        key = tts_cache.make_key("Cached text.", "openai", "nova", "tts-1")
+        tts_cache.put(key, fake_audio)
+
+        app = _make_test_app(tts_provider=mock_provider, tts_cache=tts_cache, tts_config=tts_config)
+        client = TestClient(app)
+
+        resp = client.post("/api/tts/narrate", json={"text": "Cached text."})
+        assert resp.status_code == 200
+        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        assert lines[0]["cached"] is True
+        mock_provider.synthesize.assert_not_called()
+
+
+class TestTTSVoicesEndpoint:
+    """Test GET /api/tts/voices endpoint."""
+
+    def test_voices_when_enabled(self) -> None:
+        """Must return provider name, voices list, and current voice."""
+        mock_provider = MagicMock()
+        mock_provider.name = "openai"
+        mock_provider.supported_voices.return_value = ["alloy", "nova", "echo"]
+        tts_config = TTSConfig(enabled=True, voice="nova")
+        app = _make_test_app(tts_provider=mock_provider, tts_config=tts_config)
+        client = TestClient(app)
+
+        resp = client.get("/api/tts/voices")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["provider"] == "openai"
+        assert "nova" in data["voices"]
+        assert data["current"] == "nova"
+
+    def test_voices_when_disabled(self) -> None:
+        """Must return 503 when TTS is disabled."""
+        tts_config = TTSConfig(enabled=False)
+        app = _make_test_app(tts_config=tts_config)
+        client = TestClient(app)
+
+        resp = client.get("/api/tts/voices")
+        assert resp.status_code == 503

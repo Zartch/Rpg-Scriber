@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json as json_mod
 import logging
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
@@ -2800,3 +2801,70 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
+
+
+@router.post("/api/tts/narrate")
+async def tts_narrate(body: dict):
+    """Stream TTS audio URLs for each paragraph via NDJSON."""
+    tts_config = getattr(router, "tts_config", None)
+    if tts_config is None or not tts_config.enabled:
+        raise HTTPException(status_code=503, detail="TTS is not enabled")
+
+    tts_provider = getattr(router, "tts_provider", None)
+    tts_cache = getattr(router, "tts_cache", None)
+    if tts_provider is None or tts_cache is None:
+        raise HTTPException(status_code=503, detail="TTS provider not configured")
+
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    voice = body.get("voice") or tts_config.voice
+    provider_name = tts_provider.name
+    model = tts_config.model
+
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs:
+        raise HTTPException(status_code=400, detail="No paragraphs found in text")
+
+    total = len(paragraphs)
+
+    async def generate():
+        for idx, paragraph in enumerate(paragraphs):
+            key = tts_cache.make_key(paragraph, provider_name, voice, model)
+            cached = tts_cache.has(key)
+            if not cached:
+                try:
+                    audio = await tts_provider.synthesize(paragraph, voice)
+                    tts_cache.put(key, audio)
+                except Exception as exc:
+                    line = json_mod.dumps({"index": idx, "total": total, "error": str(exc)})
+                    yield line + "\n"
+                    continue
+            line = json_mod.dumps({
+                "index": idx,
+                "total": total,
+                "audio_url": tts_cache.url_for(key),
+                "cached": cached,
+            })
+            yield line + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@router.get("/api/tts/voices")
+async def tts_voices():
+    """Return available TTS voices for the active provider."""
+    tts_config = getattr(router, "tts_config", None)
+    if tts_config is None or not tts_config.enabled:
+        raise HTTPException(status_code=503, detail="TTS is not enabled")
+
+    tts_provider = getattr(router, "tts_provider", None)
+    if tts_provider is None:
+        raise HTTPException(status_code=503, detail="TTS provider not configured")
+
+    return {
+        "provider": tts_provider.name,
+        "voices": tts_provider.supported_voices(),
+        "current": tts_config.voice,
+    }
