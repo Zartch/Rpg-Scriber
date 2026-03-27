@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from rpg_scribe.core.models import TTSConfig
+from rpg_scribe.tts.cache import TTSCache
 
 
 class TestTTSConfig:
@@ -47,22 +48,24 @@ class TestTTSConfigLoading:
 
 
 class TestTTSCache:
-    def test_cache_key_is_deterministic(self):
-        from rpg_scribe.tts.cache import TTSCache
-        cache = TTSCache("/tmp/test_cache")
+    """Test TTSCache disk cache behaviour."""
+
+    def test_cache_key_is_deterministic(self, tmp_path) -> None:
+        """Cache key for identical inputs must be stable across calls."""
+        cache = TTSCache(tmp_path)
         key1 = cache.make_key("hello world", "openai", "nova", "tts-1")
         key2 = cache.make_key("hello world", "openai", "nova", "tts-1")
         assert key1 == key2
 
-    def test_cache_key_differs_by_voice(self):
-        from rpg_scribe.tts.cache import TTSCache
-        cache = TTSCache("/tmp/test_cache")
+    def test_cache_key_differs_by_voice(self, tmp_path) -> None:
+        """Different voices must produce different cache keys."""
+        cache = TTSCache(tmp_path)
         key1 = cache.make_key("hello", "openai", "nova", "tts-1")
         key2 = cache.make_key("hello", "openai", "echo", "tts-1")
         assert key1 != key2
 
-    def test_cache_miss_then_hit(self, tmp_path):
-        from rpg_scribe.tts.cache import TTSCache
+    def test_cache_miss_then_hit(self, tmp_path) -> None:
+        """After put(), has() and get() must return the cached data."""
         cache = TTSCache(str(tmp_path))
         key = cache.make_key("test text", "openai", "nova", "tts-1")
         assert cache.has(key) is False
@@ -72,8 +75,8 @@ class TestTTSCache:
         assert cache.has(key) is True
         assert cache.get(key) == audio_data
 
-    def test_cache_url_for(self, tmp_path):
-        from rpg_scribe.tts.cache import TTSCache
+    def test_cache_url_for(self, tmp_path) -> None:
+        """url_for must return the expected static route path."""
         cache = TTSCache(str(tmp_path))
         key = cache.make_key("test", "openai", "nova", "tts-1")
         url = cache.url_for(key)

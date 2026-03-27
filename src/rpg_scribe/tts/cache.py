@@ -12,7 +12,7 @@ class TTSCache:
     the text + provider + voice + model combination.
     """
 
-    def __init__(self, cache_dir: str) -> None:
+    def __init__(self, cache_dir: str | Path) -> None:
         self._dir = Path(cache_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +35,9 @@ class TTSCache:
 
     def put(self, key: str, audio: bytes) -> Path:
         path = self._path(key)
-        path.write_bytes(audio)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(audio)
+        tmp.replace(path)
         return path
 
     def url_for(self, key: str) -> str:
