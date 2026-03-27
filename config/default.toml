@@ -45,7 +45,7 @@ retry_base_delay_s = 1.0
 extraction_every_n_updates = 0
 
 [tts]
-enabled = false
+enabled = true
 provider = "openai"
 voice = "nova"
 model = "tts-1"

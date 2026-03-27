@@ -809,10 +809,12 @@
   // ── TTS Narration ─────────────────────────────────────────
   var ttsEnabled = false;
   var ttsAudio = null;
-  var ttsQueue = [];
-  var ttsActiveBtn = null;
-  var ttsTotalChunks = 0;
-  var ttsPlayedChunks = 0;
+  var ttsAllChunks = [];    // all chunk URLs received so far (played + pending)
+  var ttsCurrentIndex = -1; // index of chunk currently playing (-1 = generating)
+  var ttsTotalChunks = 0;   // total chunks expected from server
+  var ttsPaused = false;
+  var ttsActiveBtn = null;  // original btn-narrate (hidden while controls shown)
+  var ttsControlsEl = null; // the controls DOM element
 
   // Check if TTS is available and show buttons
   fetch("/api/tts/voices")
@@ -826,12 +828,160 @@
     })
     .catch(function () { /* TTS not available — buttons stay hidden */ });
 
+  function _getTextFromParagraphs(container) {
+    if (!container) return "";
+    var parts = [];
+    container.querySelectorAll("p.editable-paragraph").forEach(function (p) {
+      var t = p.textContent.trim();
+      if (t) parts.push(t);
+    });
+    return parts.join("\n\n");
+  }
+
   function _getNarrateText(btnId) {
-    if (btnId === "btn-narrate-session") return sessionSummaryEl ? sessionSummaryEl.textContent.trim() : "";
-    if (btnId === "btn-narrate-chronology") return sessionChronologyEl ? sessionChronologyEl.textContent.trim() : "";
-    if (btnId === "btn-narrate-campaign") return campaignSummaryEl ? campaignSummaryEl.textContent.trim() : "";
+    if (btnId === "btn-narrate-session") return _getTextFromParagraphs(sessionSummaryEl);
+    if (btnId === "btn-narrate-chronology") return _getTextFromParagraphs(sessionChronologyEl);
+    if (btnId === "btn-narrate-campaign") return _getTextFromParagraphs(campaignSummaryEl);
     return "";
   }
+
+  function _createNarrateControls(btn) {
+    var wrap = document.createElement("div");
+    wrap.className = "narrate-controls";
+
+    var btnPrev = document.createElement("button");
+    btnPrev.className = "btn-narrate-ctrl btn-narrate-prev";
+    btnPrev.title = "Chunk anterior";
+    btnPrev.textContent = "⏮ Ant.";
+    btnPrev.addEventListener("click", _prevChunk);
+
+    var sep1 = document.createElement("div");
+    sep1.className = "narrate-ctrl-sep";
+
+    var btnRestart = document.createElement("button");
+    btnRestart.className = "btn-narrate-ctrl btn-narrate-restart";
+    btnRestart.title = "Reiniciar chunk actual";
+    btnRestart.textContent = "↺";
+    btnRestart.addEventListener("click", _restartChunk);
+
+    var btnPlayPause = document.createElement("button");
+    btnPlayPause.className = "btn-narrate-ctrl btn-narrate-playpause";
+    btnPlayPause.title = "Pausa / Reanudar";
+    btnPlayPause.addEventListener("click", _pauseResume);
+
+    var sep2 = document.createElement("div");
+    sep2.className = "narrate-ctrl-sep";
+
+    var btnNext = document.createElement("button");
+    btnNext.className = "btn-narrate-ctrl btn-narrate-next";
+    btnNext.title = "Chunk siguiente";
+    btnNext.textContent = "Sig. ⏭";
+    btnNext.addEventListener("click", _nextChunk);
+
+    wrap.appendChild(btnPrev);
+    wrap.appendChild(sep1);
+    wrap.appendChild(btnRestart);
+    wrap.appendChild(btnPlayPause);
+    wrap.appendChild(sep2);
+    wrap.appendChild(btnNext);
+
+    btn.style.display = "none";
+    btn.parentNode.insertBefore(wrap, btn.nextSibling);
+    return wrap;
+  }
+
+  function _updateControls() {
+    if (!ttsControlsEl) return;
+    var btnPrev = ttsControlsEl.querySelector(".btn-narrate-prev");
+    var btnRestart = ttsControlsEl.querySelector(".btn-narrate-restart");
+    var btnPlayPause = ttsControlsEl.querySelector(".btn-narrate-playpause");
+    var btnNext = ttsControlsEl.querySelector(".btn-narrate-next");
+    var generating = ttsCurrentIndex === -1;
+    var total = ttsTotalChunks || "?";
+
+    if (generating) {
+      btnPrev.disabled = true;
+      btnRestart.disabled = true;
+      btnNext.disabled = true;
+      btnPlayPause.disabled = true;
+      btnPlayPause.classList.remove("paused");
+      btnPlayPause.innerHTML = "";
+      btnPlayPause.appendChild(createSpinner());
+      btnPlayPause.appendChild(document.createTextNode(" Generando"));
+    } else {
+      var progress = (ttsCurrentIndex + 1) + "/" + total;
+      btnPrev.disabled = ttsCurrentIndex <= 0;
+      btnRestart.disabled = false;
+      btnNext.disabled = ttsCurrentIndex >= ttsAllChunks.length - 1;
+      btnPlayPause.disabled = false;
+      if (ttsPaused) {
+        btnPlayPause.classList.add("paused");
+        btnPlayPause.textContent = "▶ " + progress;
+      } else {
+        btnPlayPause.classList.remove("paused");
+        btnPlayPause.textContent = "⏸ " + progress;
+      }
+    }
+  }
+
+  function _playChunk(index) {
+    if (index < 0 || index >= ttsAllChunks.length) return;
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio.src = "";
+      ttsAudio = null;
+    }
+    ttsCurrentIndex = index;
+    ttsPaused = false;
+    _updateControls();
+    var url = ttsAllChunks[index];
+    ttsAudio = new Audio(url);
+    ttsAudio.addEventListener("ended", function () {
+      ttsAudio = null;
+      var next = ttsCurrentIndex + 1;
+      if (next < ttsAllChunks.length) {
+        _playChunk(next);
+      } else if (ttsAllChunks.length < ttsTotalChunks) {
+        // stream still delivering — wait; stream loop will resume playback
+        _updateControls();
+      } else {
+        _onNarrationComplete();
+      }
+    });
+    ttsAudio.addEventListener("error", function () {
+      console.error("TTS audio error:", url);
+      ttsAudio = null;
+      var next = ttsCurrentIndex + 1;
+      if (next < ttsAllChunks.length) _playChunk(next);
+      else _onNarrationComplete();
+    });
+    ttsAudio.play().catch(function (err) {
+      console.error("TTS play failed:", err);
+    });
+  }
+
+  function _onNarrationComplete() {
+    if (!ttsControlsEl) return;
+    var btnPlayPause = ttsControlsEl.querySelector(".btn-narrate-playpause");
+    if (btnPlayPause) { btnPlayPause.classList.remove("paused"); btnPlayPause.textContent = "✓ Listo"; }
+    setTimeout(stopNarration, 2000);
+  }
+
+  function _pauseResume() {
+    if (!ttsAudio) return;
+    if (ttsPaused) {
+      ttsAudio.play().catch(function (err) { console.error("TTS resume failed:", err); });
+      ttsPaused = false;
+    } else {
+      ttsAudio.pause();
+      ttsPaused = true;
+    }
+    _updateControls();
+  }
+
+  function _prevChunk() { if (ttsCurrentIndex > 0) _playChunk(ttsCurrentIndex - 1); }
+  function _nextChunk() { if (ttsCurrentIndex < ttsAllChunks.length - 1) _playChunk(ttsCurrentIndex + 1); }
+  function _restartChunk() { if (ttsCurrentIndex >= 0) _playChunk(ttsCurrentIndex); }
 
   function stopNarration() {
     if (ttsAudio) {
@@ -839,51 +989,18 @@
       ttsAudio.src = "";
       ttsAudio = null;
     }
-    ttsQueue = [];
+    ttsAllChunks = [];
+    ttsCurrentIndex = -1;
     ttsTotalChunks = 0;
-    ttsPlayedChunks = 0;
+    ttsPaused = false;
+    if (ttsControlsEl && ttsControlsEl.parentNode) {
+      ttsControlsEl.parentNode.removeChild(ttsControlsEl);
+    }
+    ttsControlsEl = null;
     if (ttsActiveBtn) {
-      ttsActiveBtn.innerHTML = "&#x1F50A; Narrar";
-      ttsActiveBtn.classList.remove("narrating");
-      ttsActiveBtn.disabled = false;
+      ttsActiveBtn.style.display = "";
       ttsActiveBtn = null;
     }
-  }
-
-  function _updateNarrateProgress() {
-    if (ttsActiveBtn) {
-      ttsActiveBtn.textContent = "Narrando (" + ttsPlayedChunks + "/" + ttsTotalChunks + ")";
-    }
-  }
-
-  function _playNext() {
-    if (ttsQueue.length === 0) {
-      if (ttsActiveBtn) {
-        var doneBtn = ttsActiveBtn;
-        doneBtn.textContent = "Completado";
-        setTimeout(function () {
-          doneBtn.innerHTML = "&#x1F50A; Narrar";
-          doneBtn.classList.remove("narrating");
-          doneBtn.disabled = false;
-          if (ttsActiveBtn === doneBtn) ttsActiveBtn = null;
-        }, 2000);
-      }
-      ttsAudio = null;
-      return;
-    }
-    var url = ttsQueue.shift();
-    ttsPlayedChunks++;
-    _updateNarrateProgress();
-    ttsAudio = new Audio(url);
-    ttsAudio.addEventListener("ended", _playNext);
-    ttsAudio.addEventListener("error", function () {
-      console.error("TTS audio error:", url);
-      _playNext();
-    });
-    ttsAudio.play().catch(function (err) {
-      console.error("TTS play failed:", err);
-      _playNext();
-    });
   }
 
   async function startNarration(btn) {
@@ -894,11 +1011,13 @@
     if (ttsActiveBtn) stopNarration();
 
     ttsActiveBtn = btn;
-    btn.classList.add("narrating");
-    btn.disabled = true;
-    btn.innerHTML = "";
-    btn.appendChild(createSpinner());
-    btn.appendChild(document.createTextNode("Generando..."));
+    ttsAllChunks = [];
+    ttsCurrentIndex = -1;
+    ttsTotalChunks = 0;
+    ttsPaused = false;
+
+    ttsControlsEl = _createNarrateControls(btn);
+    _updateControls(); // shows generating state
 
     try {
       var resp = await fetch("/api/tts/narrate", {
@@ -911,7 +1030,7 @@
       var reader = resp.body.getReader();
       var decoder = new TextDecoder();
       var buffer = "";
-      var firstChunkPlayed = false;
+      var waitingForPlayback = true;
 
       while (true) {
         var result = await reader.read();
@@ -926,14 +1045,15 @@
             var chunk = JSON.parse(line);
             if (chunk.error) { console.warn("TTS paragraph error:", chunk.error); continue; }
             ttsTotalChunks = chunk.total;
-            if (!firstChunkPlayed) {
-              firstChunkPlayed = true;
-              btn.disabled = false;
-              ttsPlayedChunks = 0;
-              ttsQueue = [chunk.audio_url];
-              _playNext();
+            ttsAllChunks.push(chunk.audio_url);
+            if (waitingForPlayback) {
+              waitingForPlayback = false;
+              _playChunk(0);
+            } else if (!ttsAudio && !ttsPaused && ttsCurrentIndex < ttsAllChunks.length - 1) {
+              // audio ended while waiting for this chunk — resume
+              _playChunk(ttsCurrentIndex + 1);
             } else {
-              ttsQueue.push(chunk.audio_url);
+              _updateControls();
             }
           } catch (e) { console.warn("TTS NDJSON parse error:", line); }
         }

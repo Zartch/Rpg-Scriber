@@ -2803,6 +2803,28 @@ async def websocket_live(ws: WebSocket) -> None:
         await manager.disconnect(ws)
 
 
+_TTS_CHAR_LIMIT = 4096
+
+
+def _split_tts_chunks(text: str, limit: int = _TTS_CHAR_LIMIT) -> list[str]:
+    """Split text into chunks that fit within the TTS char limit.
+
+    Cuts at the last '.', then last ',', then last space before the limit.
+    Recurses until every chunk fits.
+    """
+    if len(text) <= limit:
+        return [text]
+    # Try last sentence boundary
+    for sep in (".", ",", " "):
+        cut = text.rfind(sep, 0, limit)
+        if cut != -1:
+            head = text[: cut + 1].strip()
+            tail = text[cut + 1 :].strip()
+            return _split_tts_chunks(head, limit) + _split_tts_chunks(tail, limit)
+    # Hard cut (should never happen with real prose)
+    return [text[:limit]] + _split_tts_chunks(text[limit:], limit)
+
+
 @router.post("/api/tts/narrate")
 async def tts_narrate(body: dict):
     """Stream TTS audio URLs for each paragraph via NDJSON."""
@@ -2823,19 +2845,28 @@ async def tts_narrate(body: dict):
     provider_name = tts_provider.name
     model = tts_config.model
 
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if not paragraphs:
+    raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not raw_paragraphs:
         raise HTTPException(status_code=400, detail="No paragraphs found in text")
 
-    total = len(paragraphs)
+    chunks: list[str] = []
+    for p_idx, paragraph in enumerate(raw_paragraphs):
+        sub = _split_tts_chunks(paragraph)
+        if len(sub) > 1:
+            logger.info("TTS chunk split: párrafo %d → %d subchunks (%d chars)", p_idx, len(sub), len(paragraph))
+        chunks.extend(sub)
+
+    total = len(chunks)
+    logger.info("TTS narrate: %d párrafos, %d chunks, voice=%s", len(raw_paragraphs), total, voice)
 
     async def generate():
-        for idx, paragraph in enumerate(paragraphs):
-            key = tts_cache.make_key(paragraph, provider_name, voice, model)
+        for idx, chunk in enumerate(chunks):
+            key = tts_cache.make_key(chunk, provider_name, voice, model)
             cached = tts_cache.has(key)
+            logger.info("TTS → OpenAI: chunk %d/%d (%d chars) cached=%s", idx + 1, total, len(chunk), cached)
             if not cached:
                 try:
-                    audio = await tts_provider.synthesize(paragraph, voice)
+                    audio = await tts_provider.synthesize(chunk, voice)
                     tts_cache.put(key, audio)
                 except Exception as exc:
                     line = json_mod.dumps({"index": idx, "total": total, "error": str(exc)})
