@@ -44,6 +44,13 @@ retry_base_delay_s = 1.0
 # Entity extraction frequency: run every N summary updates (0 = only at session finalization)
 extraction_every_n_updates = 0
 
+[tts]
+enabled = false
+provider = "openai"
+voice = "nova"
+model = "tts-1"
+cache_dir = "data/tts_cache"
+
 [web]
 host = "127.0.0.1"
 port = 8000
