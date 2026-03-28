@@ -3,17 +3,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from rpg_scribe.core.database.schema import SCHEMA_SQL
-
-if TYPE_CHECKING:
-    from rpg_scribe.core.database.repositories.campaign_repo import CampaignRepository
-    from rpg_scribe.core.database.repositories.session_repo import SessionRepository
-    from rpg_scribe.core.database.repositories.transcription_repo import TranscriptionRepository
-    from rpg_scribe.core.database.repositories.entity_repo import EntityRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +17,15 @@ class Database:
     def __init__(self, db_path: str | Path = "rpg_scribe.db") -> None:
         self._db_path = str(db_path)
         self._conn: aiosqlite.Connection | None = None
-        self.campaigns: CampaignRepository = None  # type: ignore[assignment]
-        self.sessions: SessionRepository = None  # type: ignore[assignment]
-        self.transcriptions: TranscriptionRepository = None  # type: ignore[assignment]
-        self.entities: EntityRepository = None  # type: ignore[assignment]
+        # Deferred imports to break circular dependency (repos import Database)
+        from rpg_scribe.core.database.repositories.campaign_repo import CampaignRepository
+        from rpg_scribe.core.database.repositories.session_repo import SessionRepository
+        from rpg_scribe.core.database.repositories.transcription_repo import TranscriptionRepository
+        from rpg_scribe.core.database.repositories.entity_repo import EntityRepository
+        self.campaigns = CampaignRepository(self)
+        self.sessions = SessionRepository(self)
+        self.transcriptions = TranscriptionRepository(self)
+        self.entities = EntityRepository(self)
 
     async def connect(self) -> None:
         """Open the database connection and create tables if needed."""
@@ -36,17 +34,6 @@ class Database:
         await self._conn.executescript(SCHEMA_SQL)
         await self._run_schema_migrations()
         await self._conn.commit()
-
-        # Initialize repositories after connection is established
-        from rpg_scribe.core.database.repositories.campaign_repo import CampaignRepository
-        from rpg_scribe.core.database.repositories.session_repo import SessionRepository
-        from rpg_scribe.core.database.repositories.transcription_repo import TranscriptionRepository
-        from rpg_scribe.core.database.repositories.entity_repo import EntityRepository
-
-        self.campaigns = CampaignRepository(self)
-        self.sessions = SessionRepository(self)
-        self.transcriptions = TranscriptionRepository(self)
-        self.entities = EntityRepository(self)
 
         logger.info("Database connected: %s", self._db_path)
 

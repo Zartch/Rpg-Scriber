@@ -70,7 +70,10 @@ class Application:
         self._discord_publisher: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
-        self._transcription_service: TranscriptionService | None = None
+        self._transcription_service = TranscriptionService(
+            transcription_repo=self.db.transcriptions,
+            event_bus=self.event_bus,
+        )
         self._shutdown_event = asyncio.Event()
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
@@ -79,7 +82,7 @@ class Application:
 
     async def reload_word_replacements(self) -> None:
         """Reload word replacement rules from DB into service memory cache."""
-        if self._transcription_service is None or not self.config.campaign:
+        if not self.config.campaign:
             return
         await self._transcription_service.reload_replacements(
             self.config.campaign.campaign_id
@@ -88,8 +91,6 @@ class Application:
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database, applying word replacements."""
         if event.is_partial:
-            return
-        if self._transcription_service is None:
             return
         campaign_id = self.config.campaign.campaign_id if self.config.campaign else ""
         try:
@@ -469,11 +470,7 @@ class Application:
                     notes=relation.notes,
                 )
 
-        # Create TranscriptionService and load word replacements
-        self._transcription_service = TranscriptionService(
-            transcription_repo=self.db.transcriptions,
-            event_bus=self.event_bus,
-        )
+        # Load word replacements into TranscriptionService
         if self.config.campaign:
             await self._transcription_service.reload_replacements(
                 self.config.campaign.campaign_id

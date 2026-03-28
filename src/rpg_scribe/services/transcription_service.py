@@ -53,7 +53,7 @@ class TranscriptionService:
             text=text,
             timestamp=event.timestamp,
             confidence=event.confidence,
-            is_ingame=event.is_ingame,
+            is_ingame=getattr(event, "is_ingame", False),
         )
 
         return {
@@ -63,5 +63,5 @@ class TranscriptionService:
             "text": text,
             "original_text": original_text,
             "timestamp": event.timestamp,
-            "is_ingame": event.is_ingame,
+            "is_ingame": getattr(event, "is_ingame", False),
         }
