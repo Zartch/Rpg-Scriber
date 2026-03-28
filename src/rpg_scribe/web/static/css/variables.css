@@ -1,0 +1,26 @@
+/* RPG Scribe — minimal dashboard styles */
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2a2d3a;
+  --text: #e1e4ed;
+  --text-muted: #8b8fa3;
+  --accent: #7c6af0;
+  --green: #34d399;
+  --red: #f87171;
+  --yellow: #fbbf24;
+}
+
+/* Global cyberpunk console theme */
+:root {
+  --bg: #070b12;
+  --surface: #0c1420;
+  --border: #193242;
+  --text: #d7f9ff;
+  --text-muted: #6ea2b4;
+  --accent: #7df6ff;
+  --green: #34ffb5;
+  --red: #ff6b88;
+  --yellow: #ffd36f;
+}

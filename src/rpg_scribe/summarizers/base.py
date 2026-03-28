@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (

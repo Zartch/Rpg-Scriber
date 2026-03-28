@@ -66,7 +66,7 @@ async def get_questions() -> dict[str, Any]:
 
     if db is not None and state.active_session_id:
         try:
-            pending = await db.get_pending_questions(state.active_session_id)
+            pending = await db.entities.get_pending_questions(state.active_session_id)
             return {"questions": pending}
         except Exception as exc:
             logger.error("Error fetching pending questions from DB: %s", exc)
@@ -87,7 +87,7 @@ async def answer_question(question_id: str, body: dict[str, str]) -> dict[str, A
     if db is not None:
         try:
             qid = int(question_id)
-            await db.answer_question(qid, answer_text)
+            await db.entities.answer_question(qid, answer_text)
             return {"ok": True}
         except ValueError:
             return {"ok": False, "error": "invalid question id"}

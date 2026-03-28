@@ -7,9 +7,8 @@ import io
 import struct
 import time
 import wave
-from dataclasses import dataclass
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

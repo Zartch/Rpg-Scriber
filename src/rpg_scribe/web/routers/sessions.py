@@ -79,8 +79,8 @@ async def _load_session_export_data(session_id: str) -> SessionExportData | None
         transcriptions = live_transcriptions
         if db is not None:
             try:
-                session_row = await db.get_session(session_id) or {}
-                transcriptions = [dict(item) for item in await db.get_transcriptions(session_id)]
+                session_row = await db.sessions.get_session(session_id) or {}
+                transcriptions = [dict(item) for item in await db.transcriptions.get_transcriptions(session_id)]
             except Exception as exc:
                 logger.error("Error loading active session row for export: %s", exc)
         return SessionExportData(
@@ -95,8 +95,8 @@ async def _load_session_export_data(session_id: str) -> SessionExportData | None
 
     if db is not None:
         try:
-            session_row = await db.get_session(session_id)
-            transcriptions = await db.get_transcriptions(session_id)
+            session_row = await db.sessions.get_session(session_id)
+            transcriptions = await db.transcriptions.get_transcriptions(session_id)
         except Exception as exc:
             logger.error("Error loading historical session export data: %s", exc)
             session_row = None
@@ -178,12 +178,12 @@ async def get_summary(session_id: str) -> dict[str, Any]:
     db = _get_database()
     if db is not None:
         try:
-            session = await db.get_session(session_id)
+            session = await db.sessions.get_session(session_id)
             if session:
                 campaign_summary = ""
                 campaign_id = session.get("campaign_id", "")
                 if campaign_id:
-                    campaign = await db.get_campaign(campaign_id)
+                    campaign = await db.campaigns.get_campaign(campaign_id)
                     if campaign:
                         campaign_summary = campaign.get("campaign_summary", "")
                 return {
@@ -223,7 +223,7 @@ async def update_session_summary(
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     text = body.get("session_summary", "")
-    ok = await db.update_session_summary(session_id, text)
+    ok = await db.sessions.update_session_summary(session_id, text)
     if not ok:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -243,7 +243,7 @@ async def update_session_chronology(
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     text = body.get("session_chronology", "")
-    ok = await db.update_session_chronology(session_id, text)
+    ok = await db.sessions.update_session_chronology(session_id, text)
     if not ok:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -273,11 +273,11 @@ async def generate_session_summary(session_id: str) -> dict[str, Any]:
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    session = await db.get_session(session_id)
+    session = await db.sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    rows = await db.get_transcriptions(session_id)
+    rows = await db.transcriptions.get_transcriptions(session_id)
     if not rows:
         raise HTTPException(
             status_code=400,
@@ -314,7 +314,7 @@ async def generate_session_summary(session_id: str) -> dict[str, Any]:
 
     summary = await summarizer.generate_session_summary_from_transcriptions(rows)
     if summary:
-        await db.end_session(session_id, summary)
+        await db.sessions.end_session(session_id, summary)
         if session_id == state.active_session_id:
             state.session_summary = summary
 
@@ -329,12 +329,12 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    session = await db.get_session(session_id)
+    session = await db.sessions.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
     session_summary = session.get("session_summary", "") or ""
-    rows = await db.get_transcriptions(session_id)
+    rows = await db.transcriptions.get_transcriptions(session_id)
     if not rows:
         raise HTTPException(
             status_code=400,
@@ -367,7 +367,7 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
     chronology = await summarizer.generate_chronology_from_transcriptions(
         [dict(r) for r in rows], session_summary
     )
-    await db.update_session_chronology(session_id, chronology)
+    await db.sessions.update_session_chronology(session_id, chronology)
 
     state = _get_state()
     if session_id == state.active_session_id:
@@ -383,7 +383,7 @@ async def list_all_sessions() -> dict[str, Any]:
     if db is None:
         return {"sessions": []}
     try:
-        sessions = await db.list_all_sessions()
+        sessions = await db.sessions.list_all_sessions()
     except Exception as exc:
         logger.error("Error listing all sessions: %s", exc)
         return {"sessions": []}
@@ -397,7 +397,7 @@ async def list_uncategorized_sessions() -> dict[str, Any]:
     if db is None:
         return {"sessions": []}
     try:
-        sessions = await db.list_uncategorized_sessions()
+        sessions = await db.sessions.list_uncategorized_sessions()
     except Exception as exc:
         logger.error("Error listing uncategorized sessions: %s", exc)
         return {"sessions": []}
@@ -411,7 +411,7 @@ async def list_campaign_sessions(campaign_id: str) -> dict[str, Any]:
     if db is None:
         return {"sessions": []}
     try:
-        sessions = await db.list_sessions(campaign_id)
+        sessions = await db.sessions.list_sessions(campaign_id)
     except Exception as exc:
         logger.error("Error listing campaign sessions: %s", exc)
         return {"sessions": []}
@@ -605,7 +605,7 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
         session_summary = state.session_summary
     else:
         try:
-            session_row = await db.get_session(session_id)
+            session_row = await db.sessions.get_session(session_id)
         except Exception as exc:
             return {"ok": False, "error": f"Session not found: {exc}"}
         if not session_row:
@@ -700,7 +700,7 @@ async def merge_sessions_endpoint(body: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "source_id and target_id are required"}
 
     try:
-        await db.merge_sessions(source_id, target_id)
+        await db.sessions.merge_sessions(source_id, target_id)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 

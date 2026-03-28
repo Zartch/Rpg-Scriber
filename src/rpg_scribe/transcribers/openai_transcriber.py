@@ -6,12 +6,10 @@ import asyncio
 import hashlib
 import io
 import logging
-import struct
-import time
 import wave
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import AudioChunkEvent, TranscriptionEvent, SystemStatusEvent
+from rpg_scribe.core.events import AudioChunkEvent, TranscriptionEvent
 from rpg_scribe.core.models import TranscriberConfig
 from rpg_scribe.transcribers.base import BaseTranscriber
 

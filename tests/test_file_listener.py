@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import struct
 import tempfile
 
 import numpy as np

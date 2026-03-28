@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
-from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,10 +23,6 @@ from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
 from rpg_scribe.core.database import Database
 from rpg_scribe.summarizers.claude_summarizer import (
     ClaudeSummarizer,
-    FINALIZE_USER,
-    QUESTION_PATTERN,
-    SESSION_SYSTEM_PROMPT,
-    SESSION_UPDATE_USER,
 )
 
 

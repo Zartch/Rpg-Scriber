@@ -40,9 +40,9 @@ class AnswerQuestionModal(discord.ui.Modal, title="Responder pregunta"):
         self.database = database
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self.database.answer_question(self.question_id, self.answer.value)
+        await self.database.entities.answer_question(self.question_id, self.answer.value)
         await interaction.response.send_message(
-            f"Respuesta guardada. Gracias!",
+            "Respuesta guardada. Gracias!",
             ephemeral=True,
         )
 
@@ -189,7 +189,7 @@ class ScribeCog(commands.Cog):
             )
             return
 
-        session = await self.database.get_session(self.session_id)
+        session = await self.database.sessions.get_session(self.session_id)
         summary_text = (session or {}).get("session_summary", "") or ""
 
         if not summary_text:
@@ -230,7 +230,7 @@ class ScribeCog(commands.Cog):
             )
             return
 
-        pending = await self.database.get_pending_questions(self.session_id)
+        pending = await self.database.entities.get_pending_questions(self.session_id)
         if not pending:
             await interaction.response.send_message(
                 "No hay preguntas pendientes.", ephemeral=True

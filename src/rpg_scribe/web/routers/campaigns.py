@@ -52,7 +52,7 @@ async def _validate_campaign(campaign_id: str) -> bool:
     db = _get_database()
     if db:
         try:
-            row = await db.get_campaign(campaign_id)
+            row = await db.campaigns.get_campaign(campaign_id)
             if row:
                 campaign: dict[str, Any] = {
                     "id": row.get("id", ""),
@@ -64,15 +64,15 @@ async def _validate_campaign(campaign_id: str) -> bool:
                     "dm_speaker_id": row.get("dm_speaker_id", ""),
                     "is_generic": False,
                 }
-                campaign["players"] = await db.get_players(campaign_id)
-                campaign["npcs"] = await db.get_npcs(campaign_id)
-                campaign["locations"] = await db.get_locations(campaign_id)
-                campaign["entities"] = await db.get_entities(campaign_id)
+                campaign["players"] = await db.entities.get_players(campaign_id)
+                campaign["npcs"] = await db.entities.get_npcs(campaign_id)
+                campaign["locations"] = await db.entities.get_locations(campaign_id)
+                campaign["entities"] = await db.entities.get_entities(campaign_id)
                 campaign["relationships"] = (
-                    await db.get_character_relationships(campaign_id)
+                    await db.entities.get_character_relationships(campaign_id)
                 )
                 campaign["relationship_types"] = (
-                    await db.get_relationship_types(campaign_id)
+                    await db.entities.get_relationship_types(campaign_id)
                 )
                 state.active_campaign = campaign
                 return True
@@ -93,16 +93,16 @@ async def _load_campaign_context_from_db(db, campaign_id: str):
         RelationshipTypeInfo,
     )
 
-    camp_row = await db.get_campaign(campaign_id)
+    camp_row = await db.campaigns.get_campaign(campaign_id)
     if not camp_row:
         return None
 
-    players_rows = await db.get_players(campaign_id)
-    npcs_rows = await db.get_npcs(campaign_id)
-    locations_rows = await db.get_locations(campaign_id)
-    entities_rows = await db.get_entities(campaign_id)
-    rel_types_rows = await db.get_relationship_types(campaign_id)
-    rels_rows = await db.get_character_relationships(campaign_id)
+    players_rows = await db.entities.get_players(campaign_id)
+    npcs_rows = await db.entities.get_npcs(campaign_id)
+    locations_rows = await db.entities.get_locations(campaign_id)
+    entities_rows = await db.entities.get_entities(campaign_id)
+    rel_types_rows = await db.entities.get_relationship_types(campaign_id)
+    rels_rows = await db.entities.get_character_relationships(campaign_id)
 
     return CampaignContext(
         campaign_id=campaign_id,
@@ -190,9 +190,9 @@ async def _load_merged_children_maps(
             "merged_entities_by_parent": {},
         }
     return {
-        "merged_npcs_by_parent": await db.get_merged_npcs_map(campaign_id),
-        "merged_locations_by_parent": await db.get_merged_locations_map(campaign_id),
-        "merged_entities_by_parent": await db.get_merged_entities_map(campaign_id),
+        "merged_npcs_by_parent": await db.entities.get_merged_npcs_map(campaign_id),
+        "merged_locations_by_parent": await db.entities.get_merged_locations_map(campaign_id),
+        "merged_entities_by_parent": await db.entities.get_merged_entities_map(campaign_id),
     }
 
 
@@ -217,7 +217,7 @@ async def get_campaigns() -> dict[str, Any]:
         and db
     ):
         try:
-            row = await db.get_campaign(config.campaign.campaign_id)
+            row = await db.campaigns.get_campaign(config.campaign.campaign_id)
             if row:
                 campaign = {
                     "id": row.get("id", ""),
@@ -239,34 +239,34 @@ async def get_campaigns() -> dict[str, Any]:
     campaign_id = campaign.get("id", "")
     if db and campaign_id and not campaign.get("is_generic"):
         try:
-            campaign["players"] = await db.get_players(campaign_id)
+            campaign["players"] = await db.entities.get_players(campaign_id)
         except Exception as exc:
             logger.error("Error fetching players: %s", exc)
             campaign.setdefault("players", [])
         try:
-            campaign["npcs"] = await db.get_npcs(campaign_id)
+            campaign["npcs"] = await db.entities.get_npcs(campaign_id)
         except Exception as exc:
             logger.error("Error fetching NPCs: %s", exc)
             campaign.setdefault("npcs", [])
         try:
-            campaign["locations"] = await db.get_locations(campaign_id)
+            campaign["locations"] = await db.entities.get_locations(campaign_id)
         except Exception as exc:
             logger.error("Error fetching locations: %s", exc)
             campaign.setdefault("locations", [])
         try:
-            campaign["entities"] = await db.get_entities(campaign_id)
+            campaign["entities"] = await db.entities.get_entities(campaign_id)
         except Exception as exc:
             logger.error("Error fetching entities: %s", exc)
             campaign.setdefault("entities", [])
         try:
-            campaign["relationship_types"] = await db.get_relationship_types(
+            campaign["relationship_types"] = await db.entities.get_relationship_types(
                 campaign_id
             )
         except Exception as exc:
             logger.error("Error fetching relationship types: %s", exc)
             campaign.setdefault("relationship_types", [])
         try:
-            campaign["relationships"] = await db.get_character_relationships(
+            campaign["relationships"] = await db.entities.get_character_relationships(
                 campaign_id
             )
         except Exception as exc:
@@ -312,7 +312,7 @@ async def list_browse_campaigns() -> dict[str, Any]:
     campaigns: list[dict[str, Any]] = []
     if db is not None:
         try:
-            rows = await db.list_campaigns()
+            rows = await db.campaigns.list_campaigns()
             campaigns = [_flatten_campaign_row(r) for r in rows]
         except Exception as exc:
             logger.error("Error listing campaigns for browse: %s", exc)
@@ -337,17 +337,17 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
     campaign: dict[str, Any] | None = None
     if db is not None:
         try:
-            row = await db.get_campaign(campaign_id)
+            row = await db.campaigns.get_campaign(campaign_id)
             if row:
                 campaign = _flatten_campaign_row(row)
-                campaign["players"] = await db.get_players(campaign_id)
-                campaign["npcs"] = await db.get_npcs(campaign_id)
-                campaign["locations"] = await db.get_locations(campaign_id)
-                campaign["entities"] = await db.get_entities(campaign_id)
-                campaign["relationship_types"] = await db.get_relationship_types(
+                campaign["players"] = await db.entities.get_players(campaign_id)
+                campaign["npcs"] = await db.entities.get_npcs(campaign_id)
+                campaign["locations"] = await db.entities.get_locations(campaign_id)
+                campaign["entities"] = await db.entities.get_entities(campaign_id)
+                campaign["relationship_types"] = await db.entities.get_relationship_types(
                     campaign_id
                 )
-                campaign["relationships"] = await db.get_character_relationships(
+                campaign["relationships"] = await db.entities.get_character_relationships(
                     campaign_id
                 )
                 campaign.update(await _load_merged_children_maps(db, campaign_id))
@@ -423,9 +423,9 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
 
     if db is not None:
         try:
-            current = await db.get_campaign(campaign_id)
+            current = await db.campaigns.get_campaign(campaign_id)
             if current:
-                await db.upsert_campaign(
+                await db.campaigns.upsert_campaign(
                     campaign_id=campaign_id,
                     name=updates.get("name", current.get("name", "")),
                     game_system=updates.get(
@@ -466,7 +466,7 @@ async def update_campaign_summary_text(
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
     text = body.get("campaign_summary", "")
-    await db.update_campaign_summary(campaign_id, text)
+    await db.campaigns.update_campaign_summary(campaign_id, text)
 
     state = _get_state()
     state.campaign_summary = text
@@ -504,7 +504,7 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
     event_bus = _get_event_bus()
 
     # Step 1: Generate missing session summaries
-    all_sessions = await db.list_sessions(campaign_id)
+    all_sessions = await db.sessions.list_sessions(campaign_id)
     missing = [
         s
         for s in all_sessions
@@ -521,14 +521,14 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
             session_id=session_id,
         ))
         try:
-            rows = await db.get_transcriptions(session_id)
+            rows = await db.transcriptions.get_transcriptions(session_id)
             if not rows:
                 continue
             summary = await summarizer.generate_session_summary_from_transcriptions(
                 rows
             )
             if summary:
-                await db.end_session(session_id, summary)
+                await db.sessions.end_session(session_id, summary)
                 sessions_processed += 1
                 logger.info("Generated missing summary for session %s", session_id)
         except Exception as exc:
@@ -537,7 +537,7 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
             )
 
     # Step 2: Generate campaign summary from all sessions that now have one
-    all_sessions = await db.list_sessions(campaign_id)
+    all_sessions = await db.sessions.list_sessions(campaign_id)
     completed = sorted(
         [
             s
@@ -567,7 +567,7 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if campaign_summary:
-        await db.save_campaign_summary(
+        await db.campaigns.save_campaign_summary(
             campaign_id=campaign_id,
             content=campaign_summary,
             trigger_session_id="",
@@ -591,7 +591,7 @@ async def list_campaign_summaries(campaign_id: str) -> dict[str, Any]:
     if db is None:
         return {"campaign_summaries": []}
     try:
-        rows = await db.list_campaign_summaries(campaign_id)
+        rows = await db.campaigns.list_campaign_summaries(campaign_id)
     except Exception as exc:
         logger.error("Error listing campaign summaries: %s", exc)
         return {"campaign_summaries": []}
@@ -622,7 +622,7 @@ async def get_latest_campaign_summary(campaign_id: str) -> dict[str, Any]:
     if db is None:
         return {"campaign_summary": None}
     try:
-        row = await db.get_latest_campaign_summary(campaign_id)
+        row = await db.campaigns.get_latest_campaign_summary(campaign_id)
     except Exception as exc:
         logger.error("Error fetching latest campaign summary: %s", exc)
         return {"campaign_summary": None}
@@ -636,7 +636,7 @@ async def get_campaign_summary(campaign_id: str, summary_id: str) -> dict[str, A
     if db is None:
         return {"campaign_summary": None}
     try:
-        row = await db.get_campaign_summary_by_id(summary_id)
+        row = await db.campaigns.get_campaign_summary_by_id(summary_id)
     except Exception as exc:
         logger.error("Error fetching campaign summary %s: %s", summary_id, exc)
         return {"campaign_summary": None}

@@ -79,13 +79,13 @@ def create_app(
         if database is None:
             return
         try:
-            state.active_campaign["npcs"] = await database.get_npcs(event.campaign_id)
-            state.active_campaign["locations"] = await database.get_locations(event.campaign_id)
-            state.active_campaign["entities"] = await database.get_entities(event.campaign_id)
-            state.active_campaign["relationships"] = await database.get_character_relationships(
+            state.active_campaign["npcs"] = await database.entities.get_npcs(event.campaign_id)
+            state.active_campaign["locations"] = await database.entities.get_locations(event.campaign_id)
+            state.active_campaign["entities"] = await database.entities.get_entities(event.campaign_id)
+            state.active_campaign["relationships"] = await database.entities.get_character_relationships(
                 event.campaign_id
             )
-            state.active_campaign["relationship_types"] = await database.get_relationship_types(
+            state.active_campaign["relationship_types"] = await database.entities.get_relationship_types(
                 event.campaign_id
             )
         except Exception as exc:

@@ -48,7 +48,7 @@ async def get_transcriptions(session_id: str) -> dict[str, Any]:
     db = _get_database()
     if db is not None:
         try:
-            rows = await db.get_transcriptions(session_id)
+            rows = await db.transcriptions.get_transcriptions(session_id)
             return {"session_id": session_id, "transcriptions": rows}
         except Exception as exc:
             logger.error("Error fetching transcriptions from DB: %s", exc)
@@ -64,7 +64,7 @@ async def get_full_transcriptions(session_id: str) -> dict[str, Any]:
 
     if db is not None:
         try:
-            rows = await db.get_transcriptions(session_id)
+            rows = await db.transcriptions.get_transcriptions(session_id)
             return {"session_id": session_id, "transcriptions": rows}
         except Exception as exc:
             logger.error("Error fetching full transcriptions from DB: %s", exc)
@@ -89,13 +89,13 @@ async def update_transcription(
     if not new_text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    ok = await db.update_transcription_text(transcription_id, new_text)
+    ok = await db.transcriptions.update_transcription_text(transcription_id, new_text)
     if not ok:
         raise HTTPException(status_code=404, detail="Transcription not found")
 
     edits = body.get("edits", [])
     for edit in edits:
-        await db.save_transcription_edit(
+        await db.transcriptions.save_transcription_edit(
             transcription_id=transcription_id,
             original_word=edit.get("original", ""),
             new_word=edit.get("new", ""),
@@ -117,7 +117,7 @@ async def delete_transcription(transcription_id: int) -> dict[str, Any]:
     db = _get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-    ok = await db.delete_transcription(transcription_id)
+    ok = await db.transcriptions.delete_transcription(transcription_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Transcription not found")
 
@@ -139,7 +139,7 @@ async def toggle_transcription_meta(
         raise HTTPException(status_code=503, detail="Database not available")
 
     is_ingame = body.get("is_ingame", True)
-    ok = await db.update_transcription_is_ingame(transcription_id, is_ingame)
+    ok = await db.transcriptions.update_transcription_is_ingame(transcription_id, is_ingame)
     if not ok:
         raise HTTPException(status_code=404, detail="Transcription not found")
 
@@ -161,7 +161,7 @@ async def get_word_replacements(campaign_id: str) -> dict[str, Any]:
     db = _get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-    replacements = await db.get_word_replacements(campaign_id)
+    replacements = await db.transcriptions.get_word_replacements(campaign_id)
     return {"replacements": replacements}
 
 
@@ -180,7 +180,7 @@ async def create_word_replacement(
             status_code=400,
             detail="Both original_word and replacement_word are required",
         )
-    rule_id = await db.save_word_replacement(campaign_id, original, replacement)
+    rule_id = await db.transcriptions.save_word_replacement(campaign_id, original, replacement)
     app = _get_application()
     if app and hasattr(app, "reload_word_replacements"):
         await app.reload_word_replacements()
@@ -195,7 +195,7 @@ async def delete_word_replacement(
     db = _get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-    ok = await db.delete_word_replacement(replacement_id)
+    ok = await db.transcriptions.delete_word_replacement(replacement_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Replacement rule not found")
     app = _get_application()
@@ -210,5 +210,5 @@ async def apply_word_replacements(campaign_id: str) -> dict[str, Any]:
     db = _get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
-    modified = await db.apply_word_replacements(campaign_id)
+    modified = await db.transcriptions.apply_word_replacements(campaign_id)
     return {"ok": True, "modified_count": modified}

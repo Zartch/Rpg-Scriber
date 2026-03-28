@@ -138,19 +138,15 @@ class Application:
         """Save summary updates to the database."""
         try:
             if event.session_summary:
-                session = await self.db.get_session(event.session_id)
-                if session:
-                    await self.db.conn.execute(
-                        "UPDATE sessions SET session_summary = ? WHERE id = ?",
-                        (event.session_summary, event.session_id),
-                    )
-                    await self.db.conn.commit()
+                await self.db.sessions.update_session_summary(
+                    event.session_id, event.session_summary
+                )
             if event.session_chronology:
-                await self.db.update_session_chronology(
+                await self.db.sessions.update_session_chronology(
                     event.session_id, event.session_chronology
                 )
             if event.campaign_summary and self.config.campaign:
-                await self.db.update_campaign_summary(
+                await self.db.campaigns.update_campaign_summary(
                     self.config.campaign.campaign_id,
                     event.campaign_summary,
                 )
@@ -295,7 +291,7 @@ class Application:
             )
 
             c = self.config.campaign
-            existing = await self.db.get_campaign(c.campaign_id)
+            existing = await self.db.campaigns.get_campaign(c.campaign_id)
 
             if existing:
                 # Campaign exists in DB: DB values are the source of truth for runtime.
@@ -311,7 +307,7 @@ class Application:
                 )
                 c.dm_speaker_id = existing.get("dm_speaker_id", c.dm_speaker_id)
 
-                db_players = await self.db.get_players(c.campaign_id)
+                db_players = await self.db.entities.get_players(c.campaign_id)
                 if db_players:
                     c.players = [
                         PlayerInfo(
@@ -328,7 +324,7 @@ class Application:
                     p.discord_id: p.character_name for p in c.players if p.discord_id
                 }
 
-                db_npcs = await self.db.get_npcs(c.campaign_id)
+                db_npcs = await self.db.entities.get_npcs(c.campaign_id)
                 if db_npcs:
                     c.known_npcs = [
                         NPCInfo(
@@ -339,7 +335,7 @@ class Application:
                         if n.get("name")
                     ]
 
-                db_locations = await self.db.get_locations(c.campaign_id)
+                db_locations = await self.db.entities.get_locations(c.campaign_id)
                 if db_locations:
                     c.locations = [
                         LocationInfo(
@@ -350,7 +346,7 @@ class Application:
                         if l.get("name")
                     ]
 
-                db_entities = await self.db.get_entities(c.campaign_id)
+                db_entities = await self.db.entities.get_entities(c.campaign_id)
                 if db_entities:
                     c.entities = [
                         EntityInfo(
@@ -362,7 +358,7 @@ class Application:
                         if e.get("name")
                     ]
 
-                db_relationship_types = await self.db.get_relationship_types(
+                db_relationship_types = await self.db.entities.get_relationship_types(
                     c.campaign_id
                 )
                 if db_relationship_types:
@@ -376,7 +372,7 @@ class Application:
                         if t.get("canonical_key")
                     ]
 
-                db_relationships = await self.db.get_character_relationships(
+                db_relationships = await self.db.entities.get_character_relationships(
                     c.campaign_id
                 )
                 if db_relationships:
@@ -394,7 +390,7 @@ class Application:
                         and r.get("type_key")
                     ]
             else:
-                await self.db.upsert_campaign(
+                await self.db.campaigns.upsert_campaign(
                     campaign_id=c.campaign_id,
                     name=c.name,
                     game_system=c.game_system,
@@ -408,8 +404,8 @@ class Application:
 
             # Persist players from campaign config to DB (idempotent)
             for player in c.players:
-                if not await self.db.player_exists(c.campaign_id, player.discord_id):
-                    await self.db.save_player(
+                if not await self.db.entities.player_exists(c.campaign_id, player.discord_id):
+                    await self.db.entities.save_player(
                         campaign_id=c.campaign_id,
                         discord_id=player.discord_id,
                         discord_name=player.discord_name,
@@ -419,8 +415,8 @@ class Application:
 
             # Persist NPCs from campaign config to DB (idempotent)
             for npc in c.known_npcs:
-                if not await self.db.npc_exists(c.campaign_id, npc.name):
-                    await self.db.save_npc(
+                if not await self.db.entities.npc_exists(c.campaign_id, npc.name):
+                    await self.db.entities.save_npc(
                         c.campaign_id,
                         npc.name,
                         npc.description,
@@ -430,8 +426,8 @@ class Application:
             for loc in c.locations:
                 if not loc.name:
                     continue
-                if not await self.db.location_exists(c.campaign_id, loc.name):
-                    await self.db.save_location(
+                if not await self.db.entities.location_exists(c.campaign_id, loc.name):
+                    await self.db.entities.save_location(
                         c.campaign_id,
                         loc.name,
                         loc.description,
@@ -441,8 +437,8 @@ class Application:
             for entity in c.entities:
                 if not entity.name:
                     continue
-                if not await self.db.entity_exists(c.campaign_id, entity.name):
-                    await self.db.save_entity(
+                if not await self.db.entities.entity_exists(c.campaign_id, entity.name):
+                    await self.db.entities.save_entity(
                         c.campaign_id,
                         entity.name,
                         entity.entity_type,
@@ -451,7 +447,7 @@ class Application:
 
             # Seed relationship thesaurus and relationships from campaign config.
             for relation_type in c.relation_types:
-                await self.db.resolve_relationship_type(
+                await self.db.entities.resolve_relationship_type(
                     c.campaign_id,
                     relation_type.label or relation_type.key,
                     category=relation_type.category or "general",
@@ -462,7 +458,7 @@ class Application:
                     continue
                 if not relation.relation_type_label and not relation.relation_type_key:
                     continue
-                await self.db.save_character_relationship(
+                await self.db.entities.save_character_relationship(
                     c.campaign_id,
                     relation.source_key,
                     relation.target_key,
@@ -558,7 +554,7 @@ class Application:
         campaign_id = ""
         if self.config.campaign:
             campaign_id = self.config.campaign.campaign_id
-        await self.db.create_session(session_id, campaign_id)
+        await self.db.sessions.create_session(session_id, campaign_id)
         await self._setup_summarizer(session_id)
         logger.info("Session %s started", session_id)
 
@@ -574,7 +570,7 @@ class Application:
             except Exception as exc:
                 logger.error("Failed to finalize session: %s", exc)
 
-        await self.db.end_session(session_id, summary, chronology)
+        await self.db.sessions.end_session(session_id, summary, chronology)
         self._active_session_id = None
 
         # Generate and persist campaign summary from all session summaries
@@ -597,7 +593,7 @@ class Application:
             return ""
 
         try:
-            sessions = await self.db.list_sessions(campaign.campaign_id)
+            sessions = await self.db.sessions.list_sessions(campaign.campaign_id)
             # Only completed sessions with a non-empty summary, oldest first
             completed = sorted(
                 [
@@ -615,7 +611,6 @@ class Application:
             # Reuse the existing summarizer client if available, else create a fresh one
             summarizer = self._summarizer
             if summarizer is None or not isinstance(summarizer, ClaudeSummarizer):
-                from rpg_scribe.core.models import SummarizerConfig
 
                 summarizer = ClaudeSummarizer(
                     self.event_bus,
@@ -629,7 +624,7 @@ class Application:
             )
 
             if campaign_summary:
-                await self.db.save_campaign_summary(
+                await self.db.campaigns.save_campaign_summary(
                     campaign_id=campaign.campaign_id,
                     content=campaign_summary,
                     trigger_session_id=trigger_session_id,

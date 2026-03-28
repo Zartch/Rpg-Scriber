@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import argparse
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from rpg_scribe.config import AppConfig, load_app_config, load_campaign_toml, _apply_defaults_to_config
+from rpg_scribe.config import AppConfig, load_app_config, load_campaign_toml
 
 
 SAMPLE_CAMPAIGN_TOML = """\
@@ -181,7 +180,6 @@ path = "custom.db"
 class TestDefaultTomlLoading:
     def test_defaults_from_toml_override_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Values from default.toml should override dataclass defaults."""
-        import os
         for k in list(os.environ):
             if k.startswith("RPG_SCRIBE_") or k == "DISCORD_BOT_TOKEN":
                 monkeypatch.delenv(k, raising=False)

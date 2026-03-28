@@ -303,7 +303,7 @@ class TestRESTEndpoints:
 
     async def test_get_full_transcriptions_prefers_db(self, event_bus: EventBus):
         db = AsyncMock()
-        db.get_transcriptions = AsyncMock(return_value=[
+        db.transcriptions.get_transcriptions = AsyncMock(return_value=[
             {
                 "session_id": "sess-001",
                 "speaker_name": "Ana",
@@ -334,13 +334,13 @@ class TestRESTEndpoints:
         self, event_bus: EventBus
     ):
         db = AsyncMock()
-        db.get_session = AsyncMock(return_value={
+        db.sessions.get_session = AsyncMock(return_value={
             "id": "sess-001",
             "campaign_id": "camp-1",
             "session_summary": "Stored DB summary",
             "ended_at": 1700001111.0,
         })
-        db.get_campaign = AsyncMock(return_value={"campaign_summary": "Camp DB summary"})
+        db.campaigns.get_campaign = AsyncMock(return_value={"campaign_summary": "Camp DB summary"})
 
         app = create_app(event_bus, database=db)
         from rpg_scribe.web.routes import router
@@ -365,7 +365,7 @@ class TestRESTEndpoints:
 
     async def test_get_questions_from_db_active_session(self, event_bus: EventBus):
         db = AsyncMock()
-        db.get_pending_questions = AsyncMock(return_value=[
+        db.entities.get_pending_questions = AsyncMock(return_value=[
             {"id": 10, "question": "¿Quién es el PNJ?", "status": "pending"},
         ])
 
@@ -383,7 +383,7 @@ class TestRESTEndpoints:
         body = resp.json()
         assert len(body["questions"]) == 1
         assert body["questions"][0]["id"] == 10
-        db.get_pending_questions.assert_awaited_once_with("sess-live")
+        db.entities.get_pending_questions.assert_awaited_once_with("sess-live")
     async def test_get_campaigns_empty(self, client: AsyncClient):
         resp = await client.get("/api/campaigns")
         assert resp.status_code == 200
@@ -443,7 +443,7 @@ class TestRESTEndpoints:
 
     async def test_answer_question_persists_to_db(self, event_bus: EventBus):
         db = AsyncMock()
-        db.answer_question = AsyncMock()
+        db.entities.answer_question = AsyncMock()
 
         app = create_app(event_bus, database=db)
         from rpg_scribe.web.routes import router
@@ -460,7 +460,7 @@ class TestRESTEndpoints:
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        db.answer_question.assert_awaited_once_with(42, "Es el herrero.")
+        db.entities.answer_question.assert_awaited_once_with(42, "Es el herrero.")
     async def test_answer_question_missing(self, client: AsyncClient):
         resp = await client.post(
             "/api/questions/nonexistent/answer",
@@ -552,7 +552,7 @@ class TestRESTEndpoints:
         self, event_bus: EventBus, tmp_path
     ):
         db = AsyncMock()
-        db.get_session = AsyncMock(return_value={
+        db.sessions.get_session = AsyncMock(return_value={
             "id": "sess-db",
             "started_at": 1700000000.0,
             "ended_at": 1700003600.0,
@@ -560,7 +560,7 @@ class TestRESTEndpoints:
             "session_summary": "Stored summary",
             "session_chronology": "",
         })
-        db.get_transcriptions = AsyncMock(return_value=[
+        db.transcriptions.get_transcriptions = AsyncMock(return_value=[
             {
                 "id": 1,
                 "session_id": "sess-db",
@@ -663,7 +663,7 @@ class TestSessionListEndpoint:
     async def test_list_sessions_returns_sessions(self, event_bus: EventBus):
         """With a database, sessions are returned with truncated summaries."""
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-001",
                 "campaign_id": "camp-1",
@@ -698,7 +698,7 @@ class TestSessionListEndpoint:
     async def test_list_sessions_ordered_by_date(self, event_bus: EventBus):
         """Sessions should be returned in the order provided by database (desc by started_at)."""
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-new",
                 "campaign_id": "camp-1",
@@ -728,7 +728,7 @@ class TestSessionListEndpoint:
         """Long summaries should be truncated to 150 chars with ellipsis."""
         long_summary = "A" * 200
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-long",
                 "campaign_id": "camp-1",

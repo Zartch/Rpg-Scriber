@@ -145,8 +145,8 @@ async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) 
     if config.campaign.campaign_id != campaign_id:
         return
 
-    types = await db.get_relationship_types(campaign_id)
-    rels = await db.get_character_relationships(campaign_id)
+    types = await db.entities.get_relationship_types(campaign_id)
+    rels = await db.entities.get_character_relationships(campaign_id)
 
     config.campaign.relation_types = [
         RelationshipTypeInfo(
@@ -183,9 +183,9 @@ async def _load_merged_children_maps(
             "merged_entities_by_parent": {},
         }
     return {
-        "merged_npcs_by_parent": await db.get_merged_npcs_map(campaign_id),
-        "merged_locations_by_parent": await db.get_merged_locations_map(campaign_id),
-        "merged_entities_by_parent": await db.get_merged_entities_map(campaign_id),
+        "merged_npcs_by_parent": await db.entities.get_merged_npcs_map(campaign_id),
+        "merged_locations_by_parent": await db.entities.get_merged_locations_map(campaign_id),
+        "merged_entities_by_parent": await db.entities.get_merged_entities_map(campaign_id),
     }
 
 
@@ -216,7 +216,7 @@ async def update_player(
 
     if db is not None:
         try:
-            await db.update_player(player_id, **updates)
+            await db.entities.update_player(player_id, **updates)
         except Exception as exc:
             logger.error("Error updating player: %s", exc)
             return {"ok": False, "error": "Failed to save"}
@@ -237,9 +237,9 @@ async def update_player(
 
         if db is not None and "character_name" in updates:
             try:
-                current = await db.get_campaign(campaign_id)
+                current = await db.campaigns.get_campaign(campaign_id)
                 if current:
-                    await db.upsert_campaign(
+                    await db.campaigns.upsert_campaign(
                         campaign_id=campaign_id,
                         name=current["name"],
                         game_system=current.get("game_system", ""),
@@ -280,9 +280,9 @@ async def create_npc(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
     if db is not None:
         try:
-            if await db.npc_exists(campaign_id, name):
+            if await db.entities.npc_exists(campaign_id, name):
                 return {"ok": False, "error": "NPC already exists"}
-            await db.save_npc(campaign_id, name, description)
+            await db.entities.save_npc(campaign_id, name, description)
         except Exception as exc:
             logger.error("Error saving NPC: %s", exc)
             return {"ok": False, "error": "Failed to save"}
@@ -318,10 +318,10 @@ async def update_npc_endpoint(
 
     if db is not None:
         try:
-            await db.update_npc(npc_id, **updates)
+            await db.entities.update_npc(npc_id, **updates)
             new_name = str(updates.get("name", old_name)).strip()
             if old_name and new_name and old_name != new_name:
-                await db.rename_relationship_entity_key(
+                await db.entities.rename_relationship_entity_key(
                     campaign_id,
                     f"npc:{old_name}",
                     f"npc:{new_name}",
@@ -364,9 +364,9 @@ async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[st
         return {"ok": False, "error": "source_name and target_name are required"}
 
     try:
-        await db.merge_npcs(campaign_id, source_name, target_name)
-        npcs = await db.get_npcs(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        await db.entities.merge_npcs(campaign_id, source_name, target_name)
+        npcs = await db.entities.get_npcs(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["npcs"] = npcs
         state.active_campaign["relationships"] = relationships
 
@@ -412,18 +412,18 @@ async def update_merged_npc_endpoint(
         return {"ok": False, "error": "name is required"}
 
     try:
-        await db.update_merged_npc(
+        await db.entities.update_merged_npc(
             campaign_id,
             npc_id,
             name=name,
             description=description,
             merged_into=merged_into,
         )
-        state.active_campaign["npcs"] = await db.get_npcs(campaign_id)
-        state.active_campaign["merged_npcs_by_parent"] = await db.get_merged_npcs_map(
+        state.active_campaign["npcs"] = await db.entities.get_npcs(campaign_id)
+        state.active_campaign["merged_npcs_by_parent"] = await db.entities.get_merged_npcs_map(
             campaign_id
         )
-        relationships = await db.get_character_relationships(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
             config.campaign.known_npcs = [
@@ -471,9 +471,9 @@ async def create_location_endpoint(
 
     if db is not None:
         try:
-            if await db.location_exists(campaign_id, name):
+            if await db.entities.location_exists(campaign_id, name):
                 return {"ok": False, "error": "Location already exists"}
-            await db.save_location(
+            await db.entities.save_location(
                 campaign_id=campaign_id,
                 name=name,
                 description=description,
@@ -553,18 +553,18 @@ async def update_location_endpoint(
 
     if db is not None:
         try:
-            db_locations = await db.get_locations(campaign_id)
+            db_locations = await db.entities.get_locations(campaign_id)
             for row in db_locations:
                 if str(row.get("name", "")).casefold() == old_name.casefold():
                     db_updates: dict[str, Any] = {"name": new_name}
                     if has_description:
                         db_updates["description"] = new_description
-                    await db.update_location(str(row.get("id", "")), **db_updates)
+                    await db.entities.update_location(str(row.get("id", "")), **db_updates)
                     break
-            await db.rename_relationship_entity_key(
+            await db.entities.rename_relationship_entity_key(
                 campaign_id, f"loc:{old_name}", f"loc:{new_name}"
             )
-            await db.rename_relationship_entity_key(
+            await db.entities.rename_relationship_entity_key(
                 campaign_id, f"location:{old_name}", f"loc:{new_name}"
             )
         except Exception as exc:
@@ -611,9 +611,9 @@ async def merge_locations_endpoint(
         return {"ok": False, "error": "source_name and target_name are required"}
 
     try:
-        await db.merge_locations(campaign_id, source_name, target_name)
-        locations = await db.get_locations(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        await db.entities.merge_locations(campaign_id, source_name, target_name)
+        locations = await db.entities.get_locations(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["locations"] = locations
         state.active_campaign["relationships"] = relationships
 
@@ -659,18 +659,18 @@ async def update_merged_location_endpoint(
         return {"ok": False, "error": "name is required"}
 
     try:
-        await db.update_merged_location(
+        await db.entities.update_merged_location(
             campaign_id,
             location_id,
             name=name,
             description=description,
             merged_into=merged_into,
         )
-        state.active_campaign["locations"] = await db.get_locations(campaign_id)
+        state.active_campaign["locations"] = await db.entities.get_locations(campaign_id)
         state.active_campaign[
             "merged_locations_by_parent"
-        ] = await db.get_merged_locations_map(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        ] = await db.entities.get_merged_locations_map(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
             config.campaign.locations = [
@@ -717,9 +717,9 @@ async def create_entity_endpoint(
         return {"ok": False, "error": "Entity already exists"}
     if db is not None:
         try:
-            if await db.entity_exists(campaign_id, name):
+            if await db.entities.entity_exists(campaign_id, name):
                 return {"ok": False, "error": "Entity already exists"}
-            await db.save_entity(
+            await db.entities.save_entity(
                 campaign_id=campaign_id,
                 name=name,
                 entity_type=entity_type,
@@ -781,14 +781,14 @@ async def update_entity_endpoint(
 
     if db is not None:
         try:
-            await db.update_entity(entity_id, **updates)
+            await db.entities.update_entity(entity_id, **updates)
             if old_name and new_name and old_name != new_name:
-                await db.rename_relationship_entity_key(
+                await db.entities.rename_relationship_entity_key(
                     campaign_id,
                     f"ent:{old_name}",
                     f"ent:{new_name}",
                 )
-                await db.rename_relationship_entity_key(
+                await db.entities.rename_relationship_entity_key(
                     campaign_id,
                     f"entity:{old_name}",
                     f"ent:{new_name}",
@@ -853,9 +853,9 @@ async def merge_entities_endpoint(
         return {"ok": False, "error": "source_name and target_name are required"}
 
     try:
-        await db.merge_entities(campaign_id, source_name, target_name)
-        entities = await db.get_entities(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        await db.entities.merge_entities(campaign_id, source_name, target_name)
+        entities = await db.entities.get_entities(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["entities"] = entities
         state.active_campaign["relationships"] = relationships
 
@@ -903,7 +903,7 @@ async def update_merged_entity_endpoint(
         return {"ok": False, "error": "name is required"}
 
     try:
-        await db.update_merged_entity(
+        await db.entities.update_merged_entity(
             campaign_id,
             entity_id,
             name=name,
@@ -911,11 +911,11 @@ async def update_merged_entity_endpoint(
             entity_type=entity_type,
             merged_into=merged_into,
         )
-        state.active_campaign["entities"] = await db.get_entities(campaign_id)
+        state.active_campaign["entities"] = await db.entities.get_entities(campaign_id)
         state.active_campaign[
             "merged_entities_by_parent"
-        ] = await db.get_merged_entities_map(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        ] = await db.entities.get_merged_entities_map(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["relationships"] = relationships
         if config and getattr(config, "campaign", None):
             config.campaign.entities = [
@@ -948,8 +948,8 @@ async def list_relationships(campaign_id: str) -> dict[str, Any]:
         return {"relationship_types": [], "relationships": []}
 
     try:
-        relationship_types = await db.get_relationship_types(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        relationship_types = await db.entities.get_relationship_types(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
     except Exception as exc:
         logger.error("Error listing relationships: %s", exc)
         return {"relationship_types": [], "relationships": []}
@@ -986,7 +986,7 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
         return {"ok": False, "error": "relation_type is required"}
 
     try:
-        relationship = await db.save_character_relationship(
+        relationship = await db.entities.save_character_relationship(
             campaign_id,
             source_key,
             target_key,
@@ -994,8 +994,8 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
             notes=notes,
             category=category,
         )
-        relationship_types = await db.get_relationship_types(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        relationship_types = await db.entities.get_relationship_types(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:
@@ -1041,9 +1041,9 @@ async def merge_relationship_types(
         }
 
     try:
-        await db.merge_relationship_types(campaign_id, source_type_key, target_type_key)
-        relationship_types = await db.get_relationship_types(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        await db.entities.merge_relationship_types(campaign_id, source_type_key, target_type_key)
+        relationship_types = await db.entities.get_relationship_types(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
         state.active_campaign["relationship_types"] = relationship_types
         state.active_campaign["relationships"] = relationships
         await _sync_relationships_to_config(config, db, campaign_id)
@@ -1095,13 +1095,13 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
         return {"ok": False, "error": "relation_type is required"}
 
     try:
-        await db.delete_character_relationship(
+        await db.entities.delete_character_relationship(
             campaign_id,
             old_source_key,
             old_target_key,
             old_type_key,
         )
-        relationship = await db.save_character_relationship(
+        relationship = await db.entities.save_character_relationship(
             campaign_id,
             source_key,
             target_key,
@@ -1109,8 +1109,8 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
             notes=notes,
             category=category,
         )
-        relationship_types = await db.get_relationship_types(campaign_id)
-        relationships = await db.get_character_relationships(campaign_id)
+        relationship_types = await db.entities.get_relationship_types(campaign_id)
+        relationships = await db.entities.get_character_relationships(campaign_id)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:

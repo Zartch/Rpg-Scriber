@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import EntitiesUpdatedEvent
