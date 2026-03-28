@@ -418,6 +418,61 @@
       return result;
     }
 
+    function computeCommunityAnchors(nodes) {
+      var componentMap = {};
+      var nodeAnchors = {};
+      nodes.forEach(function (node) {
+        if (!componentMap[node.component]) {
+          componentMap[node.component] = { nodes: [], communities: {} };
+        }
+        componentMap[node.component].nodes.push(node);
+        if (!componentMap[node.component].communities[node.community]) {
+          componentMap[node.component].communities[node.community] = [];
+        }
+        componentMap[node.component].communities[node.community].push(node);
+      });
+
+      var componentKeys = Object.keys(componentMap).sort(function (a, b) {
+        return componentMap[b].nodes.length - componentMap[a].nodes.length || a.localeCompare(b);
+      });
+      var componentRadius = Math.max(360, 260 + componentKeys.length * 120);
+
+      componentKeys.forEach(function (componentId, componentIndex) {
+        var component = componentMap[componentId];
+        var componentAngle = (Math.PI * 2 * componentIndex) / Math.max(1, componentKeys.length);
+        var componentOffset = componentKeys.length === 1 ? 0 : componentRadius;
+        var componentAnchor = {
+          x: Math.cos(componentAngle) * componentOffset,
+          y: componentKeys.length === 1 ? 0 : (((componentIndex % 2) ? 1 : -1) * Math.min(140, 40 + component.nodes.length * 6)),
+          z: Math.sin(componentAngle) * componentOffset,
+        };
+        var communityKeys = Object.keys(component.communities).sort(function (a, b) {
+          return component.communities[b].length - component.communities[a].length || a.localeCompare(b);
+        });
+        var communityRadius = Math.max(110, 70 + communityKeys.length * 44);
+        communityKeys.forEach(function (communityId, communityIndex) {
+          var communityAngle = (Math.PI * 2 * communityIndex) / Math.max(1, communityKeys.length);
+          var communityOffset = communityKeys.length === 1 ? 0 : communityRadius;
+          var communityAnchor = {
+            x: componentAnchor.x + Math.cos(communityAngle) * communityOffset,
+            y: componentAnchor.y + (communityKeys.length === 1 ? 0 : (((communityIndex % 3) - 1) * 55)),
+            z: componentAnchor.z + Math.sin(communityAngle) * communityOffset,
+          };
+          component.communities[communityId].forEach(function (node, nodeIndex) {
+            var fanAngle = (Math.PI * 2 * nodeIndex) / Math.max(1, component.communities[communityId].length);
+            var fanRadius = Math.min(52, 12 + component.communities[communityId].length * 2.4);
+            nodeAnchors[node.id] = {
+              x: communityAnchor.x + Math.cos(fanAngle) * fanRadius,
+              y: communityAnchor.y + (((nodeIndex % 4) - 1.5) * 10),
+              z: communityAnchor.z + Math.sin(fanAngle) * fanRadius,
+            };
+          });
+        });
+      });
+
+      return nodeAnchors;
+    }
+
     function graphNode(nodeId) {
       return state.graph && state.graph.nodeMap ? state.graph.nodeMap[nodeId] : null;
     }
@@ -829,6 +884,19 @@
       var links = state.viewGraph.links;
       var alpha = state.simulationAlpha;
       if (alpha < 0.002) return;
+      var anchors = computeCommunityAnchors(nodes);
+      var communityLinks = {};
+      var communityPairList = [];
+
+      links.forEach(function (link) {
+        var sourceNode = graphNode(link.source);
+        var targetNode = graphNode(link.target);
+        if (!sourceNode || !targetNode) return;
+        if (sourceNode.community === targetNode.community) return;
+        var pairKey = [sourceNode.community, targetNode.community].sort().join("|");
+        communityLinks[pairKey] = (communityLinks[pairKey] || 0) + 1;
+      });
+
       var centers = {};
       nodes.forEach(function (node) {
         var pos = ensurePosition(node.id);
@@ -846,6 +914,37 @@
         centers[communityId].z /= Math.max(1, centers[communityId].count);
       });
 
+      Object.keys(communityLinks).forEach(function (pairKey) {
+        var pair = pairKey.split("|");
+        if (pair.length !== 2 || !centers[pair[0]] || !centers[pair[1]]) return;
+        communityPairList.push({
+          a: pair[0],
+          b: pair[1],
+          count: communityLinks[pairKey],
+        });
+      });
+
+      communityPairList.forEach(function (pair) {
+        var centerA = centers[pair.a];
+        var centerB = centers[pair.b];
+        var dx = centerB.x - centerA.x;
+        var dy = centerB.y - centerA.y;
+        var dz = centerB.z - centerA.z;
+        var distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        var linkWeight = Math.min(4, pair.count);
+        var preferredDistance = Math.max(170, 250 - (linkWeight * 24));
+        var pull = (distance - preferredDistance) * 0.00042 * alpha * (0.8 + linkWeight * 0.22);
+        var nx = dx / distance;
+        var ny = dy / distance;
+        var nz = dz / distance;
+        centerA.x += nx * pull * 110;
+        centerA.y += ny * pull * 110;
+        centerA.z += nz * pull * 110;
+        centerB.x -= nx * pull * 110;
+        centerB.y -= ny * pull * 110;
+        centerB.z -= nz * pull * 110;
+      });
+
       for (var i = 0; i < nodes.length; i += 1) {
         var aNode = nodes[i];
         var aPos = ensurePosition(aNode.id);
@@ -857,7 +956,14 @@
           var dz = aPos.z - bPos.z;
           var distSq = dx * dx + dy * dy + dz * dz + 0.01;
           var distance = Math.sqrt(distSq);
-          var force = 4200 / distSq;
+          var separationMultiplier = 1;
+          if (aNode.component !== bNode.component) separationMultiplier = 3.6;
+          else if (aNode.community !== bNode.community) {
+            var communityPairKey = [aNode.community, bNode.community].sort().join("|");
+            var pairCount = communityLinks[communityPairKey] || 0;
+            separationMultiplier = pairCount ? Math.max(1.1, 1.65 - Math.min(0.42, pairCount * 0.12)) : 2.05;
+          }
+          var force = (4200 * separationMultiplier) / distSq;
           aPos.vx += (dx / distance) * force * alpha * 0.016;
           aPos.vy += (dy / distance) * force * alpha * 0.016;
           aPos.vz += (dz / distance) * force * alpha * 0.016;
@@ -874,7 +980,14 @@
         var dy = target.y - source.y;
         var dz = target.z - source.z;
         var distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+        var sourceNode = graphNode(link.source);
+        var targetNode = graphNode(link.target);
         var targetDistance = 155;
+        if (sourceNode && targetNode && sourceNode.community !== targetNode.community) {
+          var pairKey = [sourceNode.community, targetNode.community].sort().join("|");
+          var pairCount = communityLinks[pairKey] || 1;
+          targetDistance = Math.max(132, 174 - Math.min(28, (pairCount - 1) * 10));
+        }
         var spring = (distance - targetDistance) * 0.00078 * alpha;
         var nx = dx / distance;
         var ny = dy / distance;
@@ -891,12 +1004,16 @@
         var pos = ensurePosition(node.id);
         if (state.dragNodeKey === node.id) return;
         var center = centers[node.community] || { x: 0, y: 0, z: 0 };
-        pos.vx += (center.x - pos.x) * 0.00024 * alpha;
-        pos.vy += (center.y - pos.y) * 0.00024 * alpha;
-        pos.vz += (center.z - pos.z) * 0.00024 * alpha;
-        pos.vx += -pos.x * 0.00011 * alpha;
-        pos.vy += -pos.y * 0.00011 * alpha;
-        pos.vz += -pos.z * 0.00011 * alpha;
+        var anchor = anchors[node.id] || center;
+        pos.vx += (anchor.x - pos.x) * 0.00072 * alpha;
+        pos.vy += (anchor.y - pos.y) * 0.00072 * alpha;
+        pos.vz += (anchor.z - pos.z) * 0.00072 * alpha;
+        pos.vx += (center.x - pos.x) * 0.00014 * alpha;
+        pos.vy += (center.y - pos.y) * 0.00014 * alpha;
+        pos.vz += (center.z - pos.z) * 0.00014 * alpha;
+        pos.vx += -pos.x * 0.00005 * alpha;
+        pos.vy += -pos.y * 0.00005 * alpha;
+        pos.vz += -pos.z * 0.00005 * alpha;
         pos.vx *= 0.92;
         pos.vy *= 0.92;
         pos.vz *= 0.92;

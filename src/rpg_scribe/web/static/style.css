@@ -1646,3 +1646,226 @@ header h1 { font-size: 1.25rem; }
   border: 1px solid var(--border);
   color: var(--text) !important;
 }
+
+/* Global cyberpunk console theme */
+:root {
+  --bg: #070b12;
+  --surface: #0c1420;
+  --border: #193242;
+  --text: #d7f9ff;
+  --text-muted: #6ea2b4;
+  --accent: #7df6ff;
+  --green: #34ffb5;
+  --red: #ff6b88;
+  --yellow: #ffd36f;
+}
+
+body {
+  font-family: Consolas, "Lucida Console", monospace;
+  background:
+    radial-gradient(circle at top, rgba(0, 195, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #070b12, #05070d 72%);
+  color: var(--text);
+}
+
+header {
+  border-bottom-color: rgba(88, 214, 255, 0.18);
+}
+
+header h1 {
+  color: #bffcff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.badge,
+.q-badge {
+  border-radius: 0;
+  border: 1px solid rgba(88, 214, 255, 0.18);
+  font-family: Consolas, "Lucida Console", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.badge-connected {
+  background: rgba(52, 255, 181, 0.14);
+  color: #d8fff3;
+}
+
+.badge-idle {
+  background: rgba(12, 20, 32, 0.96);
+  color: var(--text-muted);
+}
+
+.panel,
+.campaign-bar,
+.entity-section,
+.merge-confirm,
+.session-export-list,
+.browse-campaigns {
+  background:
+    linear-gradient(180deg, rgba(9, 17, 27, 0.96), rgba(6, 10, 17, 0.98));
+  border: 1px solid rgba(88, 214, 255, 0.18);
+  border-radius: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(18, 255, 196, 0.04);
+}
+
+.panel h2,
+.panel h3,
+.campaign-summary-header h3,
+.sessions-header-row h2,
+.sidebar h2 {
+  color: #8cf3ff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.btn-small,
+.question-card button,
+.entry-actions button,
+.btn-play,
+.replacement-delete,
+.btn-narrate-ctrl,
+.mode-btn {
+  border-radius: 0;
+  border: 1px solid rgba(88, 214, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(6, 18, 26, 0.98), rgba(7, 10, 16, 0.98));
+  color: var(--text);
+  font-family: Consolas, "Lucida Console", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.btn-small:hover,
+.question-card button:hover,
+.entry-actions button:hover,
+.btn-play:hover,
+.btn-narrate-ctrl:hover:not(:disabled),
+.mode-btn:hover {
+  border-color: rgba(35, 255, 185, 0.7);
+  background: rgba(10, 28, 36, 0.98);
+  color: #e5fff8;
+}
+
+.btn-save,
+.mode-btn.active,
+.btn-narrate-playpause {
+  background: linear-gradient(180deg, rgba(35, 255, 185, 0.2), rgba(10, 54, 46, 0.95));
+  border-color: rgba(35, 255, 185, 0.55);
+  color: #dffef6 !important;
+}
+
+.btn-finalize {
+  background: linear-gradient(180deg, rgba(255, 107, 136, 0.18), rgba(74, 14, 30, 0.96));
+  border-color: rgba(255, 107, 136, 0.4);
+}
+
+.btn-add {
+  border-style: solid;
+}
+
+.edit-row label,
+.campaign-label,
+.campaign-meta,
+.entity-meta,
+.entity-desc,
+.summary-stat,
+.status-msg,
+.placeholder,
+.related-rel-notes,
+.relationship-legend-item,
+.relationship-legend-empty {
+  color: var(--text-muted);
+}
+
+.edit-row input[type="text"],
+.edit-row textarea,
+.edit-row select,
+.word-edit-input,
+.paragraph-edit-textarea,
+.question-card input[type="text"],
+.relationship-filter-field input,
+.relationship-filter-field select,
+.relationship-graph-control input,
+.relationship-graph-control select,
+.relationship-graph-path-controls select {
+  background: linear-gradient(180deg, rgba(5, 16, 22, 0.98), rgba(7, 10, 16, 0.98));
+  border: 1px solid rgba(88, 214, 255, 0.24);
+  border-radius: 0;
+  color: var(--text);
+  font-family: Consolas, "Lucida Console", monospace;
+}
+
+.edit-row input[type="text"]:focus,
+.edit-row textarea:focus,
+.edit-row select:focus,
+.word-edit-input:focus,
+.paragraph-edit-textarea:focus,
+.question-card input[type="text"]:focus {
+  border-color: rgba(35, 255, 185, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(35, 255, 185, 0.35),
+    0 0 0 1px rgba(35, 255, 185, 0.12);
+}
+
+.status-card,
+.session-item,
+.campaign-item,
+.feed-entry,
+.replacement-row,
+.question-card,
+.entity-card,
+.related-relationship-row,
+.word-replace-option,
+.relationship-legend-item,
+.summary-stat {
+  background: rgba(8, 17, 26, 0.92);
+  border: 1px solid rgba(88, 214, 255, 0.12);
+  border-radius: 0;
+}
+
+.feed-entry {
+  border-left-color: var(--accent);
+}
+
+.entity-name,
+.feed-entry .speaker,
+#campaign-name {
+  color: var(--accent);
+}
+
+.summary-tab,
+.campaign-details-tabs .summary-tab {
+  border-radius: 0;
+  border-color: rgba(88, 214, 255, 0.18);
+  background: rgba(8, 17, 26, 0.92);
+  color: var(--text-muted);
+  font-family: Consolas, "Lucida Console", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.summary-tab:hover,
+.campaign-details-tabs .summary-tab:hover {
+  color: var(--text);
+}
+
+.summary-tab.active,
+.campaign-details-tabs .summary-tab.active {
+  background: linear-gradient(180deg, rgba(0, 195, 255, 0.16), rgba(9, 30, 42, 0.98));
+  color: #d7f9ff;
+  border-color: rgba(125, 246, 255, 0.42);
+}
+
+.mode-switch {
+  border-radius: 0;
+  border-color: rgba(88, 214, 255, 0.24);
+}
+
+.collapse-arrow {
+  color: #7fd7ff;
+}
