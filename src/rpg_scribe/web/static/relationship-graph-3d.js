@@ -104,7 +104,7 @@
       dragNodeKey: null,
       dragStartDistance: 0,
       pointer: { x: 0, y: 0 },
-      camera: { yaw: 0.45, pitch: -0.32, distance: 540, focal: 560 },
+      camera: { yaw: 0.45, pitch: -0.32, distance: 700, focal: 560 },
       interaction: { mode: "", startX: 0, startY: 0, startYaw: 0, startPitch: 0, moved: false },
       simulationAlpha: 0,
       rafId: null,
@@ -163,7 +163,7 @@
       if (state.positions[nodeId]) return state.positions[nodeId];
       var angleA = Math.random() * Math.PI * 2;
       var angleB = Math.random() * Math.PI * 2;
-      var radius = 140 + Math.random() * 90;
+      var radius = 210 + Math.random() * 150;
       state.positions[nodeId] = {
         x: Math.cos(angleA) * Math.cos(angleB) * radius,
         y: Math.sin(angleB) * radius * 0.8,
@@ -757,9 +757,9 @@
         var projection = project(position);
         if (!projection) return;
         var value = node.metrics[state.metric] || 0;
-        var radius = clamp(6 + (node.metrics.degree || 0) * 1.3 + value * 18, 6, 24);
+        var radius = clamp(4.6 + (node.metrics.degree || 0) * 0.72 + value * 9.5, 4.6, 13.5);
         projection.node = node;
-        projection.radius = radius * Math.max(0.62, projection.scale * 3.8);
+        projection.radius = radius * Math.max(0.48, projection.scale * 2.25);
         projectionCache[node.id] = projection;
         state.projectedNodes.push(projection);
       });
@@ -814,11 +814,11 @@
           highlighted ? mixHexColor(baseColor, 0.2) : baseColor,
           highlighted ? "#f8fafc" : mixHexColor(baseColor, -0.45)
         );
-        if (highlighted || projection.radius >= 11 || state.searchQuery) {
-          ctx.fillStyle = "#e5e7eb";
-          ctx.font = (focused ? "700 " : "600 ") + Math.round(clamp(11 + projection.radius * 0.18, 11, 15)) + "px system-ui";
+        if (highlighted || projection.radius >= 8.5 || state.searchQuery) {
+          ctx.fillStyle = highlighted ? "#d7ffe7" : "#b9f8ff";
+          ctx.font = (focused ? "700 " : "600 ") + Math.round(clamp(9 + projection.radius * 0.16, 9, 12)) + "px Consolas, 'Lucida Console', monospace";
           ctx.textAlign = "center";
-          ctx.fillText(node.shortLabel || node.label, projection.x, projection.y - projection.radius - 10);
+          ctx.fillText(node.shortLabel || node.label, projection.x, projection.y - projection.radius - 8);
         }
       });
     }
@@ -857,7 +857,7 @@
           var dz = aPos.z - bPos.z;
           var distSq = dx * dx + dy * dy + dz * dz + 0.01;
           var distance = Math.sqrt(distSq);
-          var force = 2800 / distSq;
+          var force = 4200 / distSq;
           aPos.vx += (dx / distance) * force * alpha * 0.016;
           aPos.vy += (dy / distance) * force * alpha * 0.016;
           aPos.vz += (dz / distance) * force * alpha * 0.016;
@@ -874,8 +874,8 @@
         var dy = target.y - source.y;
         var dz = target.z - source.z;
         var distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-        var targetDistance = 100;
-        var spring = (distance - targetDistance) * 0.0009 * alpha;
+        var targetDistance = 155;
+        var spring = (distance - targetDistance) * 0.00078 * alpha;
         var nx = dx / distance;
         var ny = dy / distance;
         var nz = dz / distance;
@@ -891,12 +891,12 @@
         var pos = ensurePosition(node.id);
         if (state.dragNodeKey === node.id) return;
         var center = centers[node.community] || { x: 0, y: 0, z: 0 };
-        pos.vx += (center.x - pos.x) * 0.00035 * alpha;
-        pos.vy += (center.y - pos.y) * 0.00035 * alpha;
-        pos.vz += (center.z - pos.z) * 0.00035 * alpha;
-        pos.vx += -pos.x * 0.00018 * alpha;
-        pos.vy += -pos.y * 0.00018 * alpha;
-        pos.vz += -pos.z * 0.00018 * alpha;
+        pos.vx += (center.x - pos.x) * 0.00024 * alpha;
+        pos.vy += (center.y - pos.y) * 0.00024 * alpha;
+        pos.vz += (center.z - pos.z) * 0.00024 * alpha;
+        pos.vx += -pos.x * 0.00011 * alpha;
+        pos.vy += -pos.y * 0.00011 * alpha;
+        pos.vz += -pos.z * 0.00011 * alpha;
         pos.vx *= 0.92;
         pos.vy *= 0.92;
         pos.vz *= 0.92;
@@ -1023,7 +1023,7 @@
       });
       canvas.addEventListener("wheel", function (evt) {
         evt.preventDefault();
-        state.camera.distance = clamp(state.camera.distance + evt.deltaY * 0.4, 220, 1100);
+        state.camera.distance = clamp(state.camera.distance + evt.deltaY * 0.55, 220, 1900);
         scheduleFrame();
       }, { passive: false });
       canvas.addEventListener("dblclick", function () {
