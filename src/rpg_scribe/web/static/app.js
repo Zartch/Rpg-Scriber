@@ -815,6 +815,7 @@
   var ttsPaused = false;
   var ttsActiveBtn = null;  // original btn-narrate (hidden while controls shown)
   var ttsControlsEl = null; // the controls DOM element
+  var _ttsGen = 0;          // incremented on each _playChunk/stop; stale callbacks self-abort
 
   // Check if TTS is available and show buttons
   fetch("/api/tts/voices")
@@ -926,6 +927,8 @@
 
   function _playChunk(index) {
     if (index < 0 || index >= ttsAllChunks.length) return;
+    _ttsGen++;
+    var myGen = _ttsGen;
     if (ttsAudio) {
       ttsAudio.pause();
       ttsAudio.src = "";
@@ -937,6 +940,7 @@
     var url = ttsAllChunks[index];
     ttsAudio = new Audio(url);
     ttsAudio.addEventListener("ended", function () {
+      if (_ttsGen !== myGen) return; // stale — a newer _playChunk or stop already took over
       ttsAudio = null;
       var next = ttsCurrentIndex + 1;
       if (next < ttsAllChunks.length) {
@@ -949,6 +953,7 @@
       }
     });
     ttsAudio.addEventListener("error", function () {
+      if (_ttsGen !== myGen) return; // stale
       console.error("TTS audio error:", url);
       ttsAudio = null;
       var next = ttsCurrentIndex + 1;
@@ -984,6 +989,7 @@
   function _restartChunk() { if (ttsCurrentIndex >= 0) _playChunk(ttsCurrentIndex); }
 
   function stopNarration() {
+    _ttsGen++; // invalidate any pending audio callbacks
     if (ttsAudio) {
       ttsAudio.pause();
       ttsAudio.src = "";
