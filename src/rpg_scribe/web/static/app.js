@@ -105,7 +105,6 @@
   var relCategoryInput = document.getElementById("new-rel-category");
   var relNotesInput = document.getElementById("new-rel-notes");
   var relationshipEditParentsPanel = document.getElementById("relationship-edit-parents");
-  var toggleRelationshipGraphBtn = document.getElementById("toggle-relationship-graph-btn");
   var relationshipGraphPanel = document.getElementById("relationship-graph-panel");
   var relationshipGraphCanvas = document.getElementById("relationship-graph-canvas");
   var relationshipGraphEmpty = document.getElementById("relationship-graph-empty");
@@ -2631,9 +2630,7 @@
   }
   function setRelationshipGraphVisible(visible) {
     relationshipGraphVisible = !!visible;
-    if (!relationshipGraphPanel || !toggleRelationshipGraphBtn) return;
-    relationshipGraphPanel.classList.toggle("hidden", !relationshipGraphVisible);
-    toggleRelationshipGraphBtn.textContent = relationshipGraphVisible ? "Hide Graph" : "Graph";
+    if (!relationshipGraphPanel) return;
     if (ensureRelationshipGraph3d()) {
       relationshipGraph3d.setVisible(relationshipGraphVisible);
       if (relationshipGraphVisible) relationshipGraph3d.resize();
@@ -2913,13 +2910,6 @@
     renderRelationshipsFromCurrentState();
   }
 
-  if (toggleRelationshipGraphBtn) {
-    toggleRelationshipGraphBtn.addEventListener("click", function () {
-      setRelationshipGraphVisible(!relationshipGraphVisible);
-      renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
-    });
-  }
-
   function onGraphFiltersChanged() {
     relationshipGraphFilters.players = !graphFilterPlayers || !!graphFilterPlayers.checked;
     relationshipGraphFilters.npcs = !graphFilterNpcs || !!graphFilterNpcs.checked;
@@ -3008,6 +2998,10 @@
         });
         var target = document.getElementById(tabName + "-tab");
         if (target) target.classList.add("active");
+        setRelationshipGraphVisible(tabName === "graph");
+        if (tabName === "graph") {
+          renderRelationshipGraph(lastRelationshipItems, lastRelationshipCampaign || {});
+        }
       });
     });
   })();
