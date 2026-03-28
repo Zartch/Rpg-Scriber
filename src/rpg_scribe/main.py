@@ -29,107 +29,11 @@ from rpg_scribe.core.events import (
     TranscriptionEvent,
 )
 from rpg_scribe.logging_config import setup_logging
+from rpg_scribe.services.audio_diagnostics import AudioDiagnosticSaver
+from rpg_scribe.services.file_writer import TranscriptionFileWriter
+from rpg_scribe.services.transcription_service import TranscriptionService
 
 logger = logging.getLogger(__name__)
-
-# Maximum size for a single transcription file before rotating (5 MB)
-_MAX_TRANSCRIPTION_FILE_MB = 5
-
-
-class TranscriptionFileWriter:
-    """Writes transcriptions to text files inside the logs directory.
-
-    Each log run (identified by a unix-timestamp folder) gets its own
-    ``transcriptions_NNN.txt`` file.  When a file exceeds
-    ``_MAX_TRANSCRIPTION_FILE_MB`` a new numbered file is created.
-    """
-
-    def __init__(
-        self, log_dir: Path, max_size_mb: float = _MAX_TRANSCRIPTION_FILE_MB
-    ) -> None:
-        self._dir = log_dir
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._max_bytes = int(max_size_mb * 1024 * 1024)
-        self._file_index = 0
-        self._path = self._next_path()
-
-    def _next_path(self) -> Path:
-        """Return the next numbered transcription file path."""
-        while True:
-            suffix = f"_{self._file_index}" if self._file_index > 0 else ""
-            path = self._dir / f"transcriptions{suffix}.txt"
-            if not path.exists() or path.stat().st_size < self._max_bytes:
-                return path
-            self._file_index += 1
-
-    def write(self, event: "TranscriptionEvent") -> None:
-        """Append a transcription line to the current file.
-
-        Format:  [HH:MM:SS] Speaker: text
-        """
-        if not event.text.strip():
-            return
-
-        # Rotate if current file is too large
-        if self._path.exists() and self._path.stat().st_size >= self._max_bytes:
-            self._file_index += 1
-            self._path = self._next_path()
-            logger.info(
-                "📄 Transcription file rotated to %s",
-                self._path.name,
-            )
-
-        ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
-        line = f"[{ts}] {event.speaker_name}: {event.text}\n"
-        with open(self._path, "a", encoding="utf-8") as f:
-            f.write(line)
-
-
-class AudioDiagnosticSaver:
-    """Saves audio chunks as WAV files for manual inspection.
-
-    Saves the first ``max_files`` chunks per user as mono WAV files
-    under ``<log_dir>/audio/``.
-    """
-
-    def __init__(self, log_dir: Path, max_files_per_user: int = 3) -> None:
-        self._audio_dir = log_dir / "audio"
-        self._audio_dir.mkdir(parents=True, exist_ok=True)
-        self._max_per_user = max_files_per_user
-        self._counts: dict[str, int] = {}
-
-    async def save(self, event: AudioChunkEvent) -> None:
-        """Save an audio chunk as a mono WAV file."""
-        uid = event.speaker_id
-        count = self._counts.get(uid, 0)
-        if count >= self._max_per_user:
-            return
-
-        import io
-        import wave
-
-        safe_name = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in event.speaker_name
-        )
-        filepath = self._audio_dir / f"{safe_name}_{uid}_{count:03d}.wav"
-
-        try:
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(48000)
-                wf.writeframes(event.audio_data)
-            filepath.write_bytes(buf.getvalue())
-            self._counts[uid] = count + 1
-            logger.info(
-                "🔍 Audio diagnóstico: %s (%.1fKB, %.1fs)",
-                filepath.name,
-                len(event.audio_data) / 1024,
-                event.duration_ms / 1000,
-            )
-        except Exception as exc:
-            logger.error("Error guardando audio diagnóstico: %s", exc)
 
 
 class Application:
@@ -166,51 +70,34 @@ class Application:
         self._discord_publisher: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
+        self._transcription_service: TranscriptionService | None = None
         self._shutdown_event = asyncio.Event()
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
-        self._word_replacements: dict[str, str] = {}  # original -> replacement
 
     # ── Database persistence handlers ──────────────────────────────
 
     async def reload_word_replacements(self) -> None:
-        """Reload word replacement rules from DB into memory cache."""
-        if not self.config.campaign:
-            self._word_replacements = {}
+        """Reload word replacement rules from DB into service memory cache."""
+        if self._transcription_service is None or not self.config.campaign:
             return
-        try:
-            rules = await self.db.get_word_replacements(
-                self.config.campaign.campaign_id
-            )
-            self._word_replacements = {
-                r["original_word"]: r["replacement_word"] for r in rules
-            }
-        except Exception as exc:
-            logger.error("Failed to load word replacements: %s", exc)
-
-    def _apply_word_replacements(self, text: str) -> str:
-        """Apply cached word replacement rules to a text string."""
-        for original, replacement in self._word_replacements.items():
-            text = text.replace(original, replacement)
-        return text
+        await self._transcription_service.reload_replacements(
+            self.config.campaign.campaign_id
+        )
 
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database, applying word replacements."""
         if event.is_partial:
             return
-        text = event.text
-        if self._word_replacements:
-            text = self._apply_word_replacements(text)
+        if self._transcription_service is None:
+            return
+        campaign_id = self.config.campaign.campaign_id if self.config.campaign else ""
         try:
-            row_id = await self.db.save_transcription(
-                session_id=event.session_id,
-                speaker_id=event.speaker_id,
-                speaker_name=event.speaker_name,
-                text=text,
-                timestamp=event.timestamp,
-                confidence=event.confidence,
+            data = await self._transcription_service.persist(
+                event, campaign_id=campaign_id, session_id=event.session_id
             )
             # Inject DB id into the in-memory WebState transcription
+            row_id = data.get("id")
             web_state = getattr(self, "_web_state", None)
             if web_state is not None and row_id:
                 for t in web_state.transcriptions:
@@ -221,13 +108,13 @@ class Application:
                     ):
                         t["id"] = row_id
                         break
-            if text != event.text:
+            if data.get("original_text") is not None:
                 # Publish corrected event so WebSocket/UI gets the replaced text
                 corrected = TranscriptionEvent(
                     session_id=event.session_id,
                     speaker_id=event.speaker_id,
                     speaker_name=event.speaker_name,
-                    text=text,
+                    text=data["text"],
                     timestamp=event.timestamp,
                     confidence=event.confidence,
                     is_partial=False,
@@ -582,8 +469,15 @@ class Application:
                     notes=relation.notes,
                 )
 
-        # Load word replacement rules into memory
-        await self.reload_word_replacements()
+        # Create TranscriptionService and load word replacements
+        self._transcription_service = TranscriptionService(
+            transcription_repo=self.db.transcriptions,
+            event_bus=self.event_bus,
+        )
+        if self.config.campaign:
+            await self._transcription_service.reload_replacements(
+                self.config.campaign.campaign_id
+            )
 
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)

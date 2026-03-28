@@ -173,6 +173,21 @@ def create_app(
 
     app.include_router(router)
 
+    from rpg_scribe.web.routers import (
+        campaigns as campaigns_router,
+        sessions as sessions_router,
+        entities as entities_router,
+        transcriptions as transcriptions_router,
+        tts as tts_router,
+        status as status_router,
+    )
+    app.include_router(campaigns_router.router)
+    app.include_router(sessions_router.router)
+    app.include_router(entities_router.router)
+    app.include_router(transcriptions_router.router)
+    app.include_router(tts_router.router)
+    app.include_router(status_router.router)
+
     # Serve saved audio chunks as static files (data/audio/)
     audio_dir = Path.cwd() / "data" / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
