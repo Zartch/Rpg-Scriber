@@ -74,6 +74,18 @@ class BaseTranscriber(ABC):
         )
         logger.info("%s stopped", type(self).__name__)
 
+    def _save_audio_chunk(self, event: AudioChunkEvent) -> None:
+        """Save an audio chunk as WAV in data/audio/{session_id}/ for playback."""
+        audio_dir = Path("data/audio") / event.session_id
+        audio_dir.mkdir(parents=True, exist_ok=True)
+
+        speaker = re.sub(r"[^\w]", "_", event.speaker_name)[:30]
+        filename = f"{event.timestamp}_{speaker}.wav"
+
+        wav_bytes = _pcm_to_wav_bytes(event.audio_data)
+        (audio_dir / filename).write_bytes(wav_bytes)
+        logger.debug("Audio chunk saved: %s", audio_dir / filename)
+
     def _save_discarded_chunk(
         self,
         event: AudioChunkEvent,
@@ -139,6 +151,12 @@ class BaseTranscriber(ABC):
             analysis.rms_energy,
             analysis.speech_ratio * 100,
         )
+        # Save audio chunk to disk for web playback
+        try:
+            await asyncio.to_thread(self._save_audio_chunk, event)
+        except Exception as exc:
+            logger.warning("Failed to save audio chunk: %s", exc)
+
         try:
             result = await self.transcribe(event)
             if not result.text.strip():

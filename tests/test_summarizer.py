@@ -862,13 +862,10 @@ class TestFinalizeSessionWithExtraction:
             '{"npcs": [{"name": "Gareth", "description": "Mercader ambulante"}], '
             '"locations": [{"name": "Cueva del DragÃ³n", "description": "Cueva peligrosa"}]}'
         )
-        chronology_response = (
-            "Los aventureros llegaron a la taberna y conocieron a Gareth."
-        )
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
-                _mock_anthropic_response(chronology_response),
+                # No chronology call — no pending entries
                 _mock_anthropic_response(extraction_response),
             ]
         )
@@ -932,8 +929,8 @@ class TestFinalizeSessionWithExtraction:
         await summarizer.start("session-1")
         await summarizer.finalize_session()
 
-        # Two API calls (finalize + chronology), no extraction call
-        assert mock_client.messages.create.call_count == 2
+        # One API call (finalize only, no entries so no chronology), no extraction
+        assert mock_client.messages.create.call_count == 1
 
     @pytest.mark.asyncio
     async def test_finalize_extraction_failure_does_not_crash(
@@ -986,11 +983,10 @@ class TestFinalizeSessionWithExtraction:
             '{"npcs": [{"name": "", "description": "Sin nombre"}, '
             '{"name": "Valida", "description": "NPC vÃ¡lida"}], "locations": []}'
         )
-        chronology_response = "Cronologia de prueba."
         mock_client.messages.create = AsyncMock(
             side_effect=[
                 _mock_anthropic_response(finalize_response),
-                _mock_anthropic_response(chronology_response),
+                # No chronology call — no pending entries
                 _mock_anthropic_response(extraction_response),
             ]
         )

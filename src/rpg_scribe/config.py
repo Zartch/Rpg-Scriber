@@ -29,6 +29,7 @@ from rpg_scribe.core.models import (
     RelationshipTypeInfo,
     SummarizerConfig,
     TranscriberConfig,
+    TTSConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class AppConfig:
     listener: ListenerConfig = field(default_factory=ListenerConfig)
     transcriber: TranscriberConfig = field(default_factory=TranscriberConfig)
     summarizer: SummarizerConfig = field(default_factory=SummarizerConfig)
+    tts: TTSConfig = field(default_factory=TTSConfig)
 
     # Campaign
     campaign: CampaignContext | None = None
@@ -97,6 +99,12 @@ def _apply_defaults_to_config(config: AppConfig, defaults: dict[str, Any]) -> No
     for key, value in summarizer_data.items():
         if hasattr(config.summarizer, key):
             setattr(config.summarizer, key, value)
+
+    # TTS
+    tts_data = defaults.get("tts", {})
+    for key, value in tts_data.items():
+        if hasattr(config.tts, key):
+            setattr(config.tts, key, value)
 
     # Web
     web_data = defaults.get("web", {})

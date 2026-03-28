@@ -514,9 +514,13 @@ class Database:
         return grouped
 
     async def npc_exists(self, campaign_id: str, name: str) -> bool:
-        """Check if an NPC with the given name already exists in a campaign."""
+        """Check if an NPC with the given name already exists in a campaign.
+
+        Uses case-insensitive comparison so "Gareth" and "gareth"
+        are treated as the same NPC (consistent with location_exists/entity_exists).
+        """
         cursor = await self.conn.execute(
-            "SELECT 1 FROM npcs WHERE campaign_id = ? AND name = ? LIMIT 1",
+            "SELECT 1 FROM npcs WHERE campaign_id = ? AND lower(name) = lower(?) LIMIT 1",
             (campaign_id, name),
         )
         return await cursor.fetchone() is not None

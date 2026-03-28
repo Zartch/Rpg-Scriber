@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
+import zipfile
 from dataclasses import asdict
 from unittest.mock import AsyncMock
 
@@ -481,6 +481,116 @@ class TestRESTEndpoints:
         )
         assert resp.json()["ok"] is False
 
+    async def test_create_session_export_from_live_state(
+        self, event_bus: EventBus, tmp_path
+    ):
+        app = create_app(event_bus)
+        from rpg_scribe.web.routes import router
+
+        router.export_root = tmp_path  # type: ignore[attr-defined]
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-001"
+
+        await event_bus.publish(_make_transcription())
+        await event_bus.publish(_make_summary(session_chronology="08:00 - Tavern scene"))
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/sessions/sess-001/export")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["display_date"]
+        assert body["download_url"].endswith("export_id=" + body["export_id"])
+
+        assert not list(tmp_path.glob("rpg-export-*"))
+        zip_path = tmp_path / body["zip_name"]
+        assert zip_path.exists()
+        with zipfile.ZipFile(zip_path) as zf:
+            assert sorted(zf.namelist()) == [
+                "export.css",
+                "index.html",
+                "session-chronology.md",
+                "session-summary.md",
+                "transcriptions.csv",
+            ]
+
+    async def test_create_session_export_does_not_overwrite(
+        self, event_bus: EventBus, tmp_path
+    ):
+        app = create_app(event_bus)
+        from rpg_scribe.web.routes import router
+
+        router.export_root = tmp_path  # type: ignore[attr-defined]
+        state = router.state  # type: ignore[attr-defined]
+        state.active_session_id = "sess-001"
+
+        await event_bus.publish(_make_transcription())
+        await event_bus.publish(_make_summary())
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            first = await c.post("/api/sessions/sess-001/export")
+            await asyncio.sleep(1.1)
+            second = await c.post("/api/sessions/sess-001/export")
+            listing = await c.get("/api/sessions/sess-001/exports")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_body = first.json()
+        second_body = second.json()
+        assert first_body["export_id"] != second_body["export_id"]
+        assert len(list(tmp_path.glob("*.zip"))) == 2
+
+        listed = listing.json()["exports"]
+        assert len(listed) == 2
+        assert listed[0]["export_id"] == second_body["export_id"]
+        assert listed[1]["export_id"] == first_body["export_id"]
+
+    async def test_download_session_export_by_id(
+        self, event_bus: EventBus, tmp_path
+    ):
+        db = AsyncMock()
+        db.get_session = AsyncMock(return_value={
+            "id": "sess-db",
+            "started_at": 1700000000.0,
+            "ended_at": 1700003600.0,
+            "status": "completed",
+            "session_summary": "Stored summary",
+            "session_chronology": "",
+        })
+        db.get_transcriptions = AsyncMock(return_value=[
+            {
+                "id": 1,
+                "session_id": "sess-db",
+                "speaker_id": "user-1",
+                "speaker_name": "Ana",
+                "text": "Stored line",
+                "timestamp": 1700000000.0,
+                "confidence": 0.9,
+                "is_ingame": False,
+            },
+        ])
+
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        router.export_root = tmp_path  # type: ignore[attr-defined]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            created = await c.post("/api/sessions/sess-db/export")
+            export_id = created.json()["export_id"]
+            downloaded = await c.get(
+                "/api/sessions/sess-db/export/download",
+                params={"export_id": export_id},
+            )
+
+        assert downloaded.status_code == 200
+        assert downloaded.headers["content-type"] == "application/zip"
+        assert len(downloaded.content) > 0
+
 
 # â”€â”€ Integration: event bus â†’ WebState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -490,7 +600,7 @@ class TestEventBusIntegration:
 
     async def test_transcription_event_stored(self):
         bus = EventBus()
-        app = create_app(bus)
+        create_app(bus)
         from rpg_scribe.web.routes import router
 
         await bus.publish(_make_transcription(text="Hello world"))
@@ -769,6 +879,9 @@ class TestCreateApp:
         assert "/api/campaigns/{campaign_id}/sessions" in paths
         assert "/api/sessions/{session_id}/finalize" in paths
         assert "/api/sessions/{session_id}/refresh-summary" in paths
+        assert "/api/sessions/{session_id}/export" in paths
+        assert "/api/sessions/{session_id}/exports" in paths
+        assert "/api/sessions/{session_id}/export/download" in paths
 
     def test_app_title(self, app):
         assert app.title == "RPG Scribe"

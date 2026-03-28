@@ -122,6 +122,7 @@ class WebSocketBridge:
                 "session_id": event.session_id,
                 "new_npcs": list(event.new_npcs),
                 "new_locations": list(event.new_locations),
+                "new_entities": list(event.new_entities),
                 "new_relationships": list(event.new_relationships),
                 "timestamp": event.timestamp,
             },

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from rpg_scribe.core.event_bus import EventBus
@@ -132,6 +131,27 @@ def create_app(
     router.config = config  # type: ignore[attr-defined]
     router.event_bus = event_bus  # type: ignore[attr-defined]
     router.application = application  # type: ignore[attr-defined]
+    router.export_root = (Path.cwd() / "exports").resolve()  # type: ignore[attr-defined]
+
+    # TTS provider and cache
+    tts_config = getattr(config, "tts", None)
+    router.tts_config = tts_config  # type: ignore[attr-defined]
+    router.tts_provider = None  # type: ignore[attr-defined]
+    router.tts_cache = None  # type: ignore[attr-defined]
+
+    if tts_config and tts_config.enabled:
+        from rpg_scribe.tts.cache import TTSCache
+
+        tts_cache = TTSCache(tts_config.cache_dir)
+        router.tts_cache = tts_cache  # type: ignore[attr-defined]
+
+        if tts_config.provider == "openai":
+            from rpg_scribe.tts.openai_provider import OpenAITTSProvider
+
+            router.tts_provider = OpenAITTSProvider(model=tts_config.model)  # type: ignore[attr-defined]
+            logger.info("TTS enabled: provider=%s voice=%s", tts_config.provider, tts_config.voice)
+        else:
+            logger.warning("Unknown TTS provider: %s — TTS disabled", tts_config.provider)
 
     # Populate campaign info in WebState from config
     if config and hasattr(config, "campaign") and config.campaign:
@@ -151,6 +171,17 @@ def create_app(
         }
 
     app.include_router(router)
+
+    # Serve saved audio chunks as static files (data/audio/)
+    audio_dir = Path.cwd() / "data" / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+
+    # Serve TTS cache as static files (/api/tts/cache/)
+    if tts_config and tts_config.enabled:
+        tts_cache_dir = Path(tts_config.cache_dir)
+        tts_cache_dir.mkdir(parents=True, exist_ok=True)
+        app.mount("/api/tts/cache", StaticFiles(directory=str(tts_cache_dir)), name="tts_cache")
 
     # Serve static files (HTML/JS/CSS) at the root path — mounted
     # last so API and WS routes take priority.

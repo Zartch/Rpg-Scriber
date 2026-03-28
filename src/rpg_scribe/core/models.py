@@ -183,3 +183,14 @@ class SummarizerConfig:
     extraction_every_n_updates: int = 3
 
 
+@dataclass
+class TTSConfig:
+    """Configuration for text-to-speech narration."""
+
+    enabled: bool = False
+    provider: str = "openai"
+    voice: str = "nova"
+    model: str = "tts-1"
+    cache_dir: str = "data/tts_cache"
+
+

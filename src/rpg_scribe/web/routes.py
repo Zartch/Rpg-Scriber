@@ -3,22 +3,19 @@
 from __future__ import annotations
 
 import html
+import json as json_mod
 import logging
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
     SummaryRefreshRequestEvent,
-    SummaryUpdateEvent,
-    SystemStatusEvent,
-    TranscriptionEvent,
 )
 from rpg_scribe.core.models import (
     CharacterRelationshipInfo,
@@ -28,7 +25,8 @@ from rpg_scribe.core.models import (
     RelationshipTypeInfo,
 )
 from rpg_scribe.config import save_campaign_toml
-from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
+from rpg_scribe.web.exporter import SessionExportData, SessionExportService
+from rpg_scribe.web.websocket import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +111,50 @@ def _get_config():
     return getattr(router, "config", None)
 
 
+async def _validate_campaign(campaign_id: str) -> bool:
+    """Check campaign exists and ensure it is loaded into state.
+
+    If the campaign is already in ``state.active_campaign`` we return
+    immediately.  Otherwise we attempt to load it from the database so
+    that subsequent code can read/write ``state.active_campaign`` as
+    usual.
+    """
+    state = _get_state()
+    if state.active_campaign and state.active_campaign.get("id") == campaign_id:
+        return True
+    db = _get_database()
+    if db:
+        try:
+            row = await db.get_campaign(campaign_id)
+            if row:
+                campaign: dict[str, Any] = {
+                    "id": row.get("id", ""),
+                    "name": row.get("name", ""),
+                    "game_system": row.get("game_system", ""),
+                    "language": row.get("language", "es"),
+                    "description": row.get("description", ""),
+                    "custom_instructions": row.get("custom_instructions", ""),
+                    "dm_speaker_id": row.get("dm_speaker_id", ""),
+                    "is_generic": False,
+                }
+                # Hydrate entity lists from DB
+                campaign["players"] = await db.get_players(campaign_id)
+                campaign["npcs"] = await db.get_npcs(campaign_id)
+                campaign["locations"] = await db.get_locations(campaign_id)
+                campaign["entities"] = await db.get_entities(campaign_id)
+                campaign["relationships"] = (
+                    await db.get_character_relationships(campaign_id)
+                )
+                campaign["relationship_types"] = (
+                    await db.get_relationship_types(campaign_id)
+                )
+                state.active_campaign = campaign
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _get_event_bus():
     """Access the optional EventBus attached to the router."""
     return getattr(router, "event_bus", None)
@@ -133,6 +175,94 @@ def _persist_campaign_toml(config: Any) -> None:
     save_campaign_toml(config.campaign, campaign_path)
 
 
+async def _load_campaign_context_from_db(db, campaign_id: str):
+    """Build a full CampaignContext from the database.
+
+    Loads campaign metadata, players, NPCs, locations, entities,
+    relationship types, relationships and campaign_summary so the
+    summarizer has the complete picture for extraction / generation.
+
+    Returns ``None`` if the campaign is not found.
+    """
+    from rpg_scribe.core.models import (
+        CampaignContext,
+        CharacterRelationshipInfo,
+        EntityInfo,
+        LocationInfo,
+        NPCInfo,
+        PlayerInfo,
+        RelationshipTypeInfo,
+    )
+
+    camp_row = await db.get_campaign(campaign_id)
+    if not camp_row:
+        return None
+
+    players_rows = await db.get_players(campaign_id)
+    npcs_rows = await db.get_npcs(campaign_id)
+    locations_rows = await db.get_locations(campaign_id)
+    entities_rows = await db.get_entities(campaign_id)
+    rel_types_rows = await db.get_relationship_types(campaign_id)
+    rels_rows = await db.get_character_relationships(campaign_id)
+
+    return CampaignContext(
+        campaign_id=campaign_id,
+        name=camp_row.get("name", ""),
+        game_system=camp_row.get("game_system", ""),
+        language=camp_row.get("language", "es"),
+        description=camp_row.get("description", ""),
+        custom_instructions=camp_row.get("custom_instructions", ""),
+        campaign_summary=camp_row.get("campaign_summary", ""),
+        dm_speaker_id=camp_row.get("dm_speaker_id", ""),
+        speaker_map=camp_row.get("speaker_map") or {},
+        players=[
+            PlayerInfo(
+                discord_id=p.get("discord_id", ""),
+                discord_name=p.get("discord_name", ""),
+                character_name=p.get("character_name", ""),
+                character_description=p.get("character_description", ""),
+            )
+            for p in players_rows
+        ],
+        known_npcs=[
+            NPCInfo(name=n.get("name", ""), description=n.get("description", ""))
+            for n in npcs_rows
+        ],
+        locations=[
+            LocationInfo(
+                name=loc.get("name", ""), description=loc.get("description", "")
+            )
+            for loc in locations_rows
+        ],
+        entities=[
+            EntityInfo(
+                name=e.get("name", ""),
+                entity_type=e.get("entity_type", "group"),
+                description=e.get("description", ""),
+            )
+            for e in entities_rows
+        ],
+        relation_types=[
+            RelationshipTypeInfo(
+                key=rt.get("canonical_key", ""),
+                label=rt.get("label", ""),
+                category=rt.get("category", "general"),
+            )
+            for rt in rel_types_rows
+        ],
+        relationships=[
+            CharacterRelationshipInfo(
+                source_key=r.get("source_key", ""),
+                target_key=r.get("target_key", ""),
+                relation_type_key=r.get("type_key", ""),
+                relation_type_label=r.get("type_label", ""),
+                notes=r.get("notes", ""),
+            )
+            for r in rels_rows
+        ],
+    )
+
+
 def _logs_root() -> Path:
     """Return the base logs directory."""
     return Path("logs").resolve()
@@ -141,6 +271,78 @@ def _logs_root() -> Path:
 def _session_logs_dir(session_id: str) -> Path:
     """Return the logs directory for a session."""
     return (_logs_root() / session_id).resolve()
+
+
+def _exports_root() -> Path:
+    """Return the base directory for immutable session exports."""
+    return Path(getattr(router, "export_root", Path("exports").resolve())).resolve()
+
+
+def _get_export_service() -> SessionExportService:
+    """Create the export service using the configured exports root."""
+    return SessionExportService(_exports_root())
+
+
+async def _load_session_export_data(session_id: str) -> SessionExportData | None:
+    """Load normalized export data for a session from memory and/or DB."""
+    state = _get_state()
+    db = _get_database()
+
+    live_transcriptions = [
+        dict(item)
+        for item in state.transcriptions
+        if item.get("session_id") == session_id
+    ]
+
+    if session_id == state.active_session_id:
+        session_row: dict[str, Any] = {}
+        transcriptions = live_transcriptions
+        if db is not None:
+            try:
+                session_row = await db.get_session(session_id) or {}
+                transcriptions = [dict(item) for item in await db.get_transcriptions(session_id)]
+            except Exception as exc:
+                logger.error("Error loading active session row for export: %s", exc)
+        return SessionExportData(
+            session_id=session_id,
+            transcriptions=transcriptions,
+            session_summary=state.session_summary or "",
+            session_chronology=state.session_chronology or "",
+            started_at=session_row.get("started_at", ""),
+            ended_at=session_row.get("ended_at", ""),
+            status=session_row.get("status", "active") or "active",
+        )
+
+    if db is not None:
+        try:
+            session_row = await db.get_session(session_id)
+            transcriptions = await db.get_transcriptions(session_id)
+        except Exception as exc:
+            logger.error("Error loading historical session export data: %s", exc)
+            session_row = None
+            transcriptions = []
+
+        if session_row:
+            return SessionExportData(
+                session_id=session_id,
+                transcriptions=[dict(item) for item in transcriptions],
+                session_summary=str(session_row.get("session_summary", "") or ""),
+                session_chronology=str(session_row.get("session_chronology", "") or ""),
+                started_at=session_row.get("started_at", ""),
+                ended_at=session_row.get("ended_at", ""),
+                status=str(session_row.get("status", "") or ""),
+            )
+
+    if live_transcriptions:
+        return SessionExportData(
+            session_id=session_id,
+            transcriptions=live_transcriptions,
+            session_summary="",
+            session_chronology="",
+            status="snapshot",
+        )
+
+    return None
 
 
 def _flatten_campaign_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -659,50 +861,13 @@ async def generate_session_summary(session_id: str) -> dict[str, Any]:
 
     config = _get_config()
 
-    from rpg_scribe.core.models import (
-        CampaignContext,
-        LocationInfo,
-        PlayerInfo,
-        SummarizerConfig,
-    )
+    from rpg_scribe.core.models import CampaignContext, SummarizerConfig
     from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
 
     campaign = None
-    if config is not None and getattr(config, "campaign", None):
-        campaign = config.campaign
-    else:
-        campaign_id = session.get("campaign_id")
-        if campaign_id:
-            camp_row = await db.get_campaign(campaign_id)
-            if camp_row:
-                players_rows = await db.get_players(campaign_id)
-                locations_rows = await db.get_locations(campaign_id)
-                campaign = CampaignContext(
-                    campaign_id=campaign_id,
-                    name=camp_row.get("name", ""),
-                    game_system=camp_row.get("game_system", ""),
-                    language=camp_row.get("language", "es"),
-                    description=camp_row.get("description", ""),
-                    custom_instructions=camp_row.get("custom_instructions", ""),
-                    players=[
-                        PlayerInfo(
-                            discord_id=p.get("discord_id", ""),
-                            discord_name=p.get("discord_name", ""),
-                            character_name=p.get("character_name", ""),
-                            character_description=p.get("character_description", ""),
-                        )
-                        for p in players_rows
-                    ],
-                    locations=[
-                        LocationInfo(
-                            name=loc.get("name", ""),
-                            description=loc.get("description", ""),
-                        )
-                        for loc in locations_rows
-                    ],
-                    speaker_map=camp_row.get("speaker_map") or {},
-                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
-                )
+    campaign_id = session.get("campaign_id")
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
     if campaign is None:
         campaign = CampaignContext.create_generic()
 
@@ -754,51 +919,13 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
             detail="No transcriptions found for this session",
         )
 
-    from rpg_scribe.core.models import (
-        CampaignContext,
-        LocationInfo,
-        PlayerInfo,
-        SummarizerConfig,
-    )
+    from rpg_scribe.core.models import CampaignContext, SummarizerConfig
     from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
 
-    # Prefer in-memory campaign; fall back to loading from DB
     campaign = None
-    if config is not None and getattr(config, "campaign", None):
-        campaign = config.campaign
-    else:
-        campaign_id = session.get("campaign_id")
-        if campaign_id:
-            camp_row = await db.get_campaign(campaign_id)
-            if camp_row:
-                players_rows = await db.get_players(campaign_id)
-                locations_rows = await db.get_locations(campaign_id)
-                campaign = CampaignContext(
-                    campaign_id=campaign_id,
-                    name=camp_row.get("name", ""),
-                    game_system=camp_row.get("game_system", ""),
-                    language=camp_row.get("language", "es"),
-                    description=camp_row.get("description", ""),
-                    custom_instructions=camp_row.get("custom_instructions", ""),
-                    players=[
-                        PlayerInfo(
-                            discord_id=p.get("discord_id", ""),
-                            discord_name=p.get("discord_name", ""),
-                            character_name=p.get("character_name", ""),
-                            character_description=p.get("character_description", ""),
-                        )
-                        for p in players_rows
-                    ],
-                    locations=[
-                        LocationInfo(
-                            name=loc.get("name", ""),
-                            description=loc.get("description", ""),
-                        )
-                        for loc in locations_rows
-                    ],
-                    speaker_map=camp_row.get("speaker_map") or {},
-                    dm_speaker_id=camp_row.get("dm_speaker_id", ""),
-                )
+    campaign_id = session.get("campaign_id")
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
     if campaign is None:
         campaign = CampaignContext.create_generic()
     summarizer_config = (
@@ -1080,7 +1207,7 @@ async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, A
     config = _get_config()
 
     # Validate that we have a campaign to update
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     # Fields that can be edited from the UI
@@ -1166,11 +1293,10 @@ async def update_player(
     Accepts: discord_name, character_name, character_description.
     If character_name changes, also updates speaker_map.
     """
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"discord_name", "character_name", "character_description"}
@@ -1235,11 +1361,10 @@ async def update_player(
 @router.post("/api/campaigns/{campaign_id}/npcs")
 async def create_npc(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Create a new NPC."""
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = body.get("name", "").strip()
@@ -1276,11 +1401,10 @@ async def update_npc_endpoint(
     campaign_id: str, npc_id: str, body: dict[str, Any]
 ) -> dict[str, Any]:
     """Update an NPC's editable fields (name, description)."""
-    state = _get_state()
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"name", "description"}
@@ -1331,7 +1455,7 @@ async def create_location_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = str(body.get("name", "")).strip()
@@ -1384,7 +1508,7 @@ async def update_location_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     old_name = str(body.get("old_name", "")).strip()
@@ -1476,7 +1600,7 @@ async def merge_locations_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1496,11 +1620,11 @@ async def merge_locations_endpoint(
         if config and getattr(config, "campaign", None):
             config.campaign.locations = [
                 LocationInfo(
-                    name=str(l.get("name", "")),
-                    description=str(l.get("description", "")),
+                    name=str(loc.get("name", "")),
+                    description=str(loc.get("description", "")),
                 )
-                for l in locations
-                if l.get("name")
+                for loc in locations
+                if loc.get("name")
             ]
         await _sync_relationships_to_config(config, db, campaign_id)
         _persist_campaign_toml(config)
@@ -1523,7 +1647,7 @@ async def update_merged_location_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1576,7 +1700,7 @@ async def create_entity_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     name = str(body.get("name", "")).strip()
@@ -1639,7 +1763,7 @@ async def update_entity_endpoint(
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
 
     editable = {"name", "entity_type", "description"}
@@ -1715,7 +1839,7 @@ async def merge_entities_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1763,7 +1887,7 @@ async def update_merged_entity_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1816,7 +1940,7 @@ async def merge_npcs_endpoint(campaign_id: str, body: dict[str, Any]) -> dict[st
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1863,7 +1987,7 @@ async def update_merged_npc_endpoint(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1934,7 +2058,7 @@ async def create_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -1994,7 +2118,7 @@ async def merge_relationship_types(
     state = _get_state()
     db = _get_database()
     config = _get_config()
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -2035,7 +2159,7 @@ async def update_relationship(campaign_id: str, body: dict[str, Any]) -> dict[st
     db = _get_database()
     config = _get_config()
 
-    if not state.active_campaign or state.active_campaign.get("id") != campaign_id:
+    if not await _validate_campaign(campaign_id):
         return {"ok": False, "error": "Campaign not found"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
@@ -2441,6 +2565,73 @@ async def get_session_logs_explorer(session_id: str) -> HTMLResponse:
     return HTMLResponse(page)
 
 
+@router.post("/api/sessions/{session_id}/export")
+async def create_session_export(session_id: str) -> dict[str, Any]:
+    """Generate a new immutable export bundle for a session."""
+    data = await _load_session_export_data(session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    service = _get_export_service()
+    manifest = service.build_export(data)
+    export_id = str(manifest["export_id"])
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "export_id": export_id,
+        "exported_at": manifest.get("created_at", ""),
+        "display_date": manifest.get("display_date", ""),
+        "export_dir": manifest.get("export_dir", ""),
+        "zip_name": manifest.get("zip_name", ""),
+        "files": manifest.get("files", []),
+        "download_url": (
+            f"/api/sessions/{quote(session_id)}/export/download"
+            f"?export_id={quote(export_id)}"
+        ),
+    }
+
+
+@router.get("/api/sessions/{session_id}/exports")
+async def list_session_exports(session_id: str) -> dict[str, Any]:
+    """List immutable export bundles previously generated for a session."""
+    service = _get_export_service()
+    exports = []
+    for item in service.list_exports(session_id):
+        export_id = str(item.get("export_id", ""))
+        exports.append(
+            {
+                "session_id": item.get("session_id", session_id),
+                "export_id": export_id,
+                "created_at": item.get("created_at", ""),
+                "display_date": item.get("display_date", ""),
+                "status": item.get("status", ""),
+                "zip_name": item.get("zip_name", ""),
+                "files": item.get("files", []),
+                "download_url": (
+                    f"/api/sessions/{quote(session_id)}/export/download"
+                    f"?export_id={quote(export_id)}"
+                ),
+            }
+        )
+    return {"session_id": session_id, "exports": exports}
+
+
+@router.get("/api/sessions/{session_id}/export/download")
+async def download_session_export(
+    session_id: str,
+    export_id: str = Query(default=""),
+) -> FileResponse:
+    """Download one concrete version of a session export bundle."""
+    if not export_id.strip():
+        raise HTTPException(status_code=400, detail="export_id is required")
+
+    service = _get_export_service()
+    zip_path = service.get_export_zip(session_id, export_id)
+    if zip_path is None:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return FileResponse(path=zip_path, filename=zip_path.name, media_type="application/zip")
+
+
 # -- Session finalize endpoint -------------------------------------
 
 
@@ -2475,23 +2666,21 @@ async def finalize_session(session_id: str) -> dict[str, Any]:
 async def extract_entities(session_id: str) -> dict[str, Any]:
     """Trigger entity extraction (NPCs, locations, relationships) for a session.
 
-    Works for both the active live session and historical sessions.
-    For the active session, uses the in-memory session summary.
-    For historical sessions, loads the saved summary from the database.
+    Always loads the campaign that owns the session from the database so
+    that extraction works in browse mode (no ``--campaign`` flag).
+    For the active session, uses the in-memory session summary; for
+    historical sessions, loads the saved summary from the database.
     """
     state = _get_state()
     db = _get_database()
     config = _get_config()
     event_bus = _get_event_bus()
 
-    if config is None or not getattr(config, "campaign", None):
-        return {"ok": False, "error": "No campaign configured"}
     if db is None:
         return {"ok": False, "error": "Database not available"}
 
-    campaign = config.campaign
-
-    # Determine session summary to use
+    # ── Load session row (needed for both summary and campaign_id) ──
+    session_row = None
     if session_id == state.active_session_id:
         session_summary = state.session_summary
     else:
@@ -2506,12 +2695,32 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
     if not session_summary:
         return {"ok": False, "error": "No session summary available to extract from"}
 
+    # ── Always load campaign from DB for the session's campaign_id ──
+    # This ensures extraction works in browse mode (generic startup).
+    campaign_id = None
+    if session_row:
+        campaign_id = session_row.get("campaign_id")
+    elif state.active_campaign:
+        campaign_id = state.active_campaign.get("id")
+
+    campaign = None
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
+    if campaign is None:
+        return {"ok": False, "error": "No campaign found for this session"}
+
     try:
         from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+        from rpg_scribe.core.models import SummarizerConfig
 
+        summarizer_config = (
+            config.summarizer
+            if config is not None and getattr(config, "summarizer", None)
+            else SummarizerConfig()
+        )
         summarizer = ClaudeSummarizer(
             event_bus,
-            config.summarizer,
+            summarizer_config,
             campaign,
             database=db,
         )
@@ -2528,6 +2737,7 @@ async def extract_entities(session_id: str) -> dict[str, Any]:
                     session_id=session_id,
                     new_npcs=tuple(results["new_npcs"]),
                     new_locations=tuple(results["new_locations"]),
+                    new_entities=tuple(results["new_entities"]),
                     new_relationships=tuple(results["new_relationships"]),
                 )
             )
@@ -2591,3 +2801,101 @@ async def websocket_live(ws: WebSocket) -> None:
         pass
     finally:
         await manager.disconnect(ws)
+
+
+_TTS_CHAR_LIMIT = 4096
+
+
+def _split_tts_chunks(text: str, limit: int = _TTS_CHAR_LIMIT) -> list[str]:
+    """Split text into chunks that fit within the TTS char limit.
+
+    Cuts at the last '.', then last ',', then last space before the limit.
+    Recurses until every chunk fits.
+    """
+    if len(text) <= limit:
+        return [text]
+    # Try last sentence boundary
+    for sep in (".", ",", " "):
+        cut = text.rfind(sep, 0, limit)
+        if cut != -1:
+            head = text[: cut + 1].strip()
+            tail = text[cut + 1 :].strip()
+            return _split_tts_chunks(head, limit) + _split_tts_chunks(tail, limit)
+    # Hard cut (should never happen with real prose)
+    return [text[:limit]] + _split_tts_chunks(text[limit:], limit)
+
+
+@router.post("/api/tts/narrate")
+async def tts_narrate(body: dict):
+    """Stream TTS audio URLs for each paragraph via NDJSON."""
+    tts_config = getattr(router, "tts_config", None)
+    if tts_config is None or not tts_config.enabled:
+        raise HTTPException(status_code=503, detail="TTS is not enabled")
+
+    tts_provider = getattr(router, "tts_provider", None)
+    tts_cache = getattr(router, "tts_cache", None)
+    if tts_provider is None or tts_cache is None:
+        raise HTTPException(status_code=503, detail="TTS provider not configured")
+
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    voice = body.get("voice") or tts_config.voice
+    provider_name = tts_provider.name
+    model = tts_config.model
+
+    raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not raw_paragraphs:
+        raise HTTPException(status_code=400, detail="No paragraphs found in text")
+
+    chunks: list[str] = []
+    for p_idx, paragraph in enumerate(raw_paragraphs):
+        sub = _split_tts_chunks(paragraph)
+        if len(sub) > 1:
+            logger.info("TTS chunk split: párrafo %d → %d subchunks (%d chars)", p_idx, len(sub), len(paragraph))
+        chunks.extend(sub)
+
+    total = len(chunks)
+    logger.info("TTS narrate: %d párrafos, %d chunks, voice=%s", len(raw_paragraphs), total, voice)
+
+    async def generate():
+        for idx, chunk in enumerate(chunks):
+            key = tts_cache.make_key(chunk, provider_name, voice, model)
+            cached = tts_cache.has(key)
+            logger.info("TTS → OpenAI: chunk %d/%d (%d chars) cached=%s", idx + 1, total, len(chunk), cached)
+            if not cached:
+                try:
+                    audio = await tts_provider.synthesize(chunk, voice)
+                    tts_cache.put(key, audio)
+                except Exception as exc:
+                    line = json_mod.dumps({"index": idx, "total": total, "error": str(exc)})
+                    yield line + "\n"
+                    continue
+            line = json_mod.dumps({
+                "index": idx,
+                "total": total,
+                "audio_url": tts_cache.url_for(key),
+                "cached": cached,
+            })
+            yield line + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@router.get("/api/tts/voices")
+async def tts_voices():
+    """Return available TTS voices for the active provider."""
+    tts_config = getattr(router, "tts_config", None)
+    if tts_config is None or not tts_config.enabled:
+        raise HTTPException(status_code=503, detail="TTS is not enabled")
+
+    tts_provider = getattr(router, "tts_provider", None)
+    if tts_provider is None:
+        raise HTTPException(status_code=503, detail="TTS provider not configured")
+
+    return {
+        "provider": tts_provider.name,
+        "voices": tts_provider.supported_voices(),
+        "current": tts_config.voice,
+    }

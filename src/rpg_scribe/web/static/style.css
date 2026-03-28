@@ -96,6 +96,12 @@ header h1 { font-size: 1.25rem; }
   border-color: var(--accent);
   background: rgba(124, 106, 240, 0.1);
 }
+.btn-small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--bg);
+}
 .btn-save {
   background: var(--accent);
   color: #fff;
@@ -357,6 +363,16 @@ header h1 { font-size: 1.25rem; }
 .entry-actions .btn-delete:hover { background: #e53e3e; color: #fff; }
 .entry-actions .btn-meta:hover { background: var(--accent); color: #fff; }
 
+/* Play audio button */
+.btn-play {
+  font-size: 0.65rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+  margin-left: 0.3rem; opacity: 0.5; vertical-align: middle; transition: opacity 0.15s;
+}
+.feed-entry:hover .btn-play { opacity: 1; }
+.btn-play:hover { background: var(--green); color: #fff; }
+.btn-play.playing { background: var(--green); color: #fff; opacity: 1; }
+
 /* META transcription state */
 .feed-entry.meta { border-left-color: var(--text-muted); opacity: 0.7; }
 .feed-entry.meta .btn-meta { background: var(--accent); color: #fff; }
@@ -541,6 +557,40 @@ header h1 { font-size: 1.25rem; }
   color: var(--text-muted);
   font-weight: 400;
 }
+
+/* Campaign summary stats in collapsed header */
+#campaign-details-header {
+  gap: 0.5rem;
+}
+.campaign-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+.summary-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  transition: opacity 0.2s;
+}
+.summary-stat.dimmed {
+  opacity: 0.35;
+}
+.stat-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 1ch;
+}
+
 .collapse-arrow {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -798,6 +848,49 @@ header h1 { font-size: 1.25rem; }
   color: var(--accent);
 }
 
+.session-export-list {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: rgba(124, 106, 240, 0.05);
+}
+
+.session-export-list strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.session-export-list ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.session-export-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.session-export-list a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.session-export-list .export-date {
+  color: var(--text-muted);
+}
+
 
 .relationship-tools {
   margin-top: 0.5rem;
@@ -1049,4 +1142,184 @@ header h1 { font-size: 1.25rem; }
   color: var(--accent);
   border-bottom-color: var(--accent);
   background: rgba(124, 106, 240, 0.08);
+}
+
+/* Campaign details tab system */
+.campaign-details-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.campaign-details-tabs .summary-tab {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+}
+.detail-tab-content {
+  display: none;
+}
+.detail-tab-content.active {
+  display: block;
+}
+
+/* Loading States & UX Components */
+
+/* Spinner animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Inline spinner for buttons */
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.4em;
+  animation: spin 0.6s linear infinite;
+}
+
+.btn-small .spinner-inline {
+  width: 12px;
+  height: 12px;
+}
+
+/* Panel loading overlay */
+.panel-loadable {
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 17, 23, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: inherit;
+}
+
+.loading-overlay .spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid transparent;
+  border-top: 3px solid #ffffff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Skeleton shimmer effect */
+.skeleton-line {
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-block {
+  height: 3em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-line + .skeleton-line,
+.skeleton-block + .skeleton-line,
+.skeleton-line + .skeleton-block,
+.skeleton-block + .skeleton-block {
+  margin-top: 0.5rem;
+}
+
+/* Natural width variation for skeleton lines */
+.skeleton-line:nth-child(odd) { width: 85%; }
+.skeleton-line:nth-child(even) { width: 65%; }
+
+/* Content refresh state (for polling updates) */
+.content-refreshing {
+  opacity: 0.5;
+  filter: blur(1px);
+  pointer-events: none;
+  transition: opacity 0.2s, filter 0.2s;
+}
+
+/* ── TTS Narrate ──────────────────────────────────────────── */
+.btn-narrate {
+  gap: 0.3em;
+}
+
+.narrate-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 0.25rem;
+  padding: 2px 4px;
+  vertical-align: middle;
+}
+
+.narrate-ctrl-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.btn-narrate-ctrl {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 2px 5px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.btn-narrate-ctrl:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(124, 106, 240, 0.12);
+}
+
+.btn-narrate-ctrl:disabled {
+  color: var(--border);
+  cursor: not-allowed;
+}
+
+.btn-narrate-playpause {
+  background: var(--accent);
+  color: var(--bg) !important;
+  font-weight: 600;
+  min-width: 56px;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.btn-narrate-playpause:hover:not(:disabled) {
+  background: var(--accent);
+  opacity: 0.88;
+  color: var(--bg) !important;
+}
+
+.btn-narrate-playpause.paused {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text) !important;
 }

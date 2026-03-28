@@ -152,7 +152,13 @@
     }
 
     function loadSummary(id) {
-      summaryView.innerHTML = '<p class="cs-placeholder">Loading&hellip;</p>';
+      // Show skeleton loading state
+      summaryView.innerHTML =
+        '<div class="skeleton-block"></div>' +
+        '<div class="skeleton-line"></div>' +
+        '<div class="skeleton-line"></div>' +
+        '<div class="skeleton-line"></div>';
+
       fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/" + encodeURIComponent(id))
         .then(function (r) { return r.json(); })
         .then(function (data) { renderSummary(data.campaign_summary); })
@@ -161,7 +167,13 @@
         });
     }
 
-    // Initial load
+    // Initial load with skeleton
+    summaryList.innerHTML =
+      '<div class="skeleton-line"></div>' +
+      '<div class="skeleton-line"></div>' +
+      '<div class="skeleton-line"></div>' +
+      '<div class="skeleton-line"></div>';
+
     fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries")
       .then(function (r) { return r.json(); })
       .then(function (data) {

@@ -18,14 +18,17 @@
   var sessionListEl = document.getElementById("session-list");
   var backToLiveBtn = document.getElementById("back-to-live");
   var openTranscriptBtn = document.getElementById("open-transcript-btn");
+  var exportSessionBtn = document.getElementById("export-session-btn");
   var modeLiveBtn = document.getElementById("mode-live-btn");
   var modeBrowseBtn = document.getElementById("mode-browse-btn");
   var browseCampaignsPanel = document.getElementById("browse-campaigns-panel");
   var browseCampaignListEl = document.getElementById("browse-campaign-list");
   var sessionsTitleEl = document.getElementById("sessions-title");
   var statusPanel = document.getElementById("status-panel");
+  var summaryPanel = document.getElementById("summary-panel");
   var questionsPanel = document.getElementById("questions-panel");
   var sessionLogLinkEl = document.getElementById("session-log-link");
+  var sessionExportListEl = document.getElementById("session-export-list");
 
   // Campaign bar elements
   var campaignBar = document.getElementById("campaign-bar");
@@ -42,31 +45,28 @@
   var editInstructionsInput = document.getElementById("edit-campaign-instructions");
   var editMasterSelect = document.getElementById("edit-campaign-master");
 
-  // Player/NPC elements
-  var playersSection = document.getElementById("players-section");
-  var playersHeader = document.getElementById("players-header");
-  var playersBody = document.getElementById("players-body");
+  // Campaign details (unified tabbed container)
+  var campaignDetailsSection = document.getElementById("campaign-details-section");
+  var campaignDetailsHeader = document.getElementById("campaign-details-header");
+  var campaignDetailsBody = document.getElementById("campaign-details-body");
+  // Keep legacy aliases for render functions that reference these
+  var playersSection = campaignDetailsSection;
+  var npcsSection = campaignDetailsSection;
+  var locationsSection = campaignDetailsSection;
+  var entitiesSection = campaignDetailsSection;
+  var relationshipsSection = campaignDetailsSection;
   var playersList = document.getElementById("players-list");
   var playersCount = document.getElementById("players-count");
-  var npcsSection = document.getElementById("npcs-section");
-  var npcsHeader = document.getElementById("npcs-header");
-  var npcsBody = document.getElementById("npcs-body");
   var npcsList = document.getElementById("npcs-list");
   var npcsCount = document.getElementById("npcs-count");
   var addNpcBtn = document.getElementById("add-npc-btn");
   var addNpcForm = document.getElementById("add-npc-form");
   var addNpcCancel = document.getElementById("add-npc-cancel");
-  var locationsSection = document.getElementById("locations-section");
-  var locationsHeader = document.getElementById("locations-header");
-  var locationsBody = document.getElementById("locations-body");
   var locationsList = document.getElementById("locations-list");
   var locationsCount = document.getElementById("locations-count");
   var addLocationBtn = document.getElementById("add-location-btn");
   var addLocationForm = document.getElementById("add-location-form");
   var addLocationCancel = document.getElementById("add-location-cancel");
-  var entitiesSection = document.getElementById("entities-section");
-  var entitiesHeader = document.getElementById("entities-header");
-  var entitiesBody = document.getElementById("entities-body");
   var entitiesList = document.getElementById("entities-list");
   var entitiesCount = document.getElementById("entities-count");
   var addEntityBtn = document.getElementById("add-entity-btn");
@@ -78,9 +78,6 @@
   var replacementsList = document.getElementById("replacements-list");
   var replacementsCount = document.getElementById("replacements-count");
   var applyReplacementsBtn = document.getElementById("apply-replacements-btn");
-  var relationshipsSection = document.getElementById("relationships-section");
-  var relationshipsHeader = document.getElementById("relationships-header");
-  var relationshipsBody = document.getElementById("relationships-body");
   var relationshipsList = document.getElementById("relationships-list");
   var relationshipsCount = document.getElementById("relationships-count");
   var relationshipFilterQuery = document.getElementById("relationship-filter-query");
@@ -90,6 +87,11 @@
   var relationshipFilterSourceKind = document.getElementById("relationship-filter-source-kind");
   var relationshipFilterTargetKind = document.getElementById("relationship-filter-target-kind");
   var relationshipFilterClearBtn = document.getElementById("relationship-filter-clear");
+  var statPlayers = document.getElementById("stat-players");
+  var statNpcs = document.getElementById("stat-npcs");
+  var statLocations = document.getElementById("stat-locations");
+  var statEntities = document.getElementById("stat-entities");
+  var statRelationships = document.getElementById("stat-relationships");
   var addRelationshipBtn = document.getElementById("add-relationship-btn");
   var addRelationshipForm = document.getElementById("add-relationship-form");
   var addRelationshipCancel = document.getElementById("add-relationship-cancel");
@@ -105,13 +107,25 @@
   var relationshipEditParentsPanel = document.getElementById("relationship-edit-parents");
   var toggleRelationshipGraphBtn = document.getElementById("toggle-relationship-graph-btn");
   var relationshipGraphPanel = document.getElementById("relationship-graph-panel");
-  var relationshipGraphSvg = document.getElementById("relationship-graph-svg");
+  var relationshipGraphCanvas = document.getElementById("relationship-graph-canvas");
+  var relationshipGraphEmpty = document.getElementById("relationship-graph-empty");
   var relationshipLegend = document.getElementById("relationship-legend");
   var graphFilterPlayers = document.getElementById("graph-filter-players");
   var graphFilterNpcs = document.getElementById("graph-filter-npcs");
   var graphFilterLocations = document.getElementById("graph-filter-locations");
   var graphFilterEntities = document.getElementById("graph-filter-entities");
   var relationshipNodeTooltip = document.getElementById("relationship-node-tooltip");
+  var relationshipGraphSearch = document.getElementById("relationship-graph-search");
+  var relationshipGraphCommunity = document.getElementById("relationship-graph-community");
+  var relationshipGraphNeighborhood = document.getElementById("relationship-graph-neighborhood");
+  var relationshipGraphMetric = document.getElementById("relationship-graph-metric");
+  var relationshipGraphIsolateComponent = document.getElementById("relationship-graph-isolate-component");
+  var relationshipGraphStats = document.getElementById("relationship-graph-stats");
+  var relationshipGraphDetails = document.getElementById("relationship-graph-details");
+  var relationshipGraphPathSource = document.getElementById("relationship-graph-path-source");
+  var relationshipGraphPathTarget = document.getElementById("relationship-graph-path-target");
+  var relationshipGraphPathOutput = document.getElementById("relationship-graph-path-output");
+  var relationshipGraphTop = document.getElementById("relationship-graph-top");
 
   // Summary control buttons
   var refreshSummaryBtn = document.getElementById("refresh-summary-btn");
@@ -133,17 +147,107 @@
   var appMode = "live";         // live | browse
   var browseCampaignId = null;
   var UNCATEGORIZED_BROWSE_ID = "__uncategorized__";
+  var sessionListLoaded = false; // flag for skeleton loading on first fetch
   var browseCampaignsCache = [];
   var relationshipGraphVisible = false;
-  var relationshipNodePositions = {};
   var relationshipGraphFilters = { players: true, npcs: true, locations: true, entities: true };
-  var pinnedNodeTooltipKey = null;
+  var relationshipGraph3d = null;
   var lastRelationshipAllItems = [];
   var lastRelationshipItems = [];
   var lastRelationshipCampaign = null;
   var relationshipEditOriginal = null;
   var mergeMode = false;
   var mergeSelected = [];  // session objects selected for merge (max 2)
+
+  // Loading state helpers
+
+  function createSpinner() {
+    var el = document.createElement("span");
+    el.className = "spinner-inline";
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  }
+
+  function withLoading(btn, asyncFn, options) {
+    options = options || {};
+    var originalHTML = btn.innerHTML;
+    var originalDisabled = btn.disabled;
+
+    btn.disabled = true;
+    btn.innerHTML = "";
+    btn.appendChild(createSpinner());
+    btn.appendChild(document.createTextNode(options.loadingText || "Loading..."));
+
+    var promise = asyncFn();
+
+    promise.finally(function() {
+      btn.disabled = originalDisabled;
+      btn.innerHTML = originalHTML;
+    });
+
+    return promise;
+  }
+
+  function withPanelLoading(container, asyncFn) {
+    // Ensure container has relative positioning
+    if (!container.classList.contains('panel-loadable')) {
+      container.classList.add('panel-loadable');
+    }
+
+    // Create overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    var spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    overlay.appendChild(spinner);
+    container.appendChild(overlay);
+
+    var promise = asyncFn();
+
+    promise.finally(function() {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    });
+
+    return promise;
+  }
+
+  function showSkeleton(container, lineCount) {
+    lineCount = lineCount || 3;
+    // Store original content if not already stored
+    if (!container.dataset.preSkeletonContent) {
+      container.dataset.preSkeletonContent = container.innerHTML;
+    }
+
+    var skeletonHTML = "";
+    for (var i = 0; i < lineCount; i++) {
+      skeletonHTML += '<div class="skeleton-line"></div>';
+    }
+    container.innerHTML = skeletonHTML;
+  }
+
+  function hideSkeleton(container) {
+    // Remove skeleton elements
+    var skeletonElements = container.querySelectorAll('.skeleton-line, .skeleton-block');
+    for (var i = 0; i < skeletonElements.length; i++) {
+      skeletonElements[i].remove();
+    }
+
+    // Restore original content if available
+    if (container.dataset.preSkeletonContent) {
+      container.innerHTML = container.dataset.preSkeletonContent;
+      delete container.dataset.preSkeletonContent;
+    }
+  }
+
+  function setRefreshing(container, active) {
+    if (active) {
+      container.classList.add('content-refreshing');
+    } else {
+      container.classList.remove('content-refreshing');
+    }
+  }
 
   // WebSocket
 
@@ -243,6 +347,11 @@
       return html;
     }).join("");
 
+    // Build audio URL: /audio/{session_id}/{timestamp}_{speaker_sanitized}.wav
+    var speakerSanitized = (data.speaker_name || "").replace(/[^\w]/g, "_").substring(0, 30);
+    var audioUrl = "/audio/" + encodeURIComponent(data.session_id) +
+      "/" + data.timestamp + "_" + encodeURIComponent(speakerSanitized) + ".wav";
+
     entry.innerHTML =
       '<span class="entry-actions">' +
         '<button class="btn-meta" title="Marcar como META">M</button>' +
@@ -251,6 +360,7 @@
       '<span class="meta-badge">[META]</span>' +
       '<span class="speaker">' + escapeHtml(data.speaker_name) + ":</span>" +
       '<span class="transcription-text">' + wordHtml + "</span>" +
+      '<button class="btn-play" title="Reproducir audio" data-audio-url="' + escapeHtml(audioUrl) + '">\u25B6</button>' +
       '<span class="ts">' + formatTime(data.timestamp) + "</span>";
 
     // Store metadata for editing
@@ -284,6 +394,41 @@
     startWordEdit(wordSpan);
   });
 
+  // ── Play audio chunk ─────────────────────────────────────
+
+  var currentAudio = null;
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-play");
+    if (!btn) return;
+    var url = btn.dataset.audioUrl;
+    if (!url) return;
+
+    // Stop currently playing audio
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+      var prevBtn = transcriptionFeed.querySelector(".btn-play.playing");
+      if (prevBtn) prevBtn.classList.remove("playing");
+    }
+
+    // If clicking the same button that was playing, just stop
+    if (btn.classList.contains("playing")) {
+      btn.classList.remove("playing");
+      return;
+    }
+
+    var audio = new Audio(url);
+    currentAudio = audio;
+    btn.classList.add("playing");
+    audio.play().catch(function () {
+      btn.classList.remove("playing");
+    });
+    audio.addEventListener("ended", function () {
+      btn.classList.remove("playing");
+      currentAudio = null;
+    });
+  });
+
   // ── Delete transcription ──────────────────────────────────
 
   transcriptionFeed.addEventListener("click", function (e) {
@@ -292,11 +437,17 @@
     var entry = btn.closest(".feed-entry");
     if (!entry) return;
     if (!confirm("¿Eliminar esta transcripción?")) return;
-    resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
-      fetch("/api/transcriptions/" + id, { method: "DELETE" })
-        .then(function (r) { if (r.ok) entry.remove(); });
-    });
+
+    withLoading(btn, function () {
+      return resolveTranscriptionId(entry).then(function (id) {
+        if (!id) return Promise.reject(new Error("No transcription ID"));
+        return fetch("/api/transcriptions/" + id, { method: "DELETE" })
+          .then(function (r) {
+            if (r.ok) entry.remove();
+            else return Promise.reject(new Error("Delete failed"));
+          });
+      });
+    }, { loadingText: "Eliminando..." });
   });
 
   // ── META toggle ───────────────────────────────────────────
@@ -308,8 +459,13 @@
     if (!entry) return;
     var currentlyIngame = entry.dataset.isIngame !== "false";
     var newIngame = !currentlyIngame;
+
+    setRefreshing(entry, true);
     resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
+      if (!id) {
+        setRefreshing(entry, false);
+        return;
+      }
       fetch("/api/transcriptions/" + id + "/meta", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -323,6 +479,8 @@
             entry.classList.add("meta");
           }
         }
+      }).finally(function () {
+        setRefreshing(entry, false);
       });
     });
   });
@@ -415,38 +573,59 @@
   function saveWordEdit(entry, wordIndex, originalWord, newWord, alwaysReplace) {
     // Update the span immediately
     var wordSpans = entry.querySelectorAll(".editable-word");
+    var targetWordSpan = null;
     for (var i = 0; i < wordSpans.length; i++) {
       if (parseInt(wordSpans[i].dataset.wordIndex, 10) === wordIndex) {
+        targetWordSpan = wordSpans[i];
         wordSpans[i].textContent = newWord;
         break;
       }
+    }
+
+    // Add refreshing state to the word span
+    if (targetWordSpan) {
+      setRefreshing(targetWordSpan, true);
     }
 
     // Rebuild full text
     var textSpan = entry.querySelector(".transcription-text");
     var fullText = textSpan ? textSpan.textContent : "";
 
-    resolveTranscriptionId(entry).then(function (id) {
-      if (!id) return;
-      fetch("/api/transcriptions/" + id, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: fullText,
-          edits: [{ original: originalWord, "new": newWord, position: wordIndex }],
-        }),
-      });
+    var promises = [];
 
-      if (alwaysReplace && activeCampaignId) {
-        fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements", {
-          method: "POST",
+    resolveTranscriptionId(entry).then(function (id) {
+      if (!id) {
+        if (targetWordSpan) setRefreshing(targetWordSpan, false);
+        return;
+      }
+
+      promises.push(
+        fetch("/api/transcriptions/" + id, {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            original_word: originalWord,
-            replacement_word: newWord,
+            text: fullText,
+            edits: [{ original: originalWord, "new": newWord, position: wordIndex }],
           }),
-        });
+        })
+      );
+
+      if (alwaysReplace && activeCampaignId) {
+        promises.push(
+          fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              original_word: originalWord,
+              replacement_word: newWord,
+            }),
+          })
+        );
       }
+
+      Promise.all(promises).finally(function () {
+        if (targetWordSpan) setRefreshing(targetWordSpan, false);
+      });
     });
   }
 
@@ -489,27 +668,24 @@
     btn.onclick = sessionId ? function () {
       clearLog(sessionChronologyTab);
       addLogEntry(sessionChronologyTab, "Generating chronology...");
-      btn.disabled = true;
-      btn.textContent = "Generating...";
-      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-chronology", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.session_chronology) {
-            renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sessionId);
-            addLogEntry(sessionChronologyTab, "Chronology generated");
-          } else {
-            addLogEntry(sessionChronologyTab, "Error: no chronology returned");
-          }
-          btn.disabled = false;
-          btn.textContent = "Generate Chronology";
+
+      withLoading(btn, function () {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-chronology", {
+          method: "POST",
         })
-        .catch(function () {
-          addLogEntry(sessionChronologyTab, "Error: request failed");
-          btn.disabled = false;
-          btn.textContent = "Generate Chronology";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.session_chronology) {
+              renderEditableSummary(sessionChronologyEl, data.session_chronology, "chronology", sessionId);
+              addLogEntry(sessionChronologyTab, "Chronology generated");
+            } else {
+              addLogEntry(sessionChronologyTab, "Error: no chronology returned");
+            }
+          })
+          .catch(function () {
+            addLogEntry(sessionChronologyTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     } : null;
   }
 
@@ -631,6 +807,8 @@
     var payload = {};
     payload[bodyKey] = fullText;
 
+    setRefreshing(container, true);
+
     fetch(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -641,8 +819,281 @@
       })
       .catch(function (err) {
         console.error("Failed to save summary:", err);
+      })
+      .finally(function () {
+        setRefreshing(container, false);
       });
   }
+
+  // ── TTS Narration ─────────────────────────────────────────
+  var ttsEnabled = false;
+  var ttsAudio = null;
+  var ttsAllChunks = [];    // all chunk URLs received so far (played + pending)
+  var ttsCurrentIndex = -1; // index of chunk currently playing (-1 = generating)
+  var ttsTotalChunks = 0;   // total chunks expected from server
+  var ttsPaused = false;
+  var ttsActiveBtn = null;  // original btn-narrate (hidden while controls shown)
+  var ttsControlsEl = null; // the controls DOM element
+  var _ttsGen = 0;          // incremented on each _playChunk/stop; stale callbacks self-abort
+
+  // Check if TTS is available and show buttons
+  fetch("/api/tts/voices")
+    .then(function (r) {
+      if (r.ok) {
+        ttsEnabled = true;
+        document.querySelectorAll(".btn-narrate").forEach(function (btn) {
+          btn.style.display = "";
+        });
+      }
+    })
+    .catch(function () { /* TTS not available — buttons stay hidden */ });
+
+  function _getTextFromParagraphs(container) {
+    if (!container) return "";
+    var parts = [];
+    container.querySelectorAll("p.editable-paragraph").forEach(function (p) {
+      var t = p.textContent.trim();
+      if (t) parts.push(t);
+    });
+    return parts.join("\n\n");
+  }
+
+  function _getNarrateText(btnId) {
+    if (btnId === "btn-narrate-session") return _getTextFromParagraphs(sessionSummaryEl);
+    if (btnId === "btn-narrate-chronology") return _getTextFromParagraphs(sessionChronologyEl);
+    if (btnId === "btn-narrate-campaign") return _getTextFromParagraphs(campaignSummaryEl);
+    return "";
+  }
+
+  function _createNarrateControls(btn) {
+    var wrap = document.createElement("div");
+    wrap.className = "narrate-controls";
+
+    var btnPrev = document.createElement("button");
+    btnPrev.className = "btn-narrate-ctrl btn-narrate-prev";
+    btnPrev.title = "Chunk anterior";
+    btnPrev.textContent = "⏮ Ant.";
+    btnPrev.addEventListener("click", _prevChunk);
+
+    var sep1 = document.createElement("div");
+    sep1.className = "narrate-ctrl-sep";
+
+    var btnRestart = document.createElement("button");
+    btnRestart.className = "btn-narrate-ctrl btn-narrate-restart";
+    btnRestart.title = "Reiniciar chunk actual";
+    btnRestart.textContent = "↺";
+    btnRestart.addEventListener("click", _restartChunk);
+
+    var btnPlayPause = document.createElement("button");
+    btnPlayPause.className = "btn-narrate-ctrl btn-narrate-playpause";
+    btnPlayPause.title = "Pausa / Reanudar";
+    btnPlayPause.addEventListener("click", _pauseResume);
+
+    var sep2 = document.createElement("div");
+    sep2.className = "narrate-ctrl-sep";
+
+    var btnNext = document.createElement("button");
+    btnNext.className = "btn-narrate-ctrl btn-narrate-next";
+    btnNext.title = "Chunk siguiente";
+    btnNext.textContent = "Sig. ⏭";
+    btnNext.addEventListener("click", _nextChunk);
+
+    wrap.appendChild(btnPrev);
+    wrap.appendChild(sep1);
+    wrap.appendChild(btnRestart);
+    wrap.appendChild(btnPlayPause);
+    wrap.appendChild(sep2);
+    wrap.appendChild(btnNext);
+
+    btn.style.display = "none";
+    btn.parentNode.insertBefore(wrap, btn.nextSibling);
+    return wrap;
+  }
+
+  function _updateControls() {
+    if (!ttsControlsEl) return;
+    var btnPrev = ttsControlsEl.querySelector(".btn-narrate-prev");
+    var btnRestart = ttsControlsEl.querySelector(".btn-narrate-restart");
+    var btnPlayPause = ttsControlsEl.querySelector(".btn-narrate-playpause");
+    var btnNext = ttsControlsEl.querySelector(".btn-narrate-next");
+    var generating = ttsCurrentIndex === -1;
+    var total = ttsTotalChunks || "?";
+
+    if (generating) {
+      btnPrev.disabled = true;
+      btnRestart.disabled = true;
+      btnNext.disabled = true;
+      btnPlayPause.disabled = true;
+      btnPlayPause.classList.remove("paused");
+      btnPlayPause.innerHTML = "";
+      btnPlayPause.appendChild(createSpinner());
+      btnPlayPause.appendChild(document.createTextNode(" Generando"));
+    } else {
+      var progress = (ttsCurrentIndex + 1) + "/" + total;
+      btnPrev.disabled = ttsCurrentIndex <= 0;
+      btnRestart.disabled = false;
+      btnNext.disabled = ttsCurrentIndex >= ttsAllChunks.length - 1;
+      btnPlayPause.disabled = false;
+      if (ttsPaused) {
+        btnPlayPause.classList.add("paused");
+        btnPlayPause.textContent = "▶ " + progress;
+      } else {
+        btnPlayPause.classList.remove("paused");
+        btnPlayPause.textContent = "⏸ " + progress;
+      }
+    }
+  }
+
+  function _playChunk(index) {
+    if (index < 0 || index >= ttsAllChunks.length) return;
+    _ttsGen++;
+    var myGen = _ttsGen;
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio.src = "";
+      ttsAudio = null;
+    }
+    ttsCurrentIndex = index;
+    ttsPaused = false;
+    _updateControls();
+    var url = ttsAllChunks[index];
+    ttsAudio = new Audio(url);
+    ttsAudio.addEventListener("ended", function () {
+      if (_ttsGen !== myGen) return; // stale — a newer _playChunk or stop already took over
+      ttsAudio = null;
+      var next = ttsCurrentIndex + 1;
+      if (next < ttsAllChunks.length) {
+        _playChunk(next);
+      } else if (ttsAllChunks.length < ttsTotalChunks) {
+        // stream still delivering — wait; stream loop will resume playback
+        _updateControls();
+      } else {
+        _onNarrationComplete();
+      }
+    });
+    ttsAudio.addEventListener("error", function () {
+      if (_ttsGen !== myGen) return; // stale
+      console.error("TTS audio error:", url);
+      ttsAudio = null;
+      var next = ttsCurrentIndex + 1;
+      if (next < ttsAllChunks.length) _playChunk(next);
+      else _onNarrationComplete();
+    });
+    ttsAudio.play().catch(function (err) {
+      console.error("TTS play failed:", err);
+    });
+  }
+
+  function _onNarrationComplete() {
+    if (!ttsControlsEl) return;
+    var btnPlayPause = ttsControlsEl.querySelector(".btn-narrate-playpause");
+    if (btnPlayPause) { btnPlayPause.classList.remove("paused"); btnPlayPause.textContent = "✓ Listo"; }
+    setTimeout(stopNarration, 2000);
+  }
+
+  function _pauseResume() {
+    if (!ttsAudio) return;
+    if (ttsPaused) {
+      ttsAudio.play().catch(function (err) { console.error("TTS resume failed:", err); });
+      ttsPaused = false;
+    } else {
+      ttsAudio.pause();
+      ttsPaused = true;
+    }
+    _updateControls();
+  }
+
+  function _prevChunk() { if (ttsCurrentIndex > 0) _playChunk(ttsCurrentIndex - 1); }
+  function _nextChunk() { if (ttsCurrentIndex < ttsAllChunks.length - 1) _playChunk(ttsCurrentIndex + 1); }
+  function _restartChunk() { if (ttsCurrentIndex >= 0) _playChunk(ttsCurrentIndex); }
+
+  function stopNarration() {
+    _ttsGen++; // invalidate any pending audio callbacks
+    if (ttsAudio) {
+      ttsAudio.pause();
+      ttsAudio.src = "";
+      ttsAudio = null;
+    }
+    ttsAllChunks = [];
+    ttsCurrentIndex = -1;
+    ttsTotalChunks = 0;
+    ttsPaused = false;
+    if (ttsControlsEl && ttsControlsEl.parentNode) {
+      ttsControlsEl.parentNode.removeChild(ttsControlsEl);
+    }
+    ttsControlsEl = null;
+    if (ttsActiveBtn) {
+      ttsActiveBtn.style.display = "";
+      ttsActiveBtn = null;
+    }
+  }
+
+  async function startNarration(btn) {
+    var text = _getNarrateText(btn.id);
+    if (!text) return;
+
+    if (ttsActiveBtn === btn) { stopNarration(); return; }
+    if (ttsActiveBtn) stopNarration();
+
+    ttsActiveBtn = btn;
+    ttsAllChunks = [];
+    ttsCurrentIndex = -1;
+    ttsTotalChunks = 0;
+    ttsPaused = false;
+
+    ttsControlsEl = _createNarrateControls(btn);
+    _updateControls(); // shows generating state
+
+    try {
+      var resp = await fetch("/api/tts/narrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text }),
+      });
+      if (!resp.ok) throw new Error("TTS request failed: " + resp.status);
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      var waitingForPlayback = true;
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+        buffer += decoder.decode(result.value, { stream: true });
+        var lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line) continue;
+          try {
+            var chunk = JSON.parse(line);
+            if (chunk.error) { console.warn("TTS paragraph error:", chunk.error); continue; }
+            ttsTotalChunks = chunk.total;
+            ttsAllChunks.push(chunk.audio_url);
+            if (waitingForPlayback) {
+              waitingForPlayback = false;
+              _playChunk(0);
+            } else if (!ttsAudio && !ttsPaused && ttsCurrentIndex < ttsAllChunks.length - 1) {
+              // audio ended while waiting for this chunk — resume
+              _playChunk(ttsCurrentIndex + 1);
+            } else {
+              _updateControls();
+            }
+          } catch (e) { console.warn("TTS NDJSON parse error:", line); }
+        }
+      }
+    } catch (err) {
+      console.error("TTS narration failed:", err);
+      stopNarration();
+    }
+  }
+
+  ["btn-narrate-session", "btn-narrate-chronology", "btn-narrate-campaign"].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.addEventListener("click", function () { startNarration(btn); });
+  });
+  // ── End TTS Narration ─────────────────────────────────────
 
   function updateStatus(data) {
     var card = componentStatusEl.querySelector(
@@ -965,7 +1416,7 @@
       if (btn.dataset.boundMergedEditor === "1") return;
       btn.dataset.boundMergedEditor = "1";
       btn.addEventListener("click", function () {
-        if (appMode !== "live" || !activeCampaignId) return;
+        if (!activeCampaignId) return;
         var row = btn.closest(".merged-child-item");
         if (!row) return;
         var kind = row.getAttribute("data-merged-kind") || "";
@@ -991,23 +1442,19 @@
         else if (kind === "entities") endpoint = "/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(id);
         if (!endpoint) return;
 
-        btn.disabled = true;
-        btn.textContent = "Saving...";
-        fetch(endpoint, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) fetchCampaignInfo();
-            else alert("Error: " + (data.error || "Unknown error"));
+        withLoading(btn, function () {
+          return fetch(endpoint, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
           })
-          .catch(function () { alert("Failed to update merged alias."); })
-          .finally(function () {
-            btn.disabled = false;
-            btn.textContent = "Save Alias";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) fetchCampaignInfo();
+              else alert("Error: " + (data.error || "Unknown error"));
+            })
+            .catch(function () { alert("Failed to update merged alias."); });
+        }, { loadingText: "Saving..." });
       });
     });
   }
@@ -1015,7 +1462,8 @@
   // Campaign info
 
   function fetchCampaignInfo() {
-    fetch("/api/campaigns")
+    withPanelLoading(campaignBar, function () {
+      return fetch("/api/campaigns")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.campaign) {
@@ -1023,18 +1471,16 @@
           activeCampaignId = data.campaign.id;
           renderCampaignBar(data.campaign);
           if (data.campaign.is_generic) {
-            playersSection.classList.add("hidden");
-            npcsSection.classList.add("hidden");
-            if (locationsSection) locationsSection.classList.add("hidden");
-            if (entitiesSection) entitiesSection.classList.add("hidden");
-            if (relationshipsSection) relationshipsSection.classList.add("hidden");
+            if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
             if (replacementsSection) replacementsSection.classList.add("hidden");
           } else {
+            if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
             renderPlayers(data.campaign.players || []);
             renderNpcs(data.campaign.npcs || []);
             renderLocations(data.campaign.locations || []);
             renderEntities(data.campaign.entities || []);
             renderRelationships(data.campaign.relationships || [], data.campaign);
+            updateCampaignSummaryStats(data.campaign);
             if (replacementsSection && data.campaign.id) {
               replacementsSection.classList.remove("hidden");
               fetchWordReplacements(data.campaign.id);
@@ -1068,17 +1514,14 @@
           campaignSystemEl.textContent = "";
           campaignMasterEl.textContent = "";
           campaignEditBtn.classList.add("hidden");
-          playersSection.classList.add("hidden");
-          npcsSection.classList.add("hidden");
-          if (locationsSection) locationsSection.classList.add("hidden");
-          if (entitiesSection) entitiesSection.classList.add("hidden");
-          if (relationshipsSection) relationshipsSection.classList.add("hidden");
+          if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
           if (replacementsSection) replacementsSection.classList.add("hidden");
           currentCampaign = null;
           activeCampaignId = null;
         }
       })
       .catch(function () {});
+    });
   }
 
   function renderCampaignBar(campaign) {
@@ -1099,15 +1542,29 @@
       campaignNameEl.textContent = "No campaign \u2014 Resume mode";
       campaignSystemEl.textContent = "";
       campaignMasterEl.textContent = "";
-      playersSection.classList.add("hidden");
-      npcsSection.classList.add("hidden");
-      if (locationsSection) locationsSection.classList.add("hidden");
-      if (entitiesSection) entitiesSection.classList.add("hidden");
-      if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
+      updateCampaignSummaryStats({});
     } else {
       campaignEditBtn.classList.remove("hidden");
     }
+  }
+
+  function updateCampaignSummaryStats(campaign) {
+    var mapping = [
+      { el: statPlayers, key: "players" },
+      { el: statNpcs, key: "npcs" },
+      { el: statLocations, key: "locations" },
+      { el: statEntities, key: "entities" },
+      { el: statRelationships, key: "relationships" }
+    ];
+    mapping.forEach(function(item) {
+      if (!item.el) return;
+      var count = (campaign[item.key] || []).length;
+      item.el.textContent = count;
+      var parent = item.el.closest(".summary-stat");
+      if (parent) parent.classList.toggle("dimmed", count === 0);
+    });
   }
 
   function getMasterDisplayName(campaign) {
@@ -1141,7 +1598,6 @@
   }
 
   function openCampaignEdit() {
-    if (appMode !== "live") return;
     if (!currentCampaign) return;
     editNameInput.value = currentCampaign.name || "";
     editSystemInput.value = currentCampaign.game_system || "";
@@ -1161,7 +1617,6 @@
 
   function saveCampaignEdit(e) {
     e.preventDefault();
-    if (appMode !== "live") return;
     if (!currentCampaign || !activeCampaignId) return;
 
     var body = {
@@ -1173,31 +1628,27 @@
     };
 
     var saveBtn = campaignEditForm.querySelector(".btn-save");
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
 
-    fetch("/api/campaigns/" + activeCampaignId, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.ok && data.campaign) {
-          currentCampaign = data.campaign;
-          renderCampaignBar(data.campaign);
-          closeCampaignEdit();
-        } else {
-          alert("Error: " + (data.error || "Unknown error"));
-        }
+    withLoading(saveBtn, function () {
+      return fetch("/api/campaigns/" + activeCampaignId, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       })
-      .catch(function () {
-        alert("Failed to save campaign changes.");
-      })
-      .finally(function () {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save";
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok && data.campaign) {
+            currentCampaign = data.campaign;
+            renderCampaignBar(data.campaign);
+            closeCampaignEdit();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () {
+          alert("Failed to save campaign changes.");
+        });
+    }, { loadingText: "Saving..." });
   }
 
   campaignEditBtn.addEventListener("click", openCampaignEdit);
@@ -1208,10 +1659,10 @@
 
   function renderPlayers(players) {
     if (!players || players.length === 0) {
-      playersSection.classList.add("hidden");
+      playersCount.textContent = "(0)";
+      playersList.innerHTML = '<p class="placeholder">No players loaded.</p>';
       return;
     }
-    playersSection.classList.remove("hidden");
     playersCount.textContent = "(" + players.length + ")";
     playersList.innerHTML = "";
 
@@ -1264,46 +1715,37 @@
           character_description: formEl.querySelector(".edit-char-desc").value.trim(),
         };
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
-        if (appMode !== "live") return;
-        fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) {
-              fetchCampaignInfo();
-            } else {
-              alert("Error: " + (data.error || "Unknown error"));
-            }
+        if (!activeCampaignId) return;
+
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/players/" + p.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save player."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                fetchCampaignInfo();
+              } else {
+                alert("Error: " + (data.error || "Unknown error"));
+              }
+            })
+            .catch(function () { alert("Failed to save player."); });
+        }, { loadingText: "Saving..." });
       });
 
-      if (appMode !== "live") {
-        var editBtn = card.querySelector(".btn-edit-entity");
-        if (editBtn) editBtn.classList.add("hidden");
-      }
       playersList.appendChild(card);
     });
   }
 
   function renderNpcs(npcs) {
     if (!npcs || npcs.length === 0) {
-      npcsSection.classList.remove("hidden");
       npcsCount.textContent = "(0)";
       npcsList.innerHTML = '<p class="placeholder">No NPCs yet.</p>';
       return;
     }
-    npcsSection.classList.remove("hidden");
     npcsCount.textContent = "(" + npcs.length + ")";
     npcsList.innerHTML = "";
     var mergedByParent = (currentCampaign && currentCampaign.merged_npcs_by_parent) || {};
@@ -1364,25 +1806,22 @@
           description: formEl.querySelector(".edit-npc-desc").value.trim(),
         };
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
-        if (appMode !== "live") return;
-        fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) { fetchCampaignInfo(); }
-            else { alert("Error: " + (data.error || "Unknown error")); }
+        if (!activeCampaignId) return;
+
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/npcs/" + n.id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save NPC."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) { fetchCampaignInfo(); }
+              else { alert("Error: " + (data.error || "Unknown error")); }
+            })
+            .catch(function () { alert("Failed to save NPC."); });
+        }, { loadingText: "Saving..." });
       });
 
       var mergeNpcBtn = formEl.querySelector(".btn-merge-entity");
@@ -1398,39 +1837,35 @@
       }
       if (mergeNpcBtn && mergeNpcTarget) {
         mergeNpcBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeNpcTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
             return;
           }
-          mergeNpcBtn.disabled = true;
-          mergeNpcBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: n.name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeNpcBtn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/npcs/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: n.name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge NPC."); })
-            .finally(function () {
-              mergeNpcBtn.disabled = false;
-              mergeNpcBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge NPC."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
       var mergedNpcButtons = formEl.querySelectorAll(".btn-save-merged-child");
       mergedNpcButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1446,30 +1881,22 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/npcs/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
 
-      if (appMode !== "live") {
-        var editBtnNpc = card.querySelector(".btn-edit-entity");
-        if (editBtnNpc) editBtnNpc.classList.add("hidden");
-      }
       npcsList.appendChild(card);
     });
   }
@@ -1486,7 +1913,6 @@
       };
     }).filter(function (loc) { return !!loc.name; });
 
-    locationsSection.classList.remove("hidden");
     locationsCount.textContent = "(" + items.length + ")";
     var mergedByParent = (currentCampaign && currentCampaign.merged_locations_by_parent) || {};
     var locationParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
@@ -1547,7 +1973,7 @@
 
       formEl.addEventListener("submit", function (e) {
         e.preventDefault();
-        if (appMode !== "live" || !activeCampaignId) return;
+        if (!activeCampaignId) return;
 
         var reqBody = {
           old_name: name,
@@ -1556,24 +1982,20 @@
         };
         if (!reqBody.name) return;
         var saveBtn = formEl.querySelector(".btn-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving...";
 
-        fetch("/api/campaigns/" + activeCampaignId + "/locations", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) { fetchCampaignInfo(); }
-            else { alert("Error: " + (data.error || "Unknown error")); }
+        withLoading(saveBtn, function() {
+          return fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reqBody),
           })
-          .catch(function () { alert("Failed to save location."); })
-          .finally(function () {
-            saveBtn.disabled = false;
-            saveBtn.textContent = "Save";
-          });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) { fetchCampaignInfo(); }
+              else { alert("Error: " + (data.error || "Unknown error")); }
+            })
+            .catch(function () { alert("Failed to save location."); });
+        }, { loadingText: "Saving..." });
       });
 
       var mergeLocBtn = formEl.querySelector(".btn-merge-entity");
@@ -1589,39 +2011,35 @@
       }
       if (mergeLocBtn && mergeLocTarget) {
         mergeLocBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeLocTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
             return;
           }
-          mergeLocBtn.disabled = true;
-          mergeLocBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeLocBtn, function() {
+            return fetch("/api/campaigns/" + activeCampaignId + "/locations/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge location."); })
-            .finally(function () {
-              mergeLocBtn.disabled = false;
-              mergeLocBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge location."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
       var mergedLocButtons = formEl.querySelectorAll(".btn-save-merged-child");
       mergedLocButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1637,30 +2055,21 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/locations/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
-
-      if (appMode !== "live") {
-        var editBtnLoc = card.querySelector(".btn-edit-entity");
-        if (editBtnLoc) editBtnLoc.classList.add("hidden");
-      }
 
       locationsList.appendChild(card);
     });
@@ -1673,7 +2082,6 @@
       return !!(ent && ent.name);
     });
 
-    entitiesSection.classList.remove("hidden");
     entitiesCount.textContent = "(" + items.length + ")";
     var mergedByParent = (currentCampaign && currentCampaign.merged_entities_by_parent) || {};
     var entityParentNames = items.map(function (item) { return item.name || ""; }).filter(function (v) { return !!v; });
@@ -1728,7 +2136,6 @@
 
       if (editBtn && form) {
         editBtn.addEventListener("click", function () {
-          if (appMode !== "live") return;
           form.classList.remove("hidden");
           editBtn.classList.add("hidden");
           var input = form.querySelector(".edit-entity-name");
@@ -1746,7 +2153,7 @@
       if (form) {
         form.addEventListener("submit", function (e) {
           e.preventDefault();
-          if (appMode !== "live") return;
+          if (!activeCampaignId) return;
 
           var reqBody = {
             old_name: ent.name || "",
@@ -1758,24 +2165,19 @@
           if (!reqBody.entity_type) reqBody.entity_type = "group";
 
           var saveBtn = form.querySelector(".btn-save");
-          saveBtn.disabled = true;
-          saveBtn.textContent = "Saving...";
-
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/" + ent.id, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) { fetchCampaignInfo(); }
-              else { alert("Error: " + (data.error || "Unknown error")); }
+          withLoading(saveBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/" + ent.id, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update entity."); })
-            .finally(function () {
-              saveBtn.disabled = false;
-              saveBtn.textContent = "Save";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) { fetchCampaignInfo(); }
+                else { alert("Error: " + (data.error || "Unknown error")); }
+              })
+              .catch(function () { alert("Failed to update entity."); });
+          }, { loadingText: "Saving..." });
         });
       }
 
@@ -1792,39 +2194,35 @@
       }
       if (mergeEntBtn && mergeEntTarget) {
         mergeEntBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var targetName = (mergeEntTarget.value || "").trim();
           if (!targetName) {
             alert("Select a merge target first.");
             return;
           }
-          mergeEntBtn.disabled = true;
-          mergeEntBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_name: ent.name,
-              target_name: targetName,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeEntBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_name: ent.name,
+                target_name: targetName,
+              }),
             })
-            .catch(function () { alert("Failed to merge entity."); })
-            .finally(function () {
-              mergeEntBtn.disabled = false;
-              mergeEntBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge entity."); });
+          }, { loadingText: "Merging..." });
         });
       }
 
       var mergedEntButtons = form.querySelectorAll(".btn-save-merged-child");
       mergedEntButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
-          if (appMode !== "live" || !activeCampaignId) return;
+          if (!activeCampaignId) return;
           var row = btn.closest(".merged-child-item");
           if (!row) return;
           var mergedId = row.getAttribute("data-merged-id") || "";
@@ -1842,29 +2240,21 @@
             alert("Alias name is required.");
             return;
           }
-          btn.disabled = true;
-          btn.textContent = "Saving...";
-          fetch("/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(mergedId), {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(reqBody),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(btn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/entities/merged/" + encodeURIComponent(mergedId), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(reqBody),
             })
-            .catch(function () { alert("Failed to update merged alias."); })
-            .finally(function () {
-              btn.disabled = false;
-              btn.textContent = "Save Alias";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to update merged alias."); });
+          }, { loadingText: "Saving..." });
         });
       });
-
-      if (appMode !== "live") {
-        if (editBtn) editBtn.classList.add("hidden");
-      }
 
       entitiesList.appendChild(card);
     });
@@ -1900,6 +2290,7 @@
         label: "Player: " + (p.character_name || p.discord_name || p.discord_id || "?"),
         kind: "player",
         description: p.character_description || "",
+        entityType: "player",
       });
     });
 
@@ -1909,6 +2300,7 @@
         label: "NPC: " + (n.name || "?"),
         kind: "npc",
         description: n.description || "",
+        entityType: "npc",
       });
     });
 
@@ -1920,6 +2312,7 @@
         label: "Location: " + name,
         kind: "location",
         description: locationDescription(loc),
+        entityType: "location",
       });
     });
 
@@ -1930,6 +2323,7 @@
         label: "Entity (" + entityType(ent) + "): " + ent.name,
         kind: "entity",
         description: entityDescription(ent),
+        entityType: entityType(ent),
       });
     });
 
@@ -1970,67 +2364,12 @@
     return palette[index % palette.length];
   }
 
-  function graphPointFromMouse(evt) {
-    var rect = relationshipGraphSvg.getBoundingClientRect();
-    var x = ((evt.clientX - rect.left) / rect.width) * 900;
-    var y = ((evt.clientY - rect.top) / rect.height) * 520;
-    return { x: x, y: y };
-  }
-
-  function refreshRelationshipGraphPositions() {
-    if (!window.__relGraphModel) return;
-    var model = window.__relGraphModel;
-    Object.keys(model.nodes).forEach(function (key) {
-      var nodeEl = model.nodes[key];
-      var pos = relationshipNodePositions[key];
-      if (!nodeEl || !pos) return;
-      nodeEl.setAttribute("transform", "translate(" + pos.x + " " + pos.y + ")");
-    });
-
-    model.edges.forEach(function (edge) {
-      var source = relationshipNodePositions[edge.source];
-      var target = relationshipNodePositions[edge.target];
-      if (!source || !target) return;
-      edge.line.setAttribute("x1", source.x);
-      edge.line.setAttribute("y1", source.y);
-      edge.line.setAttribute("x2", target.x);
-      edge.line.setAttribute("y2", target.y);
-      edge.label.setAttribute("x", ((source.x + target.x) / 2));
-      edge.label.setAttribute("y", ((source.y + target.y) / 2) - 6);
-    });
-  }
-
   function graphGroupIncluded(kind) {
     if (kind === "player") return !!relationshipGraphFilters.players;
     if (kind === "npc") return !!relationshipGraphFilters.npcs;
     if (kind === "location") return !!relationshipGraphFilters.locations;
     if (kind === "entity") return !!relationshipGraphFilters.entities;
     return true;
-  }
-
-  function nodeFillColor(kind) {
-    if (kind === "player") return "#1f3b5a";
-    if (kind === "npc") return "#3f3f46";
-    if (kind === "location") return "#2d4f3a";
-    if (kind === "entity") return "#5b3a1f";
-    return "#374151";
-  }
-
-  function showNodeTooltip(details, relationshipCount) {
-    if (!relationshipNodeTooltip) return;
-    relationshipNodeTooltip.classList.remove("hidden");
-    relationshipNodeTooltip.innerHTML =
-      '<strong>' + escapeHtml(details.label || details.key) + '</strong><br/>' +
-      'Type: ' + escapeHtml(details.kind || "unknown") + '<br/>' +
-      'Relations: ' + relationshipCount +
-      (details.description ? '<br/>' + escapeHtml(details.description) : "");
-  }
-
-  function hideNodeTooltip(force) {
-    if (!relationshipNodeTooltip) return;
-    if (!force && pinnedNodeTooltipKey) return;
-    relationshipNodeTooltip.classList.add("hidden");
-    relationshipNodeTooltip.innerHTML = "";
   }
 
   function hasActiveRelationshipListFilters() {
@@ -2181,19 +2520,36 @@
     });
   }
 
-  function renderRelationshipGraph(relationships, campaign) {
-    if (!relationshipGraphSvg || !relationshipLegend || !relationshipGraphPanel) return;
-    relationshipGraphSvg.innerHTML = "";
-    relationshipLegend.innerHTML = "";
-    hideNodeTooltip(true);
+  function ensureRelationshipGraph3d() {
+    if (relationshipGraph3d || !relationshipGraphCanvas || !window.RelationshipGraph3D) return relationshipGraph3d;
+    relationshipGraph3d = window.RelationshipGraph3D.create({
+      root: relationshipGraphPanel,
+      canvas: relationshipGraphCanvas,
+      emptyState: relationshipGraphEmpty,
+      tooltip: relationshipNodeTooltip,
+      legend: relationshipLegend,
+      searchInput: relationshipGraphSearch,
+      communitySelect: relationshipGraphCommunity,
+      neighborhoodSelect: relationshipGraphNeighborhood,
+      metricSelect: relationshipGraphMetric,
+      isolateCheckbox: relationshipGraphIsolateComponent,
+      stats: relationshipGraphStats,
+      details: relationshipGraphDetails,
+      pathSourceSelect: relationshipGraphPathSource,
+      pathTargetSelect: relationshipGraphPathTarget,
+      pathOutput: relationshipGraphPathOutput,
+      topList: relationshipGraphTop,
+    });
+    return relationshipGraph3d;
+  }
 
-    if (!relationshipGraphVisible) return;
+  function buildRelationshipGraphData(relationships, campaign) {
     var items = relationships || [];
-
     var entityMap = {};
     var visibleEntities = buildRelationshipEntities(campaign || {}).filter(function (entity) {
       return graphGroupIncluded(entity.kind);
     });
+
     if (hasActiveRelationshipListFilters()) {
       var visibleKeys = {};
       items.forEach(function (rel) {
@@ -2217,180 +2573,71 @@
       return graphGroupIncluded(source.kind) && graphGroupIncluded(target.kind);
     });
 
-    if (!visibleEntities.length) {
-      relationshipGraphSvg.innerHTML = '<text x="450" y="260" fill="#8b8fa3" text-anchor="middle">No visible entities with current filters</text>';
-      return;
-    }
-
     var nodeKeys = visibleEntities
-      .map(function (e) { return normalizeEntityKey(e.key); })
-      .filter(function (k, idx, arr) { return !!k && arr.indexOf(k) === idx; });
-    var typeOrder = [];
-    var typeColors = {};
-    var typeLabels = {};
-    var relCountByNode = {};
-
-    filteredItems.forEach(function (rel) {
-      var source = normalizeEntityKey(rel.source_key || "");
-      var target = normalizeEntityKey(rel.target_key || "");
-      if (source && nodeKeys.indexOf(source) < 0) nodeKeys.push(source);
-      if (target && nodeKeys.indexOf(target) < 0) nodeKeys.push(target);
-      if (source) relCountByNode[source] = (relCountByNode[source] || 0) + 1;
-      if (target) relCountByNode[target] = (relCountByNode[target] || 0) + 1;
-      var tKey = relationTypeKey(rel);
-      if (typeOrder.indexOf(tKey) < 0) typeOrder.push(tKey);
-      if (!typeLabels[tKey]) typeLabels[tKey] = relationTypeLabel(rel);
-    });
-
-    typeOrder.forEach(function (tKey, idx) {
-      typeColors[tKey] = relationPaletteColor(idx);
-    });
-
-    var centerX = 450;
-    var centerY = 260;
-    var radius = Math.max(90, Math.min(210, 70 + nodeKeys.length * 14));
-    nodeKeys.forEach(function (key, idx) {
-      if (!relationshipNodePositions[key]) {
-        var angle = (Math.PI * 2 * idx) / Math.max(1, nodeKeys.length);
-        relationshipNodePositions[key] = {
-          x: centerX + Math.cos(angle) * radius,
-          y: centerY + Math.sin(angle) * radius,
-        };
-      }
-    });
-
-    var edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    var nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    relationshipGraphSvg.appendChild(edgeLayer);
-    relationshipGraphSvg.appendChild(nodeLayer);
-
-    var nodeEls = {};
-    var edgeEls = [];
-    window.__relGraphDragKey = null;
+      .map(function (entity) { return normalizeEntityKey(entity.key); })
+      .filter(function (key, idx, arr) { return !!key && arr.indexOf(key) === idx; });
 
     filteredItems.forEach(function (rel) {
       var sourceKey = normalizeEntityKey(rel.source_key || "");
       var targetKey = normalizeEntityKey(rel.target_key || "");
-      if (!sourceKey || !targetKey) return;
-      var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      var tKey = relationTypeKey(rel);
-      line.setAttribute("stroke", typeColors[tKey] || "#888");
-      line.setAttribute("stroke-width", "2");
-      line.setAttribute("opacity", "0.9");
-      edgeLayer.appendChild(line);
-
-      var label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("class", "relationship-edge-label");
-      label.textContent = relationTypeLabel(rel);
-      edgeLayer.appendChild(label);
-
-      edgeEls.push({ line: line, label: label, source: sourceKey, target: targetKey });
+      if (sourceKey && nodeKeys.indexOf(sourceKey) < 0) nodeKeys.push(sourceKey);
+      if (targetKey && nodeKeys.indexOf(targetKey) < 0) nodeKeys.push(targetKey);
     });
 
-    nodeKeys.forEach(function (key) {
+    var nodes = nodeKeys.map(function (key) {
       var details = entityMap[key] || entityDetailsFromKey(campaign || {}, key);
-      var group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      var shape;
-      if (details.kind === "player") {
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        shape.setAttribute("r", "22");
-      } else if (details.kind === "npc") {
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        shape.setAttribute("x", "-20");
-        shape.setAttribute("y", "-20");
-        shape.setAttribute("width", "40");
-        shape.setAttribute("height", "40");
-        shape.setAttribute("rx", "2");
-      } else {
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        shape.setAttribute("x", "-30");
-        shape.setAttribute("y", "-16");
-        shape.setAttribute("width", "60");
-        shape.setAttribute("height", "32");
-        shape.setAttribute("rx", "4");
-      }
-      shape.setAttribute("fill", nodeFillColor(details.kind));
-      shape.setAttribute("class", "relationship-node-shape");
-
-      var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("class", "relationship-node-label");
-      var rawLabel = (details.label || details.key || key).replace("Player: ", "").replace("NPC: ", "").replace("Location: ", "");
-      text.textContent = rawLabel.length > 14 ? rawLabel.slice(0, 12) + ".." : rawLabel;
-      text.setAttribute("y", "4");
-
-      group.appendChild(shape);
-      group.appendChild(text);
-      nodeLayer.appendChild(group);
-      nodeEls[key] = group;
-
-      shape.addEventListener("mousedown", function () {
-        window.__relGraphDragKey = key;
-        shape.classList.add("dragging");
-      });
-      shape.addEventListener("mouseenter", function () {
-        showNodeTooltip(details, relCountByNode[key] || 0);
-      });
-      shape.addEventListener("mouseleave", function () {
-        hideNodeTooltip(false);
-      });
-      shape.addEventListener("click", function () {
-        if (pinnedNodeTooltipKey === key) {
-          pinnedNodeTooltipKey = null;
-          hideNodeTooltip(true);
-        } else {
-          pinnedNodeTooltipKey = key;
-          showNodeTooltip(details, relCountByNode[key] || 0);
-        }
-      });
+      var rawLabel = (details.label || details.key || key)
+        .replace("Player: ", "")
+        .replace("NPC: ", "")
+        .replace("Location: ", "")
+        .replace(/^Entity \([^)]+\): /, "");
+      return {
+        id: key,
+        label: rawLabel,
+        shortLabel: rawLabel.length > 18 ? rawLabel.slice(0, 16) + ".." : rawLabel,
+        kind: details.kind || "unknown",
+        description: details.description || "",
+        entityType: details.entityType || details.kind || "unknown",
+      };
     });
 
-    window.__relGraphModel = { nodes: nodeEls, edges: edgeEls };
-    refreshRelationshipGraphPositions();
-
-    relationshipGraphSvg.onmousemove = function (evt) {
-      var dragKey = window.__relGraphDragKey;
-      if (!dragKey) return;
-      var point = graphPointFromMouse(evt);
-      relationshipNodePositions[dragKey] = {
-        x: Math.max(24, Math.min(876, point.x)),
-        y: Math.max(24, Math.min(496, point.y)),
+    var links = filteredItems.map(function (rel, idx) {
+      return {
+        id: [
+          normalizeEntityKey(rel.source_key || ""),
+          normalizeEntityKey(rel.target_key || ""),
+          relationTypeKey(rel),
+          idx,
+        ].join("|"),
+        source: normalizeEntityKey(rel.source_key || ""),
+        target: normalizeEntityKey(rel.target_key || ""),
+        typeKey: relationTypeKey(rel),
+        typeLabel: relationTypeLabel(rel),
+        category: relationCategory(rel),
       };
-      refreshRelationshipGraphPositions();
-    };
+    }).filter(function (link) {
+      return !!(link.source && link.target);
+    });
 
-    relationshipGraphSvg.onmouseup = function () {
-      var dragKey = window.__relGraphDragKey;
-      if (dragKey && nodeEls[dragKey]) {
-        var dragShape = nodeEls[dragKey].querySelector(".relationship-node-shape");
-        if (dragShape) dragShape.classList.remove("dragging");
-      }
-      window.__relGraphDragKey = null;
-    };
+    return { nodes: nodes, links: links };
+  }
 
-    relationshipGraphSvg.onmouseleave = relationshipGraphSvg.onmouseup;
-
-    if (!typeOrder.length) {
-      var emptyLegend = document.createElement("span");
-      emptyLegend.className = "relationship-legend-empty";
-      emptyLegend.textContent = "No relationships to draw for current filters.";
-      relationshipLegend.appendChild(emptyLegend);
-    } else {
-      typeOrder.forEach(function (tKey) {
-        var item = document.createElement("span");
-        item.className = "relationship-legend-item";
-        item.innerHTML =
-          '<span class="relationship-legend-swatch" style="background:' + escapeAttr(typeColors[tKey] || "#888") + '"></span>' +
-          '<span>' + escapeHtml(typeLabels[tKey] || tKey) + '</span>';
-        relationshipLegend.appendChild(item);
-      });
-    }
+  function renderRelationshipGraph(relationships, campaign) {
+    if (!relationshipGraphPanel) return;
+    var renderer = ensureRelationshipGraph3d();
+    if (!renderer) return;
+    renderer.setVisible(relationshipGraphVisible);
+    renderer.render(buildRelationshipGraphData(relationships, campaign));
   }
   function setRelationshipGraphVisible(visible) {
     relationshipGraphVisible = !!visible;
-    if (!relationshipGraphVisible) { pinnedNodeTooltipKey = null; hideNodeTooltip(true); }
     if (!relationshipGraphPanel || !toggleRelationshipGraphBtn) return;
     relationshipGraphPanel.classList.toggle("hidden", !relationshipGraphVisible);
     toggleRelationshipGraphBtn.textContent = relationshipGraphVisible ? "Hide Graph" : "Graph";
+    if (ensureRelationshipGraph3d()) {
+      relationshipGraph3d.setVisible(relationshipGraphVisible);
+      if (relationshipGraphVisible) relationshipGraph3d.resize();
+    }
   }
 
   function populateRelationshipSelects(campaign) {
@@ -2566,7 +2813,6 @@
       var editBtn = card.querySelector(".btn-edit-entity");
       if (editBtn) {
         editBtn.addEventListener("click", function () {
-          if (appMode !== "live") return;
           relationshipEditOriginal = {
             source_key: rel.source_key || "",
             target_key: rel.target_key || "",
@@ -2600,7 +2846,7 @@
       var mergeTypeTarget = card.querySelector(".merge-reltype-target");
       if (mergeTypeBtn && mergeTypeForm) {
         mergeTypeBtn.addEventListener("click", function () {
-          if (appMode !== "live" || !typeKey) return;
+          if (!typeKey) return;
           mergeTypeForm.classList.remove("hidden");
         });
       }
@@ -2617,31 +2863,23 @@
             alert("Select a merge target first.");
             return;
           }
-          mergeTypeConfirmBtn.disabled = true;
-          mergeTypeConfirmBtn.textContent = "Merging...";
-          fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_type_key: typeKey,
-              target_type_key: targetTypeKey,
-            }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (data.ok) fetchCampaignInfo();
-              else alert("Error: " + (data.error || "Unknown error"));
+          withLoading(mergeTypeConfirmBtn, function () {
+            return fetch("/api/campaigns/" + activeCampaignId + "/relationship-types/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                source_type_key: typeKey,
+                target_type_key: targetTypeKey,
+              }),
             })
-            .catch(function () { alert("Failed to merge relationship type."); })
-            .finally(function () {
-              mergeTypeConfirmBtn.disabled = false;
-              mergeTypeConfirmBtn.textContent = "Merge";
-            });
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.ok) fetchCampaignInfo();
+                else alert("Error: " + (data.error || "Unknown error"));
+              })
+              .catch(function () { alert("Failed to merge relationship type."); });
+          }, { loadingText: "Merging..." });
         });
-      }
-      if (appMode !== "live") {
-        if (editBtn) editBtn.classList.add("hidden");
-        if (mergeTypeBtn) mergeTypeBtn.classList.add("hidden");
       }
       relationshipsList.appendChild(card);
     });
@@ -2742,31 +2980,11 @@
 
   setRelationshipGraphVisible(false);
 
-  // Collapse toggles
-  playersHeader.addEventListener("click", function () {
-    playersBody.classList.toggle("collapsed");
-    playersHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-  });
-  npcsHeader.addEventListener("click", function () {
-    npcsBody.classList.toggle("collapsed");
-    npcsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-  });
-  if (locationsHeader) {
-    locationsHeader.addEventListener("click", function () {
-      locationsBody.classList.toggle("collapsed");
-      locationsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-    });
-  }
-  if (entitiesHeader) {
-    entitiesHeader.addEventListener("click", function () {
-      entitiesBody.classList.toggle("collapsed");
-      entitiesHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
-    });
-  }
-  if (relationshipsHeader) {
-    relationshipsHeader.addEventListener("click", function () {
-      relationshipsBody.classList.toggle("collapsed");
-      relationshipsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
+  // Collapse toggle for campaign details
+  if (campaignDetailsHeader) {
+    campaignDetailsHeader.addEventListener("click", function () {
+      campaignDetailsBody.classList.toggle("collapsed");
+      campaignDetailsHeader.querySelector(".collapse-arrow").classList.toggle("rotated");
     });
   }
   if (replacementsHeader) {
@@ -2776,54 +2994,74 @@
     });
   }
 
+  // Campaign details tab switching
+  (function initCampaignDetailsTabs() {
+    var tabButtons = document.querySelectorAll(".campaign-details-tabs .summary-tab");
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var tabName = btn.getAttribute("data-detail-tab");
+        tabButtons.forEach(function (b) { b.classList.remove("active"); });
+        btn.classList.add("active");
+        document.querySelectorAll(".detail-tab-content").forEach(function (panel) {
+          panel.classList.remove("active");
+        });
+        var target = document.getElementById(tabName + "-tab");
+        if (target) target.classList.add("active");
+      });
+    });
+  })();
+
   // ── Word replacements UI ───────────────────────────────────
 
   function fetchWordReplacements(campaignId) {
-    fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var rules = data.replacements || [];
-        if (replacementsCount) replacementsCount.textContent = "(" + rules.length + ")";
-        replacementsList.innerHTML = "";
-        if (rules.length === 0) {
-          replacementsList.innerHTML = '<p class="placeholder">No replacement rules.</p>';
-          return;
-        }
-        rules.forEach(function (rule) {
-          var row = document.createElement("div");
-          row.className = "replacement-row";
-          row.innerHTML =
-            '<span class="replacement-original">' + escapeHtml(rule.original_word) + "</span>" +
-            '<span class="replacement-arrow">\u2192</span>' +
-            '<span class="replacement-new">' + escapeHtml(rule.replacement_word) + "</span>" +
-            '<button class="replacement-delete" title="Eliminar">\u2717</button>';
-          row.querySelector(".replacement-delete").addEventListener("click", function () {
-            fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements/" + rule.id, {
-              method: "DELETE",
-            }).then(function () { fetchWordReplacements(campaignId); });
+    withPanelLoading(replacementsSection, function () {
+      return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var rules = data.replacements || [];
+          if (replacementsCount) replacementsCount.textContent = "(" + rules.length + ")";
+          replacementsList.innerHTML = "";
+          if (rules.length === 0) {
+            replacementsList.innerHTML = '<p class="placeholder">No replacement rules.</p>';
+            return;
+          }
+          rules.forEach(function (rule) {
+            var row = document.createElement("div");
+            row.className = "replacement-row";
+            row.innerHTML =
+              '<span class="replacement-original">' + escapeHtml(rule.original_word) + "</span>" +
+              '<span class="replacement-arrow">\u2192</span>' +
+              '<span class="replacement-new">' + escapeHtml(rule.replacement_word) + "</span>" +
+              '<button class="replacement-delete" title="Eliminar">\u2717</button>';
+            row.querySelector(".replacement-delete").addEventListener("click", function (e) {
+              var btn = e.target;
+              withLoading(btn, function () {
+                return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/word-replacements/" + rule.id, {
+                  method: "DELETE",
+                }).then(function () { fetchWordReplacements(campaignId); });
+              }, { loadingText: "×" });
+            });
+            replacementsList.appendChild(row);
           });
-          replacementsList.appendChild(row);
         });
-      });
+    });
   }
 
   if (applyReplacementsBtn) {
     applyReplacementsBtn.addEventListener("click", function () {
       if (!activeCampaignId) return;
-      applyReplacementsBtn.disabled = true;
-      applyReplacementsBtn.textContent = "Applying\u2026";
-      fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements/apply", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          alert("Modified " + (data.modified_count || 0) + " transcription(s).");
+
+      withLoading(applyReplacementsBtn, function () {
+        return fetch("/api/campaigns/" + encodeURIComponent(activeCampaignId) + "/word-replacements/apply", {
+          method: "POST",
         })
-        .catch(function () { alert("Error applying replacements."); })
-        .finally(function () {
-          applyReplacementsBtn.disabled = false;
-          applyReplacementsBtn.textContent = "Apply All Retroactively";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            alert("Modified " + (data.modified_count || 0) + " transcription(s).");
+          })
+          .catch(function () { alert("Error applying replacements."); });
+      }, { loadingText: "Applying\u2026" });
     });
   }
 
@@ -2845,7 +3083,7 @@
   if (addLocationForm) {
     addLocationForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!activeCampaignId || appMode !== "live") return;
+      if (!activeCampaignId) return;
 
       var nameInput = document.getElementById("new-location-name");
       var descInput = document.getElementById("new-location-desc");
@@ -2856,31 +3094,26 @@
       if (!reqBody.name) return;
 
       var saveBtn = addLocationForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
-      fetch("/api/campaigns/" + activeCampaignId + "/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (nameInput) nameInput.value = "";
-            if (descInput) descInput.value = "";
-            addLocationForm.classList.add("hidden");
-            addLocationBtn.classList.remove("hidden");
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      withLoading(saveBtn, function () {
+        return fetch("/api/campaigns/" + activeCampaignId + "/locations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to add location."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-      });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (nameInput) nameInput.value = "";
+              if (descInput) descInput.value = "";
+              addLocationForm.classList.add("hidden");
+              addLocationBtn.classList.remove("hidden");
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to add location."); });
+      }, { loadingText: "Saving..." });
     });
   }
 
@@ -2902,7 +3135,7 @@
   if (addEntityForm) {
     addEntityForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!activeCampaignId || appMode !== "live") return;
+      if (!activeCampaignId) return;
 
       var nameInput = document.getElementById("new-entity-name");
       var typeInput = document.getElementById("new-entity-type");
@@ -2916,32 +3149,27 @@
       if (!reqBody.entity_type) reqBody.entity_type = "group";
 
       var saveBtn = addEntityForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
-      fetch("/api/campaigns/" + activeCampaignId + "/entities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (nameInput) nameInput.value = "";
-            if (typeInput) typeInput.value = "group";
-            if (descInput) descInput.value = "";
-            addEntityForm.classList.add("hidden");
-            addEntityBtn.classList.remove("hidden");
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      withLoading(saveBtn, function () {
+        return fetch("/api/campaigns/" + activeCampaignId + "/entities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to add entity."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (nameInput) nameInput.value = "";
+              if (typeInput) typeInput.value = "group";
+              if (descInput) descInput.value = "";
+              addEntityForm.classList.add("hidden");
+              addEntityBtn.classList.remove("hidden");
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to add entity."); });
+      }, { loadingText: "Saving..." });
     });
   }
   // Add NPC form
@@ -2962,32 +3190,27 @@
     };
     if (!reqBody.name) return;
     var saveBtn = addNpcForm.querySelector(".btn-save");
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
-
-    if (appMode !== "live") return;
-    fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reqBody),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.ok) {
-          document.getElementById("new-npc-name").value = "";
-          document.getElementById("new-npc-desc").value = "";
-          addNpcForm.classList.add("hidden");
-          addNpcBtn.classList.remove("hidden");
-          fetchCampaignInfo();
-        } else {
-          alert("Error: " + (data.error || "Unknown error"));
-        }
+    if (!activeCampaignId) return;
+    withLoading(saveBtn, function () {
+      return fetch("/api/campaigns/" + activeCampaignId + "/npcs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
       })
-      .catch(function () { alert("Failed to add NPC."); })
-      .finally(function () {
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save";
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            document.getElementById("new-npc-name").value = "";
+            document.getElementById("new-npc-desc").value = "";
+            addNpcForm.classList.add("hidden");
+            addNpcBtn.classList.remove("hidden");
+            fetchCampaignInfo();
+          } else {
+            alert("Error: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function () { alert("Failed to add NPC."); });
+    }, { loadingText: "Saving..." });
   });
 
   // Questions polling
@@ -3039,9 +3262,6 @@
       if (!reqBody.source_key || !reqBody.target_key || !reqBody.relation_type) return;
 
       var saveBtn = addRelationshipForm.querySelector(".btn-save");
-      saveBtn.disabled = true;
-      saveBtn.textContent = "Saving...";
-
       var isEditing = !!relationshipEditOriginal;
       var url = "/api/campaigns/" + activeCampaignId + "/relationships";
       if (isEditing) {
@@ -3050,35 +3270,33 @@
         reqBody.old_type_key = relationshipEditOriginal.type_key;
       }
 
-      if (appMode !== "live") return;
-      fetch(url, {
-        method: isEditing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (relTypeInput) relTypeInput.value = "";
-            if (relNotesInput) relNotesInput.value = "";
-            if (relCategoryInput) relCategoryInput.value = "general";
-            addRelationshipForm.classList.add("hidden");
-            addRelationshipBtn.classList.remove("hidden");
-            relationshipEditOriginal = null;
-            if (relationshipEditParentsPanel) {
-              relationshipEditParentsPanel.classList.add("hidden");
-              relationshipEditParentsPanel.innerHTML = "";
-            }
-            fetchCampaignInfo();
-          } else {
-            alert("Error: " + (data.error || "Unknown error"));
-          }
+      if (!activeCampaignId) return;
+      withLoading(saveBtn, function () {
+        return fetch(url, {
+          method: isEditing ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
         })
-        .catch(function () { alert("Failed to save relationship."); })
-        .finally(function () {
-          saveBtn.disabled = false;
-          saveBtn.textContent = "Save";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (relTypeInput) relTypeInput.value = "";
+              if (relNotesInput) relNotesInput.value = "";
+              if (relCategoryInput) relCategoryInput.value = "general";
+              addRelationshipForm.classList.add("hidden");
+              addRelationshipBtn.classList.remove("hidden");
+              relationshipEditOriginal = null;
+              if (relationshipEditParentsPanel) {
+                relationshipEditParentsPanel.classList.add("hidden");
+                relationshipEditParentsPanel.innerHTML = "";
+              }
+              fetchCampaignInfo();
+            } else {
+              alert("Error: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () { alert("Failed to save relationship."); });
+      }, { loadingText: "Saving..." });
     });
   }
 
@@ -3137,22 +3355,31 @@
         var btn = form.querySelector("button");
         var feedback = card.querySelector(".q-feedback");
 
-        btn.disabled = true;
-        btn.textContent = "Sending...";
-
-        submitAnswer(q.id, input.value, function (ok) {
-          if (ok) {
-            feedback.textContent = "Answer saved!";
-            feedback.className = "q-feedback success";
-            form.classList.add("hidden");
-            setTimeout(function () { pollQuestions(); }, 1200);
-          } else {
-            feedback.textContent = "Failed to save. Try again.";
-            feedback.className = "q-feedback error";
-            btn.disabled = false;
-            btn.textContent = "Answer";
-          }
-        });
+        withLoading(btn, function () {
+          return fetch("/api/questions/" + q.id + "/answer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ answer: input.value }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                feedback.textContent = "Answer saved!";
+                feedback.className = "q-feedback success";
+                form.classList.add("hidden");
+                setTimeout(function () { pollQuestions(); }, 1200);
+              } else {
+                feedback.textContent = "Failed to save. Try again.";
+                feedback.className = "q-feedback error";
+                throw new Error("Failed to save answer");
+              }
+            })
+            .catch(function () {
+              feedback.textContent = "Failed to save. Try again.";
+              feedback.className = "q-feedback error";
+              throw new Error("Failed to save answer");
+            });
+        }, { loadingText: "Sending..." });
       });
       questionsList.appendChild(card);
     });
@@ -3193,19 +3420,6 @@
       transcriptionFeed.innerHTML = '<p class="placeholder">Select a session to view transcriptions.</p>';
       sessionSummaryEl.innerHTML = '<p class="placeholder">Select a session to view summary.</p>';
       campaignSummaryEl.innerHTML = '<p class="placeholder">Select a session to view campaign summary.</p>';
-      if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
-      if (addNpcBtn) addNpcBtn.classList.add("hidden");
-      if (addLocationBtn) addLocationBtn.classList.add("hidden");
-      if (addEntityBtn) addEntityBtn.classList.add("hidden");
-      if (addRelationshipBtn) addRelationshipBtn.classList.add("hidden");
-      if (addNpcForm) addNpcForm.classList.add("hidden");
-      if (addLocationForm) addLocationForm.classList.add("hidden");
-      if (addEntityForm) addEntityForm.classList.add("hidden");
-      if (addRelationshipForm) addRelationshipForm.classList.add("hidden");
-      if (relationshipEditParentsPanel) {
-        relationshipEditParentsPanel.classList.add("hidden");
-        relationshipEditParentsPanel.innerHTML = "";
-      }
       fetchBrowseCampaigns();
     } else {
       viewingHistorical = false;
@@ -3225,28 +3439,32 @@
   }
 
   function fetchBrowseCampaigns() {
-    fetch("/api/browse/campaigns")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var campaigns = [{
-          id: UNCATEGORIZED_BROWSE_ID,
-          name: "Sin campana",
-          game_system: "",
-          is_active: false
-        }].concat(data.campaigns || []);
-        browseCampaignsCache = campaigns.slice();
-        renderBrowseCampaignList(campaigns);
+    if (browseCampaignListEl) showSkeleton(browseCampaignListEl, 4);
 
-        var preferred = browseCampaignId || data.active_campaign_id || UNCATEGORIZED_BROWSE_ID;
-        if (preferred) {
-          selectBrowseCampaign(preferred);
-        } else {
-          sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
-        }
-      })
-      .catch(function () {
-        if (browseCampaignListEl) browseCampaignListEl.innerHTML = '<p class="placeholder">Failed to load campaigns.</p>';
-      });
+    withPanelLoading(browseCampaignsPanel, function () {
+      return fetch("/api/browse/campaigns")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var campaigns = [{
+            id: UNCATEGORIZED_BROWSE_ID,
+            name: "Sin campana",
+            game_system: "",
+            is_active: false
+          }].concat(data.campaigns || []);
+          browseCampaignsCache = campaigns.slice();
+          renderBrowseCampaignList(campaigns);
+
+          var preferred = browseCampaignId || data.active_campaign_id || UNCATEGORIZED_BROWSE_ID;
+          if (preferred) {
+            selectBrowseCampaign(preferred);
+          } else {
+            sessionListEl.innerHTML = '<p class="placeholder">No sessions yet.</p>';
+          }
+        })
+        .catch(function () {
+          if (browseCampaignListEl) browseCampaignListEl.innerHTML = '<p class="placeholder">Failed to load campaigns.</p>';
+        });
+    });
   }
 
   function renderBrowseCampaignList(campaigns) {
@@ -3287,53 +3505,41 @@
       campaignSystemEl.textContent = "";
       campaignMasterEl.textContent = "";
       if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
-      playersSection.classList.add("hidden");
-      npcsSection.classList.add("hidden");
-      if (locationsSection) locationsSection.classList.add("hidden");
-      if (entitiesSection) entitiesSection.classList.add("hidden");
-      if (relationshipsSection) relationshipsSection.classList.add("hidden");
+      if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
       if (replacementsSection) replacementsSection.classList.add("hidden");
+      updateCampaignSummaryStats({});
       renderBrowseCampaignList(browseCampaignsCache);
       fetchSessionList();
       return;
     }
 
-    fetch("/api/browse/campaigns/" + encodeURIComponent(campaignId))
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var campaign = data.campaign;
-        if (!campaign) {
-          return;
-        }
-        currentCampaign = campaign;
-        activeCampaignId = campaign.id;
-        renderCampaignBar(campaign);
-        campaignEditBtn.classList.add("hidden");
-        renderPlayers(campaign.players || []);
-        renderNpcs(campaign.npcs || []);
-        renderLocations(campaign.locations || []);
-        renderEntities(campaign.entities || []);
-        renderRelationships(campaign.relationships || [], campaign);
-        if (replacementsSection && campaign.id) {
-          replacementsSection.classList.remove("hidden");
-          fetchWordReplacements(campaign.id);
-        }
-        addNpcBtn.classList.add("hidden");
-        if (addLocationBtn) addLocationBtn.classList.add("hidden");
-        if (addEntityBtn) addEntityBtn.classList.add("hidden");
-        addRelationshipBtn.classList.add("hidden");
-        addNpcForm.classList.add("hidden");
-        if (addLocationForm) addLocationForm.classList.add("hidden");
-        if (addEntityForm) addEntityForm.classList.add("hidden");
-        addRelationshipForm.classList.add("hidden");
-        if (relationshipEditParentsPanel) {
-          relationshipEditParentsPanel.classList.add("hidden");
-          relationshipEditParentsPanel.innerHTML = "";
-        }
-        renderBrowseCampaignList(browseCampaignsCache);
-        fetchSessionList();
-      })
-      .catch(function () {});
+    withPanelLoading(campaignBar, function () {
+      return fetch("/api/browse/campaigns/" + encodeURIComponent(campaignId))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var campaign = data.campaign;
+          if (!campaign) {
+            return;
+          }
+          currentCampaign = campaign;
+          activeCampaignId = campaign.id;
+          renderCampaignBar(campaign);
+          if (campaignDetailsSection) campaignDetailsSection.classList.remove("hidden");
+          renderPlayers(campaign.players || []);
+          renderNpcs(campaign.npcs || []);
+          renderLocations(campaign.locations || []);
+          renderEntities(campaign.entities || []);
+          renderRelationships(campaign.relationships || [], campaign);
+          updateCampaignSummaryStats(campaign);
+          if (replacementsSection && campaign.id) {
+            replacementsSection.classList.remove("hidden");
+            fetchWordReplacements(campaign.id);
+          }
+          renderBrowseCampaignList(browseCampaignsCache);
+          fetchSessionList();
+        })
+        .catch(function () {});
+    });
   }
 
   function renderSessionLogLink(sessionId) {
@@ -3351,6 +3557,36 @@
       })
       .catch(function () {
         sessionLogLinkEl.classList.add("hidden");
+      });
+  }
+
+  function renderSessionExports(sessionId) {
+    if (!sessionExportListEl || !sessionId) return;
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/exports")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var exports = data.exports || [];
+        if (!exports.length) {
+          sessionExportListEl.classList.add("hidden");
+          sessionExportListEl.innerHTML = "";
+          return;
+        }
+        sessionExportListEl.classList.remove("hidden");
+        sessionExportListEl.innerHTML =
+          "<strong>Recent exports</strong><ul>" +
+          exports.slice(0, 5).map(function (item) {
+            return (
+              "<li>" +
+                '<span class="export-date">' + escapeHtml(item.display_date || item.created_at || "") + "</span>" +
+                '<a href="' + escapeAttr(item.download_url || "#") + '">Download ZIP</a>' +
+              "</li>"
+            );
+          }).join("") +
+          "</ul>";
+      })
+      .catch(function () {
+        sessionExportListEl.classList.add("hidden");
+        sessionExportListEl.innerHTML = "";
       });
   }
 
@@ -3388,12 +3624,22 @@
       sessionsUrl = "/api/sessions";
     }
 
+    if (!sessionListLoaded) {
+      showSkeleton(sessionListEl, 5);
+    } else {
+      setRefreshing(sessionListEl, true);
+    }
+
     fetch(sessionsUrl)
       .then(function (r) { return r.json(); })
       .then(function (data) {
         renderSessionList(data.sessions || []);
+        sessionListLoaded = true;
       })
-      .catch(function () {});
+      .catch(function () {})
+      .finally(function () {
+        setRefreshing(sessionListEl, false);
+      });
   }
 
   function renderSessionList(sessions) {
@@ -3471,35 +3717,40 @@
   }
 
   function loadLiveSessionSnapshot(sessionId) {
-    Promise.all([
-      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
-      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
-    ])
-      .then(function (results) {
-        var transData = results[0];
-        var summData = results[1];
+    showSkeleton(transcriptionFeed, 6);
 
-        transcriptionFeed.innerHTML = "";
-        var transcriptions = transData.transcriptions || [];
-        if (transcriptions.length === 0) {
-          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions yet.</p>';
-        } else {
-          transcriptions.forEach(function (t) { addTranscription(t); });
-        }
+    withPanelLoading(summaryPanel, function () {
+      return Promise.all([
+        fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+        fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+      ])
+        .then(function (results) {
+          var transData = results[0];
+          var summData = results[1];
 
-        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        if (summData.session_chronology) {
-          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
-          updateGenerateChronologyBtn(sessionId);
-        } else {
-          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
-          updateGenerateChronologyBtn(sessionId);
-        }
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
-        loadedLiveSessionId = sessionId;
-        renderSessionLogLink(sessionId);
-      })
-      .catch(function () {});
+          transcriptionFeed.innerHTML = "";
+          var transcriptions = transData.transcriptions || [];
+          if (transcriptions.length === 0) {
+            transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions yet.</p>';
+          } else {
+            transcriptions.forEach(function (t) { addTranscription(t); });
+          }
+
+          renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+          if (summData.session_chronology) {
+            renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+            updateGenerateChronologyBtn(sessionId);
+          } else {
+            sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+            updateGenerateChronologyBtn(sessionId);
+          }
+          renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
+          loadedLiveSessionId = sessionId;
+          renderSessionLogLink(sessionId);
+          renderSessionExports(sessionId);
+        })
+        .catch(function () {});
+    });
   }
 
   function loadHistoricalSession(sessionId) {
@@ -3507,37 +3758,42 @@
     currentHistoricalSessionId = sessionId;
     if (appMode === "live") backToLiveBtn.classList.remove("hidden");
     renderSessionLogLink(sessionId);
+    renderSessionExports(sessionId);
     updateFinalizeButton();
 
-    Promise.all([
-      fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
-      fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
-    ])
-      .then(function (results) {
-        var transData = results[0];
-        var summData = results[1];
+    showSkeleton(transcriptionFeed, 6);
 
-        transcriptionFeed.innerHTML = "";
-        var transcriptions = transData.transcriptions || [];
-        if (transcriptions.length === 0) {
-          transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions for this session.</p>';
-        } else {
-          transcriptions.forEach(function (t) { addTranscription(t); });
-        }
+    withPanelLoading(summaryPanel, function () {
+      return Promise.all([
+        fetch("/api/sessions/" + sessionId + "/transcriptions").then(function (r) { return r.json(); }),
+        fetch("/api/sessions/" + sessionId + "/summary").then(function (r) { return r.json(); })
+      ])
+        .then(function (results) {
+          var transData = results[0];
+          var summData = results[1];
 
-        renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
-        if (summData.session_chronology) {
-          renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
-          updateGenerateChronologyBtn(sessionId);
-        } else {
-          sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
-          updateGenerateChronologyBtn(sessionId);
-        }
-        renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
-      })
-      .catch(function () {
-        transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
-      });
+          transcriptionFeed.innerHTML = "";
+          var transcriptions = transData.transcriptions || [];
+          if (transcriptions.length === 0) {
+            transcriptionFeed.innerHTML = '<p class="placeholder">No transcriptions for this session.</p>';
+          } else {
+            transcriptions.forEach(function (t) { addTranscription(t); });
+          }
+
+          renderEditableSummary(sessionSummaryEl, summData.session_summary || "", "session", sessionId);
+          if (summData.session_chronology) {
+            renderEditableSummary(sessionChronologyEl, summData.session_chronology, "chronology", sessionId);
+            updateGenerateChronologyBtn(sessionId);
+          } else {
+            sessionChronologyEl.innerHTML = '<p class="placeholder">No chronology yet.</p>';
+            updateGenerateChronologyBtn(sessionId);
+          }
+          renderEditableSummary(campaignSummaryEl, summData.campaign_summary || "", "campaign", activeCampaignId || browseCampaignId || "");
+        })
+        .catch(function () {
+          transcriptionFeed.innerHTML = '<p class="placeholder">Failed to load session data.</p>';
+        });
+    });
   }
 
   function switchToLive() {
@@ -3551,6 +3807,10 @@
     if (sessionLogLinkEl) {
       sessionLogLinkEl.classList.add("hidden");
       sessionLogLinkEl.innerHTML = "";
+    }
+    if (sessionExportListEl) {
+      sessionExportListEl.classList.add("hidden");
+      sessionExportListEl.innerHTML = "";
     }
 
     var items = sessionListEl.querySelectorAll(".session-item");
@@ -3590,10 +3850,45 @@
     });
   }
 
+  if (exportSessionBtn) {
+    exportSessionBtn.addEventListener("click", function () {
+      var sessionId = getSessionIdForTranscriptView();
+      if (!sessionId) {
+        alert("No active or selected session.");
+        return;
+      }
+      withLoading(exportSessionBtn, function() {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/export", {
+          method: "POST",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.ok) {
+              alert("Failed to generate export.");
+              return;
+            }
+            renderSessionExports(sessionId);
+            // Show success feedback for 1.8s
+            exportSessionBtn.textContent = "Exported";
+            setTimeout(function () {
+              if (exportSessionBtn.textContent === "Exported") {
+                exportSessionBtn.textContent = "Export";
+              }
+            }, 1800);
+          })
+          .catch(function () {
+            alert("Failed to generate export.");
+          });
+      }, { loadingText: "Exporting..." });
+    });
+  }
+
   // Finalize session
 
   function updateFinalizeButton() {
     var show = !!(appMode === "live" && activeSessionId && !viewingHistorical);
+    var exportTarget = !!getSessionIdForTranscriptView();
+    var extractTarget = !!getSessionIdForTranscriptView();
 
     if (finalizeBtn) {
       if (show) {
@@ -3603,10 +3898,15 @@
       }
     }
 
-    // Extract entities button: also visible when viewing a historical session
-    var showExtract = show || !!(currentHistoricalSessionId);
+    if (exportSessionBtn) {
+      exportSessionBtn.disabled = !exportTarget;
+      exportSessionBtn.title = exportTarget
+        ? "Generate a session export bundle"
+        : "Select a session first";
+    }
+
     if (extractEntitiesBtn) {
-      if (showExtract) {
+      if (extractTarget) {
         extractEntitiesBtn.classList.remove("hidden");
       } else {
         extractEntitiesBtn.classList.add("hidden");
@@ -3621,64 +3921,56 @@
 
       clearLog(sessionSummaryTab);
       addLogEntry(sessionSummaryTab, "Generating summary...");
-      refreshSummaryBtn.disabled = true;
-      refreshSummaryBtn.textContent = "Generating...";
 
-      fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-summary", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            if (data.session_summary) {
-              renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sessionId);
+      withLoading(refreshSummaryBtn, function() {
+        return fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-summary", {
+          method: "POST",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (data.session_summary) {
+                renderEditableSummary(sessionSummaryEl, data.session_summary, "session", sessionId);
+              }
+              addLogEntry(sessionSummaryTab, "Summary updated");
+            } else {
+              addLogEntry(sessionSummaryTab, "Error: " + (data.error || "Failed"));
             }
-            addLogEntry(sessionSummaryTab, "Summary updated");
-          } else {
-            addLogEntry(sessionSummaryTab, "Error: " + (data.error || "Failed"));
-          }
-        })
-        .catch(function () {
-          addLogEntry(sessionSummaryTab, "Error: request failed");
-        })
-        .finally(function () {
-          refreshSummaryBtn.disabled = false;
-          refreshSummaryBtn.textContent = "Update Summary";
-        });
+          })
+          .catch(function () {
+            addLogEntry(sessionSummaryTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     });
   }
 
   if (extractEntitiesBtn) {
     extractEntitiesBtn.addEventListener("click", function () {
-      var sessionId = activeSessionId || (viewingHistorical ? currentHistoricalSessionId : null);
+      var sessionId = getSessionIdForTranscriptView();
       if (!sessionId) return;
 
-      extractEntitiesBtn.disabled = true;
-      extractEntitiesBtn.textContent = "Extracting...";
-
-      fetch("/api/sessions/" + sessionId + "/extract-entities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            var total = (data.new_npcs || []).length + (data.new_locations || []).length + (data.new_relationships || []).length;
-            extractEntitiesBtn.textContent = total > 0 ? ("+" + total + " found!") : "Nothing new";
-            fetchCampaignInfo();
-            setTimeout(function () {
-              extractEntitiesBtn.textContent = "Extract Entities";
-            }, 3000);
-          } else {
-            alert("Extraction failed: " + (data.error || "Unknown error"));
-          }
+      withLoading(extractEntitiesBtn, function () {
+        return fetch("/api/sessions/" + sessionId + "/extract-entities", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
         })
-        .catch(function () {
-          alert("Failed to run entity extraction.");
-        })
-        .finally(function () {
-          extractEntitiesBtn.disabled = false;
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              var total = (data.new_npcs || []).length + (data.new_locations || []).length + (data.new_entities || []).length + (data.new_relationships || []).length;
+              extractEntitiesBtn.textContent = total > 0 ? ("+" + total + " found!") : "Nothing new";
+              fetchCampaignInfo();
+              setTimeout(function () {
+                extractEntitiesBtn.textContent = "Extract Entities";
+              }, 3000);
+            } else {
+              alert("Extraction failed: " + (data.error || "Unknown error"));
+            }
+          })
+          .catch(function () {
+            alert("Failed to run entity extraction.");
+          });
+      }, { loadingText: "Extracting..." });
     });
   }
 
@@ -3688,30 +3980,25 @@
       if (!confirm("Finalize the current session? This will generate the final summary and end the session.")) {
         return;
       }
-      finalizeBtn.disabled = true;
-      finalizeBtn.textContent = "Finalizing...";
-
-      fetch("/api/sessions/" + activeSessionId + "/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            activeSessionId = null;
-            updateFinalizeButton();
-            setTimeout(fetchSessionList, 2000);
-          } else {
-            alert("Error: " + (data.error || "Failed to finalize"));
-          }
+      withLoading(finalizeBtn, function () {
+        return fetch("/api/sessions/" + activeSessionId + "/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
         })
-        .catch(function () {
-          alert("Failed to finalize session.");
-        })
-        .finally(function () {
-          finalizeBtn.disabled = false;
-          finalizeBtn.textContent = "Finalize Session";
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              activeSessionId = null;
+              updateFinalizeButton();
+              setTimeout(fetchSessionList, 2000);
+            } else {
+              alert("Error: " + (data.error || "Failed to finalize"));
+            }
+          })
+          .catch(function () {
+            alert("Failed to finalize session.");
+          });
+      }, { loadingText: "Finalizing..." });
     });
   }
 
@@ -3738,33 +4025,29 @@
       clearLog(campaignSummaryTab);
       addLogEntry(campaignSummaryTab, "Requesting campaign summary generation...");
       var originalText = generateCampaignSummaryBtn.textContent;
-      generateCampaignSummaryBtn.disabled = true;
-      generateCampaignSummaryBtn.textContent = "Generating...";
-      fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
-        method: "POST",
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.status === "ok") {
-            if (data.campaign_summary && campaignSummaryEl) {
-              renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
-            }
-            var msg = "Completed: " + data.session_count + " session(s)";
-            if (data.sessions_processed > 0) {
-              msg += ", " + data.sessions_processed + " missing summary(s) generated";
-            }
-            addLogEntry(campaignSummaryTab, msg);
-          } else {
-            addLogEntry(campaignSummaryTab, "Error: " + (data.detail || "Unknown error"));
-          }
+      withLoading(generateCampaignSummaryBtn, function () {
+        return fetch("/api/campaigns/" + encodeURIComponent(campaignId) + "/campaign-summaries/generate", {
+          method: "POST",
         })
-        .catch(function () {
-          addLogEntry(campaignSummaryTab, "Error: request failed");
-        })
-        .finally(function () {
-          generateCampaignSummaryBtn.disabled = false;
-          generateCampaignSummaryBtn.textContent = originalText;
-        });
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.status === "ok") {
+              if (data.campaign_summary && campaignSummaryEl) {
+                renderEditableSummary(campaignSummaryEl, data.campaign_summary, "campaign", campaignId);
+              }
+              var msg = "Completed: " + data.session_count + " session(s)";
+              if (data.sessions_processed > 0) {
+                msg += ", " + data.sessions_processed + " missing summary(s) generated";
+              }
+              addLogEntry(campaignSummaryTab, msg);
+            } else {
+              addLogEntry(campaignSummaryTab, "Error: " + (data.detail || "Unknown error"));
+            }
+          })
+          .catch(function () {
+            addLogEntry(campaignSummaryTab, "Error: request failed");
+          });
+      }, { loadingText: "Generating..." });
     });
   }
 
@@ -3842,30 +4125,26 @@
     if (mergeSelected.length !== 2) return;
     var target = mergeSelected[0];
     var source = mergeSelected[1];
-    mergeExecuteBtn.disabled = true;
-    mergeExecuteBtn.textContent = "Merging...";
 
-    fetch("/api/sessions/merge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source_id: source.id, target_id: target.id })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        mergeExecuteBtn.disabled = false;
-        mergeExecuteBtn.textContent = "Merge";
-        if (data.ok) {
-          exitMergeMode();
-          fetchSessionList();
-        } else {
-          alert("Merge failed: " + (data.error || "Unknown error"));
-        }
+    withLoading(mergeExecuteBtn, function () {
+      return fetch("/api/sessions/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: source.id, target_id: target.id })
       })
-      .catch(function (err) {
-        mergeExecuteBtn.disabled = false;
-        mergeExecuteBtn.textContent = "Merge";
-        alert("Merge error: " + err.message);
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            exitMergeMode();
+            fetchSessionList();
+          } else {
+            alert("Merge failed: " + (data.error || "Unknown error"));
+          }
+        })
+        .catch(function (err) {
+          alert("Merge error: " + err.message);
+        });
+    }, { loadingText: "Merging..." });
   }
 
   if (mergeBtnEl) {
