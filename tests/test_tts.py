@@ -134,7 +134,8 @@ from fastapi.testclient import TestClient
 def _make_test_app(tts_provider=None, tts_cache=None, tts_config=None):
     """Create a minimal FastAPI app with TTS routes for testing."""
     from fastapi import FastAPI
-    from rpg_scribe.web.routes import router, WebState
+    from rpg_scribe.web.routes import router
+    from rpg_scribe.web.state import WebState
 
     app = FastAPI()
     state = WebState()

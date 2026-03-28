@@ -19,7 +19,7 @@ from rpg_scribe.core.events import (
     TranscriptionEvent,
 )
 from rpg_scribe.web.app import create_app
-from rpg_scribe.web.routes import WebState
+from rpg_scribe.web.state import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 

@@ -20,7 +20,8 @@ from rpg_scribe.core.events import (
     SystemStatusEvent,
     TranscriptionEvent,
 )
-from rpg_scribe.web.routes import WebState, router
+from rpg_scribe.web.routes import router
+from rpg_scribe.web.state import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 logger = logging.getLogger(__name__)
