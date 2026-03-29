@@ -365,10 +365,16 @@ class ClaudeSummarizer(BaseSummarizer):
             user_answers_block = await self._build_user_answers_block()
 
             system = self._build_system_prompt()
+            chronology_block = (
+                f"CRONOLOGÍA DE LA SESIÓN:\n{self._session_chronology}\n\n"
+                if self._session_chronology
+                else ""
+            )
             user_msg = SESSION_UPDATE_USER.format(
                 recent_transcriptions=self._format_transcriptions(entries),
                 current_session_summary=self._session_summary or "(inicio de sesión)",
                 user_answers_block=user_answers_block if user_answers_block else "\n",
+                chronology_block=chronology_block,
             )
 
             try:
@@ -531,6 +537,24 @@ class ClaudeSummarizer(BaseSummarizer):
 
         system = self._build_system_prompt()
 
+        # Step 1: Generate chronology first so the final narrative can use it as context
+        if all_entries:
+            try:
+                self._session_chronology = await self.generate_chronology(
+                    entries=all_entries,
+                )
+                logger.info("Session chronology generated")
+            except Exception as exc:
+                logger.error("Chronology generation failed: %s", exc)
+                self._session_chronology = ""
+
+        chronology_block = (
+            f"CRONOLOGÍA DE LA SESIÓN:\n{self._session_chronology}\n\n"
+            if self._session_chronology
+            else ""
+        )
+
+        # Step 2: Generate final narrative summary (with chronology as context)
         # Calculate overhead from the finalize template (without dynamic content)
         template_overhead = len(FINALIZE_USER) + len(self._session_summary or "") + 200
         # Max chars available for transcriptions in a single call
@@ -549,6 +573,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 FINALIZE_USER.format(
                     session_summary=self._session_summary or "(sin resumen todavía)",
                     pending_transcriptions=pending_text or "(ninguna)",
+                    chronology_block=chronology_block,
                 ),
                 purpose="finalize_session",
             )
@@ -579,6 +604,7 @@ class ClaudeSummarizer(BaseSummarizer):
                     user_msg = FINALIZE_USER.format(
                         session_summary=running_summary,
                         pending_transcriptions=batch_text,
+                        chronology_block=chronology_block,
                     )
                     result = await self._call_api(
                         system, user_msg, purpose="finalize_session_last_batch"
@@ -590,6 +616,7 @@ class ClaudeSummarizer(BaseSummarizer):
                         recent_transcriptions=batch_text,
                         current_session_summary=running_summary,
                         user_answers_block="\n",
+                        chronology_block="",
                     )
                     result = await self._call_api(
                         system, user_msg, purpose=f"finalize_session_batch_{i + 1}"
@@ -605,16 +632,6 @@ class ClaudeSummarizer(BaseSummarizer):
         self._session_summary = session_part
         if campaign_part:
             self._campaign_summary = campaign_part
-
-        # Generate chronological timeline from the final summary + transcriptions
-        try:
-            self._session_chronology = await self.generate_chronology(
-                entries=all_entries,
-            )
-            logger.info("Session chronology generated")
-        except Exception as exc:
-            logger.error("Chronology generation failed: %s", exc)
-            self._session_chronology = ""
 
         await self._publish_summary("final")
 
@@ -660,6 +677,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 FINALIZE_USER.format(
                     session_summary="(inicio de sesión)",
                     pending_transcriptions=pending_text,
+                    chronology_block="",
                 ),
                 purpose="posthoc_session_summary",
             )
@@ -677,6 +695,7 @@ class ClaudeSummarizer(BaseSummarizer):
                         FINALIZE_USER.format(
                             session_summary=running_summary,
                             pending_transcriptions=batch_text,
+                            chronology_block="",
                         ),
                         purpose="posthoc_session_summary_last_batch",
                     )
@@ -688,6 +707,7 @@ class ClaudeSummarizer(BaseSummarizer):
                             recent_transcriptions=batch_text,
                             current_session_summary=running_summary,
                             user_answers_block="\n",
+                            chronology_block="",
                         ),
                         purpose=f"posthoc_session_summary_batch_{i + 1}",
                     )

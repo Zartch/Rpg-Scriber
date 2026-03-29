@@ -116,8 +116,8 @@ class BaseSummarizer(ABC):
 
     async def _handle_transcription(self, event: TranscriptionEvent) -> None:
         """Handle a TranscriptionEvent: buffer it and maybe trigger update."""
-        if event.is_partial:
-            return  # Skip partial transcriptions
+        if event.is_partial or event.is_corrected:
+            return  # Skip partial and already-corrected transcriptions
 
         if event.session_id != self._session_id:
             return  # Ignore events from other sessions

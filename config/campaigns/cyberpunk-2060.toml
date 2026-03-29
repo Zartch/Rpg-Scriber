@@ -40,40 +40,56 @@ name = "Afterlife"
 description = "Bar iconico de mercenarios y edgerunners. Punto de encuentro para trabajos y contactos."
 
 [[campaign.locations]]
+name = "Austria"
+description = "País donde ocurrieron sucesos aparentemente inconexos relacionados con la información sobre los orígenes de Aeterna distribuida en los discos."
+
+[[campaign.locations]]
+name = "Bar seguro"
+description = "Establecimiento donde el grupo se refugió tras los eventos de la plaza, con reservados privados"
+
+[[campaign.locations]]
+name = "Capa 3 de la Red"
+description = "Nivel profundo de la red donde existe una conexión misteriosa que une al grupo de alguna manera desconocida."
+
+[[campaign.locations]]
 name = "Centro Corporativo (Nucleo de Cristal)"
 description = "Zona de exclusion llena de gruas silenciosas y andamios de luz. Drones de Aeterna proyectan laseres sobre esqueletos de acero mientras el biopolimero 'crece' sobre las estructuras como coral blanco. Un muro sonico separa este distrito: de un paso a otro, el caos de la ciudad se apaga y solo queda un zumbido de baja frecuencia."
+
+[[campaign.locations]]
+name = "Despacho de Elara"
+description = "Lugar donde Canal trabaja en crear el conector para el disco y donde el grupo se reúne para analizarlo"
 
 [[campaign.locations]]
 name = "Heywood"
 description = "Vigilancia Emocional. Los drones de Aeterna escanean ventanas de apartamentos. La musica latina se corta por anuncios holograficos que ofrecen 'Mejoras Familiares' para ti y tus seres queridos."
 
 [[campaign.locations]]
+name = "Night City"
+description = "Ciudad principal donde transcurren los eventos, con múltiples distritos afectados por la presencia de Aeterna"
+
+[[campaign.locations]]
 name = "Pacifica"
 description = "El Olvido Digital. Zonas de 'muerte de senal' donde aparecen cuerpos catatonicos tirados en cualquier lado. No estan muertos, o si, pero yacen inertes y ninguno se ha recuperado. Hay zonas sin ningun tipo de cobertura, como un agujero negro."
-
-[[campaign.locations]]
-name = "Santo Domingo"
-description = "Desmantelamiento. Las viejas industrias ruidosas estan siendo desmanteladas por gruas silenciosas que instalan paneles de biopolimero. Es el lugar donde mejor se ve el choque entre el acero viejo y el cristal nuevo."
-
-[[campaign.locations]]
-name = "Watson"
-description = "El Distrito Enrarecido. Entre fabricas oxidadas aparecen 'Nodos de Silencio': cruzas una calle y el ruido desaparece, no escuchas coches ni gritos, solo susurros de personas muy proximas a ti."
-
-[[campaign.locations]]
-name = "Viena"
-description = "Ciudad europea cuyos mapas aparecen en los archivos del disco de John Trash, con información en alemán relacionada con los orígenes de Aeterna."
-
-[[campaign.locations]]
-name = "Austria"
-description = "País donde ocurrieron sucesos aparentemente inconexos relacionados con la información sobre los orígenes de Aeterna distribuida en los discos."
 
 [[campaign.locations]]
 name = "Panamá"
 description = "Ubicación donde ocurrieron eventos conectados con la información sobre los orígenes de Aeterna."
 
 [[campaign.locations]]
-name = "Capa 3 de la Red"
-description = "Nivel profundo de la red donde existe una conexión misteriosa que une al grupo de alguna manera desconocida."
+name = "Plaza de mercado transformada"
+description = "Plaza en Watson donde ocurrió el evento de Aeterna, transformada de metal corroído a paneles blancos pulcros con charcos de cristal líquido"
+
+[[campaign.locations]]
+name = "Santo Domingo"
+description = "Desmantelamiento. Las viejas industrias ruidosas estan siendo desmanteladas por gruas silenciosas que instalan paneles de biopolimero. Es el lugar donde mejor se ve el choque entre el acero viejo y el cristal nuevo."
+
+[[campaign.locations]]
+name = "Viena"
+description = "Ciudad europea cuyos mapas aparecen en los archivos del disco de John Trash, con información en alemán relacionada con los orígenes de Aeterna."
+
+[[campaign.locations]]
+name = "Watson"
+description = "El Distrito Enrarecido. Entre fabricas oxidadas aparecen 'Nodos de Silencio': cruzas una calle y el ruido desaparece, no escuchas coches ni gritos, solo susurros de personas muy proximas a ti."
 
 [campaign.dm]
 discord_id = "432635509899001877"
@@ -82,19 +98,19 @@ discord_id = "432635509899001877"
 discord_id = "301071912292057088"
 discord_name = "@Zartch"
 character_name = "Elara Navarro - Nix"
-character_description = "Fixer experta en información"
+character_description = "Fixer experta en información, miembro de node56"
 
 [[campaign.players]]
 discord_id = "341205872615096321"
 discord_name = "Bateman"
 character_name = "Tira"
-character_description = "Mercenaria misteriosa"
+character_description = "Mercenaria misteriosa, jugadora que todavía no pertenece al grupo, \"llegará a pertenecer a el?, como el master la juntará con el grupo?\""
 
 [[campaign.players]]
 discord_id = "438410726298746891"
 discord_name = "Davidus"
 character_name = "Vektor"
-character_description = "El Netrunero"
+character_description = "Un netruner habilidoso parco de palabras."
 
 [[campaign.players]]
 discord_id = "432635509899001877"
@@ -106,19 +122,265 @@ character_description = "Es el master / DM"
 discord_id = "321011002856701972"
 discord_name = "Miquel"
 character_name = "Canal"
-character_description = "Técnico"
+character_description = "Técnico, capaz. Con un caracter especial."
+
+[[campaign.npcs]]
+name = "Contacto de Tira"
+description = "Persona que vendió a Tira la información sobre el disco, pero le tendió una trampa esperando que Aeterna apareciera para capturar a quien fuera por él"
+
+[[campaign.npcs]]
+name = "Doctor de Elara"
+description = "Médico que examina a Elara tras su experiencia en la zona de silencio de Aeterna, no encuentra anomalías físicas"
+
+[[campaign.npcs]]
+name = "Fixer de la plaza"
+description = "Fixer que esperaba recibir el disco de datos en la plaza de Watson durante el evento de Aeterna"
 
 [[campaign.npcs]]
 name = "John Trash"
 description = "Persona asociada con los discos que contienen información sensible sobre los orígenes de Aeterna. Su identidad es reconocida por Vektor."
 
 [[campaign.npcs]]
+name = "Kael"
+description = "Guardaespaldas armado que acompaña a Sena. Proporciona protección durante las negociaciones."
+
+[[campaign.npcs]]
+name = "Mercenario superviviente"
+description = "Superviviente de la plaza que colapsó en coma con 'Error 2030' visible en sus pupilas"
+
+[[campaign.npcs]]
+name = "Niño del fixer"
+description = "Niño que acompañaba al fixer en la plaza y mostraba un 88% en su barra de progreso según las observaciones de Vector"
+
+[[campaign.npcs]]
+name = "Nómada de la plaza"
+description = "Nómada que intentaba entregar el disco al fixer en la plaza, ahora irreconocible debido a cambios de aspecto tras el evento de Aeterna"
+
+[[campaign.npcs]]
 name = "Sena"
 description = "Nómada misteriosa que inicialmente apareció en un callejón. Ahora muestra autoridad y conoce información crucial sobre Aeterna y los discos. Tiene una historia personal dolorosa relacionada con la corporación."
 
-[[campaign.npcs]]
-name = "Kael"
-description = "Guardaespaldas armado que acompaña a Sena. Proporciona protección durante las negociaciones."
+[[campaign.entities]]
+name = "Aeterna"
+entity_type = "corporacion"
+description = "Corporación misteriosa que opera con drones blancos y tecnología de silenciamiento. Transforma áreas urbanas con biopolímero blanco y busca capturar información sobre sus orígenes. Tiene presencia en múltiples distritos de Night City."
+
+[[campaign.entities]]
+name = "Arasaka"
+entity_type = "corporacion"
+description = "Corporación con logos similares vistos en las visiones de accidentes de coche durante el evento de la plaza"
+
+[[campaign.entities]]
+name = "Danger Gal"
+entity_type = "corporacion"
+description = "Corporación con oficinas donde se manipulaban sistemas de tráfico según las visiones del evento"
+
+[[campaign.entities]]
+name = "Eurasian Biotech"
+entity_type = "corporacion"
+description = "Corporación involucrada en los eventos del canal de Panamá y relacionada con los orígenes de Aeterna"
+
+[[campaign.entities]]
+name = "MaxTac"
+entity_type = "faccion"
+description = "Unidad especial que llega con equipos completos para recoger casos de personas con errores en sus pupilas que colapsan en coma"
+
+[[campaign.entities]]
+name = "Node 56"
+entity_type = "grupo"
+description = "Grupo formado por los cuatro personajes principales (Elara, Vektor, Canal) conectados por líneas verdes en la tercera capa de la Red tras el evento de Aeterna."
+
+[[campaign.relationship_types]]
+key = "opera en"
+label = "opera en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "conectada con"
+label = "conectada con"
+category = "politica"
+
+[[campaign.relationship_types]]
+key = "miembro"
+label = "miembro"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "posee informacion sobre"
+label = "posee información sobre"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "acompanado por"
+label = "acompañado por"
+category = "social"
+
+[[campaign.relationship_types]]
+key = "busca informacion sobre"
+label = "busca información sobre"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "capturado por"
+label = "capturado por"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "colabora con"
+label = "colabora con"
+category = "politica"
+
+[[campaign.relationship_types]]
+key = "enemiga de"
+label = "enemiga de"
+category = "politica"
+
+[[campaign.relationship_types]]
+key = "esperaba recibir informacion de"
+label = "esperaba recibir información de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "guardaespaldas de"
+label = "guardaespaldas de"
+category = "social"
+
+[[campaign.relationships]]
+source_key = "npc:Sena"
+target_key = "ent:Aeterna"
+relation_type_key = "enemiga de"
+relation_type_label = "enemiga de"
+notes = "Tiene una historia personal dolorosa con Aeterna y conoce información sobre sus orígenes"
+
+[[campaign.relationships]]
+source_key = "npc:Kael"
+target_key = "npc:Sena"
+relation_type_key = "guardaespaldas de"
+relation_type_label = "guardaespaldas de"
+notes = "Acompaña y protege a Sena durante las negociaciones"
+
+[[campaign.relationships]]
+source_key = "npc:John Trash"
+target_key = "ent:Aeterna"
+relation_type_key = "posee informacion sobre"
+relation_type_label = "posee información sobre"
+notes = "Los discos con su nombre contienen información sensible sobre los orígenes de Aeterna"
+
+[[campaign.relationships]]
+source_key = "npc:Contacto de Tira"
+target_key = "ent:Aeterna"
+relation_type_key = "colabora con"
+relation_type_label = "colabora con"
+notes = "Le tendió una trampa a Tira esperando que Aeterna apareciera"
+
+[[campaign.relationships]]
+source_key = "ent:Eurasian Biotech"
+target_key = "ent:Aeterna"
+relation_type_key = "conectada con"
+relation_type_label = "conectada con"
+notes = "Los eventos de Eurasian Biotech están relacionados con los orígenes de Aeterna según la información de los discos"
+
+[[campaign.relationships]]
+source_key = "npc:Sena"
+target_key = "ent:Eurasian Biotech"
+relation_type_key = "busca informacion sobre"
+relation_type_label = "busca información sobre"
+notes = "Vino específicamente a buscar información sobre Eurasian Biotech por asuntos personales"
+
+[[campaign.relationships]]
+source_key = "ent:Aeterna"
+target_key = "loc:Centro Corporativo (Nucleo de Cristal)"
+relation_type_key = "opera en"
+relation_type_label = "opera en"
+notes = "Drones de Aeterna proyectan laseres y el biopolimero crece en esta zona"
+
+[[campaign.relationships]]
+source_key = "ent:Aeterna"
+target_key = "loc:Watson"
+relation_type_key = "opera en"
+relation_type_label = "opera en"
+notes = "Instaló antena y transformó la plaza de mercado"
+
+[[campaign.relationships]]
+source_key = "ent:Aeterna"
+target_key = "loc:Heywood"
+relation_type_key = "opera en"
+relation_type_label = "opera en"
+notes = "Sus drones escanean ventanas de apartamentos"
+
+[[campaign.relationships]]
+source_key = "ent:Aeterna"
+target_key = "loc:Santo Domingo"
+relation_type_key = "opera en"
+relation_type_label = "opera en"
+notes = "Desmantelando industrias viejas e instalando biopolímero"
+
+[[campaign.relationships]]
+source_key = "ent:Aeterna"
+target_key = "loc:Pacifica"
+relation_type_key = "opera en"
+relation_type_label = "opera en"
+notes = "Crea zonas de muerte de señal donde aparecen cuerpos catatónicos"
+
+[[campaign.relationships]]
+source_key = "player:301071912292057088"
+target_key = "ent:Node 56"
+relation_type_key = "miembro"
+relation_type_label = "miembro"
+
+[[campaign.relationships]]
+source_key = "player:438410726298746891"
+target_key = "ent:Node 56"
+relation_type_key = "miembro"
+relation_type_label = "miembro"
+
+[[campaign.relationships]]
+source_key = "player:321011002856701972"
+target_key = "ent:Node 56"
+relation_type_key = "miembro"
+relation_type_label = "miembro"
+
+[[campaign.relationships]]
+source_key = "npc:Nómada de la plaza"
+target_key = "npc:John Trash"
+relation_type_key = "posee informacion sobre"
+relation_type_label = "posee información sobre"
+notes = "La nómada tenía el disco con archivos de John Trash"
+
+[[campaign.relationships]]
+source_key = "npc:Mercenario superviviente"
+target_key = "ent:MaxTac"
+relation_type_key = "capturado por"
+relation_type_label = "capturado por"
+notes = "MaxTac se llevó al mercenario tras colapsar con Error 2030"
+
+[[campaign.relationships]]
+source_key = "ent:Arasaka"
+target_key = "ent:Aeterna"
+relation_type_key = "conectada con"
+relation_type_label = "conectada con"
+notes = "Logos similares a Arasaka aparecieron en visiones relacionadas con los orígenes de Aeterna"
+
+[[campaign.relationships]]
+source_key = "ent:Danger Gal"
+target_key = "ent:Aeterna"
+relation_type_key = "conectada con"
+relation_type_label = "conectada con"
+notes = "Oficinas de Danger Gal aparecieron en visiones relacionadas con manipulación de sistemas de tráfico conectados a Aeterna"
+
+[[campaign.relationships]]
+source_key = "npc:Fixer de la plaza"
+target_key = "npc:Nómada de la plaza"
+relation_type_key = "esperaba recibir informacion de"
+relation_type_label = "esperaba recibir información de"
+notes = "El fixer esperaba que la nómada le entregara el disco de datos"
+
+[[campaign.relationships]]
+source_key = "npc:Fixer de la plaza"
+target_key = "npc:Niño del fixer"
+relation_type_key = "acompanado por"
+relation_type_label = "acompañado por"
+notes = "El niño acompañaba al fixer durante el evento en la plaza"
 
 [campaign.custom_instructions]
 text = """

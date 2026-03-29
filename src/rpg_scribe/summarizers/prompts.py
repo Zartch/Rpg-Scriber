@@ -70,7 +70,7 @@ anteriores si nueva información las clarifica.
 SESSION_UPDATE_USER = """\
 TRANSCRIPCIÓN RECIENTE:
 {recent_transcriptions}
-
+{chronology_block}\
 RESUMEN ACTUAL DE LA SESIÓN:
 {current_session_summary}
 {user_answers_block}\
@@ -86,7 +86,7 @@ RESUMEN DE SESIÓN ACTUAL:
 
 TRANSCRIPCIÓN PENDIENTE:
 {pending_transcriptions}
-
+{chronology_block}\
 Genera:
 1. Un resumen final pulido de la sesión (narrativo, detallado).
 2. Una actualización del resumen de campaña incorporando esta sesión.

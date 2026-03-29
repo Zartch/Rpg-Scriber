@@ -532,6 +532,70 @@ class TestClaudeSummarizer:
         result = await summarizer.finalize_session()
         assert result == "Just a plain summary."
 
+    @pytest.mark.asyncio
+    async def test_finalize_generates_chronology_before_narrative(
+        self, summarizer, bus, mock_client
+    ):
+        """Chronology must be generated before the final narrative so the narrative
+        can receive it as context."""
+        chronology_response = "Escena 1: La taberna. Escena 2: La mazmorra."
+        finalize_response = (
+            "---SESSION_SUMMARY---\nLos héroes exploraron la mazmorra.\n\n"
+            "---CAMPAIGN_SUMMARY---\nLa campaña avanza."
+        )
+        mock_client.messages.create = AsyncMock(
+            side_effect=[
+                _mock_anthropic_response(chronology_response),
+                _mock_anthropic_response(finalize_response),
+            ]
+        )
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Entramos a la mazmorra", time.time())
+        )
+
+        result = await summarizer.finalize_session()
+
+        assert result == "Los héroes exploraron la mazmorra."
+        # Chronology was generated first and stored
+        assert summarizer._session_chronology == chronology_response
+        # The second API call (finalize narrative) must contain the chronology
+        finalize_call_kwargs = mock_client.messages.create.call_args_list[1].kwargs
+        finalize_content = finalize_call_kwargs["messages"][0]["content"]
+        assert "CRONOLOGÍA DE LA SESIÓN:" in finalize_content
+        assert chronology_response in finalize_content
+
+    @pytest.mark.asyncio
+    async def test_finalize_chronology_failure_does_not_block_narrative(
+        self, summarizer, bus, mock_client
+    ):
+        """If chronology generation fails, finalize_session continues without it."""
+        finalize_response = (
+            "---SESSION_SUMMARY---\nResumen sin cronología.\n\n"
+            "---CAMPAIGN_SUMMARY---\nCampaña."
+        )
+        # Chronology retries max_retries times (3), then finalize succeeds
+        call_count = 0
+        max_retries = summarizer.config.max_retries  # 3
+
+        async def side_effect_fn(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= max_retries:
+                raise RuntimeError("Chronology API failed")
+            return _mock_anthropic_response(finalize_response)
+
+        mock_client.messages.create = AsyncMock(side_effect=side_effect_fn)
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Algo pasa", time.time())
+        )
+
+        result = await summarizer.finalize_session()
+
+        assert result == "Resumen sin cronología."
+        assert summarizer._session_chronology == ""
+
     # --- Integration with event bus ---
 
     @pytest.mark.asyncio
@@ -744,6 +808,46 @@ class TestClaudeSummarizer:
         call_kwargs = mock_client.messages.create.call_args.kwargs
         user_content = call_kwargs["messages"][0]["content"]
         assert "RESPUESTAS DEL USUARIO" not in user_content
+
+    @pytest.mark.asyncio
+    async def test_update_summary_injects_chronology_when_present(
+        self, summarizer, bus, mock_client
+    ):
+        """When _session_chronology is set, it should appear in the update prompt."""
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response("Updated summary with chronology context")
+        )
+        await summarizer.start("session-1")
+        summarizer._session_chronology = "Escena 1: Los héroes entran a la taberna."
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Buscamos al mercader", time.time())
+        )
+
+        await summarizer._update_summary()
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        user_content = call_kwargs["messages"][0]["content"]
+        assert "CRONOLOGÍA DE LA SESIÓN:" in user_content
+        assert "Escena 1: Los héroes entran a la taberna." in user_content
+
+    @pytest.mark.asyncio
+    async def test_update_summary_no_chronology_block_when_empty(
+        self, summarizer, bus, mock_client
+    ):
+        """When _session_chronology is empty, no CRONOLOGÍA block in the prompt."""
+        mock_client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response("Updated summary")
+        )
+        await summarizer.start("session-1")
+        summarizer._pending.append(
+            TranscriptionEntry("u1", "Aelar", "Hello", time.time())
+        )
+
+        await summarizer._update_summary()
+
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        user_content = call_kwargs["messages"][0]["content"]
+        assert "CRONOLOGÍA DE LA SESIÓN:" not in user_content
 
     # --- Lazy client ---
 
@@ -1132,7 +1236,7 @@ class TestBatchFinalization:
 
         assert result == "Final text"
         assert summarizer._campaign_summary == "Campaign update"
-        # Finalize + chronology = 2 API calls
+        # Chronology + finalize = 2 API calls
         assert summarizer._get_client().messages.create.call_count == 2
 
     async def test_finalize_multi_batch(self, summarizer):
@@ -1149,8 +1253,10 @@ class TestBatchFinalization:
             "---SESSION_SUMMARY---\nFinal multi-batch\n---CAMPAIGN_SUMMARY---\nUpdated campaign"
         )
         chronology_resp = _mock_anthropic_response("Chronological timeline")
+        # With max_input_chars=200, chronology itself is multi-batch (2 calls):
+        # chronology_batch_1, chronology_batch_2, intermediate, final
         summarizer._get_client().messages.create = AsyncMock(
-            side_effect=[intermediate_resp, final_resp, chronology_resp]
+            side_effect=[chronology_resp, chronology_resp, intermediate_resp, final_resp]
         )
 
         # Each entry formatted: "[Alice]: AAA...250A\n" â‰ˆ 260 chars
@@ -1162,7 +1268,7 @@ class TestBatchFinalization:
 
         assert result == "Final multi-batch"
         assert summarizer._campaign_summary == "Updated campaign"
-        # Should have made at least 3 API calls (intermediate + final + chronology)
+        # Should have made at least 3 API calls (chronology + intermediate + final)
         assert summarizer._get_client().messages.create.call_count >= 3
 
 

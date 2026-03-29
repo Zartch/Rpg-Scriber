@@ -30,6 +30,7 @@ class TranscriptionEvent:
     timestamp: float
     confidence: float  # 0.0 - 1.0
     is_partial: bool  # True if partial/streaming transcription
+    is_corrected: bool = False  # True if re-published after word replacement
 
 
 @dataclass(frozen=True)

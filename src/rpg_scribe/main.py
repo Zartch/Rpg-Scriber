@@ -90,7 +90,7 @@ class Application:
 
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database, applying word replacements."""
-        if event.is_partial:
+        if event.is_partial or event.is_corrected:
             return
         campaign_id = self.config.campaign.campaign_id if self.config.campaign else ""
         try:
@@ -119,6 +119,7 @@ class Application:
                     timestamp=event.timestamp,
                     confidence=event.confidence,
                     is_partial=False,
+                    is_corrected=True,
                 )
                 await self.event_bus.publish(corrected)
         except Exception as exc:
