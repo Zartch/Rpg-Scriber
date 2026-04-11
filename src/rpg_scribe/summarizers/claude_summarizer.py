@@ -347,6 +347,31 @@ class ClaudeSummarizer(BaseSummarizer):
             f"Claude API failed after {self.config.max_retries} attempts: {last_exc}"
         ) from last_exc
 
+    async def generate_title_from_summary(self, summary: str) -> str:
+        """Generate a short session title (≤60 chars) from an existing summary.
+
+        Returns a generic fallback if the summary is empty or the LLM call fails.
+        """
+        import datetime
+
+        if not summary or not summary.strip():
+            today = datetime.date.today().strftime("%Y-%m-%d")
+            return f"Sesión {today}"
+
+        system = (
+            "Eres un asistente que genera títulos cortos y descriptivos para sesiones de rol. "
+            "El título debe tener máximo 60 caracteres. "
+            "Responde ÚNICAMENTE con el título, sin comillas ni explicaciones."
+        )
+        user = f"Resumen de la sesión:\n\n{summary[:2000]}"
+        try:
+            title = await self._call_api(system, user, purpose="generate_title")
+            title = title.strip().strip('"').strip("'")
+            return title[:60] if title else f"Sesión {datetime.date.today():%Y-%m-%d}"
+        except Exception:
+            import datetime as _dt
+            return f"Sesión {_dt.date.today():%Y-%m-%d}"
+
     # ------------------------------------------------------------------
     # Core summarization logic
     # ------------------------------------------------------------------
