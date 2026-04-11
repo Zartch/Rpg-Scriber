@@ -82,6 +82,14 @@ class TestDatabaseSessions:
         result = await db.sessions.get_session("nope")
         assert result is None
 
+    async def test_session_has_title_column(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        session = await db.sessions.get_session("s1")
+        assert session is not None
+        assert "title" in session
+        assert session["title"] == ""
+
 
 class TestDatabaseTranscriptions:
     async def test_save_and_get_transcriptions(self, db: Database) -> None:

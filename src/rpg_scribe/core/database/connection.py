@@ -44,6 +44,29 @@ class Database:
         await self._ensure_column("campaign_entities", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("sessions", "merged_into", "TEXT DEFAULT ''")
         await self._ensure_column("sessions", "session_chronology", "TEXT DEFAULT ''")
+        await self._ensure_column("sessions", "title", "TEXT NOT NULL DEFAULT ''")
+
+        # Canonical graph model — character_relationships enrichment
+        await self._ensure_column("character_relationships", "relation_family", "TEXT DEFAULT ''")
+        await self._ensure_column("character_relationships", "strength", "REAL DEFAULT 0.5")
+        await self._ensure_column("character_relationships", "confidence", "REAL DEFAULT 0.5")
+        await self._ensure_column("character_relationships", "polarity", "TEXT DEFAULT 'neutral'")
+        await self._ensure_column("character_relationships", "certainty", "TEXT DEFAULT 'explicit'")
+        await self._ensure_column("character_relationships", "origin", "TEXT DEFAULT 'extracted'")
+        await self._ensure_column("character_relationships", "is_active", "INTEGER DEFAULT 1")
+        await self._ensure_column("character_relationships", "source_session_id", "TEXT DEFAULT ''")
+        await self._ensure_column("character_relationships", "evidence_snippets_json", "TEXT DEFAULT '[]'")
+        await self._ensure_column("character_relationships", "tags_json", "TEXT DEFAULT '[]'")
+        await self._ensure_column("character_relationships", "type_label_raw", "TEXT DEFAULT ''")
+
+        # relationship_types enrichment
+        await self._ensure_column("relationship_types", "relation_family", "TEXT DEFAULT ''")
+        await self._ensure_column("relationship_types", "polarity", "TEXT DEFAULT 'neutral'")
+        await self._ensure_column("relationship_types", "is_canonical", "INTEGER DEFAULT 0")
+
+        # campaign_entities enrichment
+        await self._ensure_column("campaign_entities", "tags_json", "TEXT DEFAULT '[]'")
+        await self._ensure_column("campaign_entities", "status", "TEXT DEFAULT 'active'")
 
     async def _ensure_column(self, table: str, column: str, ddl: str) -> None:
         cursor = await self.conn.execute(f"PRAGMA table_info({table})")
