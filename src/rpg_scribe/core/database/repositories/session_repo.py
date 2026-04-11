@@ -193,6 +193,32 @@ class SessionRepository:
         await self.conn.commit()
         return cursor.rowcount > 0
 
+    async def update_session_title(self, session_id: str, title: str) -> bool:
+        """Update the session title. Returns True if a row was updated."""
+        cursor = await self.conn.execute(
+            "UPDATE sessions SET title = ? WHERE id = ?",
+            (title, session_id),
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def update_session_status(self, session_id: str, status: str) -> bool:
+        """Force-set session status. Returns True if a row was updated.
+
+        Only 'active' and 'completed' are valid values.
+        Raises ValueError for invalid status.
+        """
+        if status not in ("active", "completed"):
+            raise ValueError(
+                f"status must be 'active' or 'completed', got {status!r}"
+            )
+        cursor = await self.conn.execute(
+            "UPDATE sessions SET status = ? WHERE id = ?",
+            (status, session_id),
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
     @staticmethod
     def _merge_text_fields(primary: str, secondary: str) -> str:
         """Merge two description-like fields without losing unique text."""

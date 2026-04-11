@@ -90,6 +90,38 @@ class TestDatabaseSessions:
         assert "title" in session
         assert session["title"] == ""
 
+    async def test_update_session_title(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        result = await db.sessions.update_session_title("s1", "El dragón rojo")
+        assert result is True
+        session = await db.sessions.get_session("s1")
+        assert session is not None
+        assert session["title"] == "El dragón rojo"
+
+    async def test_update_session_title_not_found(self, db: Database) -> None:
+        result = await db.sessions.update_session_title("nonexistent", "titulo")
+        assert result is False
+
+    async def test_update_session_status_to_completed(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        result = await db.sessions.update_session_status("s1", "completed")
+        assert result is True
+        session = await db.sessions.get_session("s1")
+        assert session is not None
+        assert session["status"] == "completed"
+
+    async def test_update_session_status_invalid_raises(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        with pytest.raises(ValueError, match="status must be"):
+            await db.sessions.update_session_status("s1", "paused")
+
+    async def test_update_session_status_not_found(self, db: Database) -> None:
+        result = await db.sessions.update_session_status("nonexistent", "completed")
+        assert result is False
+
 
 class TestDatabaseTranscriptions:
     async def test_save_and_get_transcriptions(self, db: Database) -> None:
