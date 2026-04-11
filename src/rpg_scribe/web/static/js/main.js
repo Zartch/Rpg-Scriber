@@ -193,3 +193,98 @@ setTimeout(function () {
 }, 500);
 
 setMode("live");
+
+// ── Session banner ────────────────────────────────────────────────
+
+(function initSessionBanner() {
+  var bannerEl = document.getElementById("session-banner");
+  var bannerIdEl = document.getElementById("session-banner-id");
+  var titleInput = document.getElementById("session-banner-title");
+  var autoTitleBtn = document.getElementById("session-banner-autotitle");
+  var statusSelect = document.getElementById("session-banner-status");
+  var applyBtn = document.getElementById("session-banner-apply");
+
+  if (!bannerEl) return;
+
+  function showBanner(sessionId, title, currentStatus) {
+    bannerIdEl.textContent = sessionId;
+    titleInput.value = title || "";
+    statusSelect.value = currentStatus || "active";
+    bannerEl.classList.remove("hidden");
+    state.activeSessionId = sessionId;
+  }
+
+  function hideBanner() {
+    bannerEl.classList.add("hidden");
+  }
+
+  // Fetch current status on page load to set banner initial state
+  fetch("/api/status")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.active_session_id) {
+        showBanner(
+          data.active_session_id,
+          data.active_session_title || "",
+          "active"
+        );
+      }
+    })
+    .catch(function () {});
+
+  // Save title on blur or Enter
+  function saveTitle() {
+    var sessionId = bannerIdEl.textContent;
+    if (!sessionId) return;
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/title", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: titleInput.value }),
+    }).catch(function () {});
+  }
+
+  titleInput.addEventListener("blur", saveTitle);
+  titleInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { saveTitle(); titleInput.blur(); }
+  });
+
+  // Auto-generate title
+  autoTitleBtn.addEventListener("click", function () {
+    var sessionId = bannerIdEl.textContent;
+    if (!sessionId) return;
+    autoTitleBtn.disabled = true;
+    autoTitleBtn.textContent = "...";
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/generate-title", {
+      method: "POST",
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.title) { titleInput.value = data.title; }
+      })
+      .catch(function () {})
+      .finally(function () {
+        autoTitleBtn.disabled = false;
+        autoTitleBtn.textContent = "✨ Auto";
+      });
+  });
+
+  // Apply status change
+  applyBtn.addEventListener("click", function () {
+    var sessionId = bannerIdEl.textContent;
+    if (!sessionId) return;
+    applyBtn.disabled = true;
+    fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: statusSelect.value }),
+    })
+      .then(function (r) {
+        if (!r.ok) { return r.json().then(function (d) { alert("Error: " + (d.detail || r.status)); }); }
+        // Refresh the session list to reflect the status change
+        fetchSessionList();
+      })
+      .catch(function () { alert("Error al aplicar el estado."); })
+      .finally(function () { applyBtn.disabled = false; });
+  });
+
+})();
