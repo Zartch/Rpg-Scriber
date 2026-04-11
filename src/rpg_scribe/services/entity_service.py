@@ -67,12 +67,15 @@ class EntityService:
 
     @staticmethod
     def _extract_entity_type(value: Any) -> str:
-        """Extract entity type from dict/dataclass-like value."""
+        """Extract and normalize entity type from dict/dataclass-like value."""
+        from rpg_scribe.core.catalogs import normalize_entity_type
         if isinstance(value, dict):
-            return str(value.get("entity_type", "group") or "group").strip() or "group"
-        if hasattr(value, "entity_type"):
-            return str(getattr(value, "entity_type", "group") or "group").strip() or "group"
-        return "group"
+            raw = str(value.get("entity_type", "other") or "other").strip()
+        elif hasattr(value, "entity_type"):
+            raw = str(getattr(value, "entity_type", "other") or "other").strip()
+        else:
+            raw = "other"
+        return normalize_entity_type(raw).value
 
     @staticmethod
     def _extract_entity_description(value: Any) -> str:

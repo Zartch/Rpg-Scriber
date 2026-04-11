@@ -50,6 +50,7 @@ Ver detalles completos: [`docs/architecture.md`](docs/architecture.md)
 - Discord voice y DAVE E2EE: [`docs/discord-voice.md`](docs/discord-voice.md)
 - Campaign summaries: [`docs/campaign-summaries.md`](docs/campaign-summaries.md)
 - TTS narración: [`docs/tts-narration.md`](docs/tts-narration.md)
+- Grafo canónico de entidades/relaciones: [`docs/canonical-graph-model.md`](docs/canonical-graph-model.md)
 
 ## Convenciones de Código
 
@@ -79,7 +80,7 @@ Ver detalles completos: [`docs/architecture.md`](docs/architecture.md)
 
 ## Testing
 
-- 14 archivos de test, ~372 tests (~372 pass, 1 fallo pre-existente)
+- 15 archivos de test, ~405 tests (~404 pass, 1 fallo pre-existente)
 - **Fallos pre-existentes conocidos**:
   - `test_tts_config_from_toml`: el `default.toml` tiene TTS habilitado, el test espera `False`
   - `test_defaults_from_toml_override_dataclass_defaults`: falla si `RPG_SCRIBE_HOST` está en env vars

@@ -50,8 +50,10 @@ class EntityInfo:
     """A known campaign entity (clan, corporation, faction, group)."""
 
     name: str
-    entity_type: str = "group"
+    entity_type: str = "other"
     description: str = ""
+    tags: list[str] = field(default_factory=list)
+    status: str = "active"
 
 
 @dataclass
@@ -61,6 +63,9 @@ class RelationshipTypeInfo:
     key: str
     label: str
     category: str = "general"
+    relation_family: str = ""
+    polarity: str = "neutral"
+    is_canonical: bool = False
 
 
 @dataclass
@@ -72,6 +77,16 @@ class CharacterRelationshipInfo:
     relation_type_key: str
     relation_type_label: str
     notes: str = ""
+    relation_family: str = ""
+    strength: float = 0.5
+    confidence: float = 0.5
+    polarity: str = "neutral"
+    certainty: str = "explicit"
+    origin: str = "extracted"
+    is_active: bool = True
+    source_session_id: str = ""
+    tags: list[str] = field(default_factory=list)
+    type_label_raw: str = ""
 
 
 

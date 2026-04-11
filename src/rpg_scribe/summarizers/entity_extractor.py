@@ -7,6 +7,12 @@ import json
 import logging
 import re
 
+from rpg_scribe.core.catalogs import (
+    CANONICAL_RELATION_KEYS,
+    build_catalog_prompt_block,
+    normalize_entity_type,
+    resolve_spanish_to_canonical,
+)
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import EntitiesUpdatedEvent
 from rpg_scribe.core.models import CampaignContext, EntityInfo, LocationInfo, NPCInfo
@@ -158,6 +164,7 @@ class EntityExtractor:
             known_locations="\n".join(known_locations_lines),
             known_entities="\n".join(known_entities_lines),
             known_relationships="\n".join(known_relationships_lines),
+            catalog_block=build_catalog_prompt_block(),
         )
 
         try:
@@ -211,10 +218,8 @@ class EntityExtractor:
             # ── Entities ───────────────────────────────────────────
             for entity in extracted["entities"]:
                 name = str(entity.get("name", "")).strip()
-                entity_type = (
-                    str(entity.get("entity_type", "group") or "group").strip()
-                    or "group"
-                )
+                raw_entity_type = str(entity.get("entity_type", "other") or "other").strip()
+                entity_type = normalize_entity_type(raw_entity_type).value
                 description = str(entity.get("description", "")).strip()
                 if not name:
                     continue
@@ -277,12 +282,12 @@ class EntityExtractor:
                 await self._repo.save_entity(
                     campaign_id=self._campaign.campaign_id,
                     name=ent_name,
-                    entity_type="group",
+                    entity_type="other",
                     description="",
                     first_seen_session=session_id,
                 )
                 self._campaign.entities.append(
-                    EntityInfo(name=ent_name, entity_type="group", description="")
+                    EntityInfo(name=ent_name, entity_type="other", description="")
                 )
                 relation_seed_map[ent_name.casefold()] = f"ent:{ent_name}"
                 results["new_entities"].append(ent_name)
@@ -303,6 +308,27 @@ class EntityExtractor:
                     or "general"
                 )
                 notes = str(rel.get("notes", "")).strip()
+
+                # Enrich with new fields from LLM
+                certainty = str(rel.get("certainty", "explicit") or "explicit").strip()
+                raw_strength = rel.get("strength", 0.5)
+                try:
+                    strength = float(raw_strength)
+                    strength = max(0.0, min(1.0, strength))
+                except (TypeError, ValueError):
+                    strength = 0.5
+                tags = rel.get("tags") or []
+                if not isinstance(tags, list):
+                    tags = []
+                tags = [str(t).strip() for t in tags if t]
+                evidence_raw = str(rel.get("evidence", "") or "").strip()
+                evidence_snippets = [evidence_raw] if evidence_raw else []
+
+                # If the LLM returned a non-catalog type, lower confidence and preserve raw
+                is_in_catalog = resolve_spanish_to_canonical(relation_type) in CANONICAL_RELATION_KEYS
+                confidence = 0.8 if is_in_catalog else 0.3
+                type_label_raw = "" if is_in_catalog else relation_type
+
                 if not source_key or not target_key or not relation_type:
                     continue
                 try:
@@ -316,6 +342,13 @@ class EntityExtractor:
                         relation_type,
                         notes=notes,
                         category=category,
+                        strength=strength,
+                        confidence=confidence,
+                        certainty=certainty,
+                        source_session_id=session_id,
+                        evidence_snippets=evidence_snippets,
+                        tags=tags,
+                        type_label_raw=type_label_raw,
                     )
                     results["new_relationships"].append(
                         f"{source_key} -> {target_key}: {relation_type}"

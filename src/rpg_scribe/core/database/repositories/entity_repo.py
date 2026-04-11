@@ -9,6 +9,11 @@ import time
 import unicodedata
 from typing import Any
 
+from rpg_scribe.core.catalogs import (
+    RELATION_TYPE_MAP,
+    resolve_spanish_to_canonical,
+)
+
 
 def normalize_relationship_type_label(value: str) -> str:
     """Normalize a relationship type label for matching/deduplication."""
@@ -466,25 +471,30 @@ class EntityRepository:
         self,
         campaign_id: str,
         name: str,
-        entity_type: str = "group",
+        entity_type: str = "other",
         description: str = "",
         first_seen_session: str = "",
+        tags: list[str] | None = None,
+        status: str = "active",
     ) -> None:
         """Insert a new campaign entity record."""
         import uuid
 
         entity_id = str(uuid.uuid4())
+        tags_json = json.dumps(tags or [])
         await self.conn.execute(
             "INSERT INTO campaign_entities "
-            "(id, campaign_id, name, entity_type, description, first_seen_session) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(id, campaign_id, name, entity_type, description, first_seen_session, tags_json, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 entity_id,
                 campaign_id,
                 name,
-                entity_type or "group",
+                entity_type or "other",
                 description,
                 first_seen_session,
+                tags_json,
+                status or "active",
             ),
         )
         await self.conn.commit()
@@ -679,8 +689,50 @@ class EntityRepository:
         *,
         category: str = "general",
     ) -> dict[str, Any]:
-        """Resolve or create a canonical relationship type with fuzzy dedupe."""
+        """Resolve or create a canonical relationship type.
+
+        Priority: (1) catalog key match, (2) DB exact match, (3) fuzzy match, (4) create new.
+        """
         raw_label = relation_label.strip()
+
+        # 1. Try catalog lookup first (fast, exact, no DB needed for the check)
+        catalog_key = resolve_spanish_to_canonical(raw_label)
+        if catalog_key and catalog_key in RELATION_TYPE_MAP:
+            family, polarity, label_es = RELATION_TYPE_MAP[catalog_key]
+            # Check if already seeded in DB
+            cursor = await self.conn.execute(
+                "SELECT * FROM relationship_types WHERE campaign_id = ? AND canonical_key = ? LIMIT 1",
+                (campaign_id, catalog_key),
+            )
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            # Not seeded yet — insert it now as canonical
+            import uuid
+            now = time.time()
+            type_id = str(uuid.uuid4())
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO relationship_types "
+                "(id, campaign_id, canonical_key, label, category, aliases_json, usage_count, "
+                "relation_family, polarity, is_canonical, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?)",
+                (
+                    type_id, campaign_id, catalog_key, label_es,
+                    category or "general", json.dumps([raw_label] if raw_label != label_es else []),
+                    family.value, polarity, now, now,
+                ),
+            )
+            await self.conn.commit()
+            return {
+                "id": type_id, "campaign_id": campaign_id,
+                "canonical_key": catalog_key, "label": label_es,
+                "category": category or "general", "aliases": [],
+                "usage_count": 0, "relation_family": family.value,
+                "polarity": polarity, "is_canonical": 1,
+                "created_at": now, "updated_at": now,
+            }
+
+        # 2. Normalize and look up in DB
         canonical = normalize_relationship_type_label(raw_label)
         existing = await self.get_relationship_types(campaign_id)
 
@@ -688,6 +740,7 @@ class EntityRepository:
             if row.get("canonical_key", "") == canonical:
                 return row
 
+        # 3. Fuzzy match against existing DB types
         best: dict[str, Any] | None = None
         best_score = 0.0
         for row in existing:
@@ -709,6 +762,7 @@ class EntityRepository:
                 best["aliases"] = sorted(set(aliases))
             return best
 
+        # 4. Create new (user/campaign-specific, not canonical)
         import uuid
 
         type_id = str(uuid.uuid4())
@@ -717,30 +771,21 @@ class EntityRepository:
         aliases = [raw_label] if raw_label and raw_label != display_label else []
         await self.conn.execute(
             "INSERT INTO relationship_types "
-            "(id, campaign_id, canonical_key, label, category, aliases_json, usage_count, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
+            "(id, campaign_id, canonical_key, label, category, aliases_json, usage_count, "
+            "relation_family, polarity, is_canonical, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 0, '', 'neutral', 0, ?, ?)",
             (
-                type_id,
-                campaign_id,
-                canonical,
-                display_label,
-                category or "general",
-                json.dumps(aliases),
-                now,
-                now,
+                type_id, campaign_id, canonical, display_label,
+                category or "general", json.dumps(aliases), now, now,
             ),
         )
         await self.conn.commit()
         return {
-            "id": type_id,
-            "campaign_id": campaign_id,
-            "canonical_key": canonical,
-            "label": display_label,
-            "category": category or "general",
-            "aliases": aliases,
-            "usage_count": 0,
-            "created_at": now,
-            "updated_at": now,
+            "id": type_id, "campaign_id": campaign_id,
+            "canonical_key": canonical, "label": display_label,
+            "category": category or "general", "aliases": aliases,
+            "usage_count": 0, "relation_family": "", "polarity": "neutral",
+            "is_canonical": 0, "created_at": now, "updated_at": now,
         }
 
     async def merge_relationship_types(
@@ -839,6 +884,18 @@ class EntityRepository:
         type_key: str,
         type_label: str,
         notes: str,
+        *,
+        relation_family: str = "",
+        strength: float = 0.5,
+        confidence: float = 0.5,
+        polarity: str = "neutral",
+        certainty: str = "explicit",
+        origin: str = "extracted",
+        is_active: bool = True,
+        source_session_id: str = "",
+        evidence_snippets: list[str] | None = None,
+        tags: list[str] | None = None,
+        type_label_raw: str = "",
     ) -> None:
         """Insert/update one relationship row by natural key."""
         import uuid
@@ -846,20 +903,26 @@ class EntityRepository:
         now = time.time()
         await self.conn.execute(
             "INSERT INTO character_relationships "
-            "(id, campaign_id, source_key, target_key, type_key, type_label, notes, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "(id, campaign_id, source_key, target_key, type_key, type_label, notes, "
+            "relation_family, strength, confidence, polarity, certainty, origin, is_active, "
+            "source_session_id, evidence_snippets_json, tags_json, type_label_raw, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(campaign_id, source_key, target_key, type_key) DO UPDATE SET "
-            "type_label=excluded.type_label, notes=excluded.notes, updated_at=excluded.updated_at",
+            "type_label=excluded.type_label, notes=excluded.notes, "
+            "strength=excluded.strength, confidence=excluded.confidence, "
+            "certainty=excluded.certainty, is_active=excluded.is_active, "
+            "updated_at=excluded.updated_at",
             (
-                str(uuid.uuid4()),
-                campaign_id,
-                source_key,
-                target_key,
-                type_key,
-                type_label,
-                notes,
-                now,
-                now,
+                str(uuid.uuid4()), campaign_id, source_key, target_key,
+                type_key, type_label, notes,
+                relation_family, strength, confidence, polarity,
+                certainty, origin, 1 if is_active else 0,
+                source_session_id,
+                json.dumps(evidence_snippets or []),
+                json.dumps(tags or []),
+                type_label_raw,
+                now, now,
             ),
         )
 
@@ -915,6 +978,15 @@ class EntityRepository:
         *,
         notes: str = "",
         category: str = "general",
+        strength: float = 0.5,
+        confidence: float = 0.5,
+        certainty: str = "explicit",
+        origin: str = "extracted",
+        is_active: bool = True,
+        source_session_id: str = "",
+        evidence_snippets: list[str] | None = None,
+        tags: list[str] | None = None,
+        type_label_raw: str = "",
     ) -> dict[str, Any]:
         """Create or update a typed relationship between two entities."""
         source = source_key.strip()
@@ -930,26 +1002,35 @@ class EntityRepository:
             category=category,
         )
 
-        import uuid
+        import uuid as _uuid
 
-        rel_id = str(uuid.uuid4())
+        rel_family = str(relation_type.get("relation_family") or "")
+        rel_polarity = str(relation_type.get("polarity") or "neutral")
+        raw = type_label_raw or (relation_label if relation_label != relation_type.get("label") else "")
+
         now = time.time()
         await self.conn.execute(
             "INSERT INTO character_relationships "
-            "(id, campaign_id, source_key, target_key, type_key, type_label, notes, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "(id, campaign_id, source_key, target_key, type_key, type_label, notes, "
+            "relation_family, strength, confidence, polarity, certainty, origin, is_active, "
+            "source_session_id, evidence_snippets_json, tags_json, type_label_raw, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(campaign_id, source_key, target_key, type_key) DO UPDATE SET "
-            "type_label=excluded.type_label, notes=excluded.notes, updated_at=excluded.updated_at",
+            "type_label=excluded.type_label, notes=excluded.notes, "
+            "strength=excluded.strength, confidence=excluded.confidence, "
+            "certainty=excluded.certainty, is_active=excluded.is_active, "
+            "updated_at=excluded.updated_at",
             (
-                rel_id,
-                campaign_id,
-                source,
-                target,
-                relation_type["canonical_key"],
-                relation_type["label"],
-                notes.strip(),
-                now,
-                now,
+                str(_uuid.uuid4()),
+                campaign_id, source, target,
+                relation_type["canonical_key"], relation_type["label"], notes.strip(),
+                rel_family, strength, confidence, rel_polarity,
+                certainty, origin, 1 if is_active else 0,
+                source_session_id,
+                json.dumps(evidence_snippets or []),
+                json.dumps(tags or []),
+                raw, now, now,
             ),
         )
         await self.conn.execute(
@@ -959,11 +1040,8 @@ class EntityRepository:
             "), updated_at = ? "
             "WHERE campaign_id = ? AND canonical_key = ?",
             (
-                campaign_id,
-                relation_type["canonical_key"],
-                now,
-                campaign_id,
-                relation_type["canonical_key"],
+                campaign_id, relation_type["canonical_key"], now,
+                campaign_id, relation_type["canonical_key"],
             ),
         )
         await self.conn.commit()
@@ -1049,7 +1127,35 @@ class EntityRepository:
             "WHERE r.campaign_id = ? ORDER BY r.updated_at DESC, r.created_at DESC",
             (campaign_id,),
         )
-        return [dict(r) for r in await cursor.fetchall()]
+        rows = []
+        for r in await cursor.fetchall():
+            row = dict(r)
+            for json_col in ("tags_json", "evidence_snippets_json"):
+                try:
+                    row[json_col.replace("_json", "s")] = json.loads(row.get(json_col) or "[]")
+                except Exception:
+                    row[json_col.replace("_json", "s")] = []
+            rows.append(row)
+        return rows
+
+    async def seed_canonical_relationship_types(self, campaign_id: str) -> None:
+        """Populate relationship_types with system catalog entries (is_canonical=1).
+
+        Skips types that already exist for this campaign. Safe to call repeatedly.
+        """
+        from rpg_scribe.core.catalogs import _RELATION_CATALOG
+        import uuid
+
+        now = time.time()
+        for key, family, polarity, label_es in _RELATION_CATALOG:
+            await self.conn.execute(
+                "INSERT OR IGNORE INTO relationship_types "
+                "(id, campaign_id, canonical_key, label, category, aliases_json, usage_count, "
+                "relation_family, polarity, is_canonical, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'general', '[]', 0, ?, ?, 1, ?, ?)",
+                (str(uuid.uuid4()), campaign_id, key, label_es, family.value, polarity, now, now),
+            )
+        await self.conn.commit()
 
     async def rename_relationship_entity_key(
         self,

@@ -72,7 +72,9 @@ CREATE TABLE IF NOT EXISTS campaign_entities (
     entity_type TEXT,
     description TEXT,
     first_seen_session TEXT,
-    merged_into TEXT DEFAULT ''
+    merged_into TEXT DEFAULT '',
+    tags_json TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS questions (
@@ -92,6 +94,9 @@ CREATE TABLE IF NOT EXISTS relationship_types (
     category TEXT DEFAULT 'general',
     aliases_json TEXT,
     usage_count INTEGER DEFAULT 0,
+    relation_family TEXT DEFAULT '',
+    polarity TEXT DEFAULT 'neutral',
+    is_canonical INTEGER DEFAULT 0,
     created_at REAL,
     updated_at REAL,
     UNIQUE (campaign_id, canonical_key)
@@ -105,6 +110,17 @@ CREATE TABLE IF NOT EXISTS character_relationships (
     type_key TEXT NOT NULL,
     type_label TEXT NOT NULL,
     notes TEXT,
+    relation_family TEXT DEFAULT '',
+    strength REAL DEFAULT 0.5,
+    confidence REAL DEFAULT 0.5,
+    polarity TEXT DEFAULT 'neutral',
+    certainty TEXT DEFAULT 'explicit',
+    origin TEXT DEFAULT 'extracted',
+    is_active INTEGER DEFAULT 1,
+    source_session_id TEXT DEFAULT '',
+    evidence_snippets_json TEXT DEFAULT '[]',
+    tags_json TEXT DEFAULT '[]',
+    type_label_raw TEXT DEFAULT '',
     created_at REAL,
     updated_at REAL,
     UNIQUE (campaign_id, source_key, target_key, type_key)

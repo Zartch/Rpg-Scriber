@@ -244,6 +244,27 @@ DEBE existir previamente en las listas de NPCs, localizaciones o entidades \
 (ya conocidas o recién extraídas en esta respuesta). No crees relaciones \
 que referencien entidades que no existen en ninguna lista.
 
+{catalog_block}
+
+TIPOS DE ENTIDAD VÁLIDOS para el campo entity_type:
+- npc (personaje no jugador individual)
+- faction (facción, clan, banda)
+- organization (corporación, empresa, institución, fuerza policial/militar)
+- location (lugar — solo si aparece como entidad en una relación)
+- item (objeto relevante)
+- event (suceso importante con consecuencias duraderas)
+- objective (objetivo o misión)
+- technology (tecnología, programa, implante)
+- other (cualquier otro)
+
+NIVELES DE CERTEZA para el campo certainty:
+- explicit: afirmado claramente como hecho en la narración
+- inferred: deducido del contexto, no dicho explícitamente
+- suspected: un personaje lo cree pero no está confirmado
+- rumor: información de segunda mano, no verificada
+- claimed: alguien lo afirma, fiabilidad desconocida
+- uncertain: evidencia insuficiente
+
 JUGADORES (NO son PNJs, no los extraigas como NPCs):
 {players_block}
 
@@ -267,11 +288,22 @@ texto adicional antes o después:
 
 {{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
 "locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
-"entities": [{{"name": "Nombre de la entidad", "entity_type": "corporacion|faccion|clan|grupo|fuerza|otro", "description": "Breve descripción"}}], \
+"entities": [{{"name": "Nombre de la entidad", \
+"entity_type": "npc|faction|organization|location|item|event|objective|technology|other", \
+"description": "Breve descripción"}}], \
 "relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
 "target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
-"relation_type": "aliado de|enemigo de|miembro de...", \
-"category": "general|politica|familiar|social", "notes": "opcional"}}]}}
+"relation_type": "works_for|member_of|ally_of|...", \
+"certainty": "explicit|inferred|suspected|rumor|claimed|uncertain", \
+"strength": 0.5, \
+"tags": ["mission_related", "secret"], \
+"evidence": "frase breve del resumen que sustenta esta relación", \
+"notes": "contexto adicional opcional"}}]}}
+
+Reglas para relation_type:
+- Usa SIEMPRE una clave del catálogo proporcionado (ej: works_for, member_of).
+- Si ningún tipo encaja bien, usa el más cercano y pon strength <= 0.3.
+- Si el LLM retorna texto libre, ponlo en "notes" y elige el tipo más próximo.
 
 Si no hay nuevos elementos, devuelve listas vacías.
 """

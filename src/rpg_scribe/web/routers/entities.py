@@ -153,6 +153,9 @@ async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) 
             key=str(t.get("canonical_key", "")),
             label=str(t.get("label", "")),
             category=str(t.get("category", "general") or "general"),
+            relation_family=str(t.get("relation_family", "") or ""),
+            polarity=str(t.get("polarity", "neutral") or "neutral"),
+            is_canonical=bool(t.get("is_canonical", 0)),
         )
         for t in types
         if t.get("canonical_key")
@@ -165,6 +168,16 @@ async def _sync_relationships_to_config(config: Any, db: Any, campaign_id: str) 
             relation_type_key=str(r.get("type_key", "")),
             relation_type_label=str(r.get("type_label", "")),
             notes=str(r.get("notes", "") or ""),
+            relation_family=str(r.get("relation_family", "") or ""),
+            strength=float(r.get("strength", 0.5) or 0.5),
+            confidence=float(r.get("confidence", 0.5) or 0.5),
+            polarity=str(r.get("polarity", "neutral") or "neutral"),
+            certainty=str(r.get("certainty", "explicit") or "explicit"),
+            origin=str(r.get("origin", "extracted") or "extracted"),
+            is_active=bool(r.get("is_active", 1)),
+            source_session_id=str(r.get("source_session_id", "") or ""),
+            tags=r.get("tags") or [],
+            type_label_raw=str(r.get("type_label_raw", "") or ""),
         )
         for r in rels
         if r.get("source_key") and r.get("target_key") and r.get("type_key")
@@ -935,6 +948,41 @@ async def update_merged_entity_endpoint(
         logger.error("Error updating merged entity: %s", exc)
         return {"ok": False, "error": "Failed to update merged entity"}
     return {"ok": True}
+
+
+# -- Catalog endpoint ----------------------------------------------
+
+
+@router.get("/api/campaigns/{campaign_id}/catalogs")
+async def get_catalogs(campaign_id: str) -> dict[str, Any]:
+    """Return the system catalog of relation types, entity types, certainty levels, etc.
+
+    Useful for populating dropdowns and validating user input in the frontend.
+    """
+    from rpg_scribe.core.catalogs import (
+        Certainty,
+        EntityType,
+        RelationFamily,
+        RelationOrigin,
+        _RELATION_CATALOG,
+    )
+
+    relation_types = [
+        {
+            "key": key,
+            "label_es": label_es,
+            "family": family.value,
+            "polarity": polarity,
+        }
+        for key, family, polarity, label_es in _RELATION_CATALOG
+    ]
+    return {
+        "relation_types": relation_types,
+        "relation_families": [f.value for f in RelationFamily],
+        "entity_types": [e.value for e in EntityType],
+        "certainty_levels": [c.value for c in Certainty],
+        "relation_origins": [o.value for o in RelationOrigin],
+    }
 
 
 # -- Relationship endpoints ----------------------------------------

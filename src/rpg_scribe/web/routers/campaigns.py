@@ -259,6 +259,10 @@ async def get_campaigns() -> dict[str, Any]:
             logger.error("Error fetching entities: %s", exc)
             campaign.setdefault("entities", [])
         try:
+            await db.entities.seed_canonical_relationship_types(campaign_id)
+        except Exception as exc:
+            logger.error("Error seeding canonical relationship types: %s", exc)
+        try:
             campaign["relationship_types"] = await db.entities.get_relationship_types(
                 campaign_id
             )
