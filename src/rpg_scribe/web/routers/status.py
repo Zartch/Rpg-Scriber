@@ -47,9 +47,21 @@ async def get_status() -> dict[str, Any]:
     """Return current component statuses."""
     state = _get_state()
     config = _get_config()
+    db = _get_database()
+
+    active_session_title: str | None = None
+    if state.active_session_id and db is not None:
+        try:
+            session = await db.sessions.get_session(state.active_session_id)
+            if session:
+                active_session_title = session.get("title") or ""
+        except Exception:
+            pass
+
     return {
         "components": state.component_status,
         "active_session_id": state.active_session_id,
+        "active_session_title": active_session_title,
         "websocket_clients": _get_manager().active_count,
         "web_limits": {
             "transcriptions_buffer_max_items": state.max_transcriptions,
