@@ -331,6 +331,10 @@ function renderSessionList(sessions) {
       indicators += '<span class="session-indicator" title="Has summary">S</span>';
     }
 
+    var titleLine = s.title
+      ? '<div class="session-title">' + escapeHtml(s.title) + '</div>'
+      : '<div class="session-title session-title-empty">Sin título</div>';
+
     item.innerHTML =
       '<div class="session-header">' +
       '<span class="session-id">' + escapeHtml(s.id.substring(0, 8)) + "</span>" +
@@ -340,6 +344,7 @@ function renderSessionList(sessions) {
       escapeHtml(label) + '</span>' +
       '</div>' +
       '</div>' +
+      titleLine +
       metaLine +
       (preview ? '<div class="session-preview">' + escapeHtml(preview) + '</div>' : "");
 
