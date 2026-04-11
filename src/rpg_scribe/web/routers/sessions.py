@@ -150,6 +150,7 @@ def _format_session_list(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]
             {
                 "id": s["id"],
                 "campaign_id": s.get("campaign_id", ""),
+                "title": s.get("title", "") or "",
                 "started_at": started,
                 "ended_at": ended,
                 "duration_minutes": duration_minutes,
@@ -252,6 +253,85 @@ async def update_session_chronology(
         state.session_chronology = text
 
     return {"ok": True}
+
+
+@router.patch("/api/sessions/{session_id}/title")
+async def update_session_title(
+    session_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Set or update the human-readable title of a session."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    title = body.get("title", "")
+    ok = await db.sessions.update_session_title(session_id, title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
+@router.patch("/api/sessions/{session_id}/status")
+async def update_session_status(
+    session_id: str, body: dict[str, str]
+) -> dict[str, Any]:
+    """Force-set the status of a session (active or completed).
+
+    Useful for unsticking sessions left active after a crash.
+    """
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    status = body.get("status", "")
+    try:
+        ok = await db.sessions.update_session_status(session_id, status)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
+@router.post("/api/sessions/{session_id}/generate-title")
+async def generate_session_title(session_id: str) -> dict[str, Any]:
+    """Auto-generate and save a session title using the LLM (on demand)."""
+    db = _get_database()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    session = await db.sessions.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    summary = str(session.get("session_summary") or "")
+    config = _get_config()
+
+    from rpg_scribe.core.models import CampaignContext, SummarizerConfig
+    from rpg_scribe.summarizers.claude_summarizer import ClaudeSummarizer
+    from rpg_scribe.web.routers.campaigns import _load_campaign_context_from_db
+
+    campaign = None
+    campaign_id = session.get("campaign_id")
+    if campaign_id:
+        campaign = await _load_campaign_context_from_db(db, campaign_id)
+    if campaign is None:
+        campaign = CampaignContext.create_generic()
+
+    summarizer_config = (
+        config.summarizer
+        if config is not None and getattr(config, "summarizer", None)
+        else SummarizerConfig()
+    )
+
+    summarizer = ClaudeSummarizer(
+        _get_event_bus(),
+        summarizer_config,
+        campaign,
+        database=db,
+    )
+
+    title = await summarizer.generate_title_from_summary(summary)
+    await db.sessions.update_session_title(session_id, title)
+    return {"ok": True, "title": title}
 
 
 @router.post("/api/sessions/{session_id}/generate-summary")

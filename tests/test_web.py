@@ -23,7 +23,7 @@ from rpg_scribe.web.state import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 
-# â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Fixtures â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _make_status(**overrides) -> SystemStatusEvent:
     return SystemStatusEvent(**defaults)
 
 
-# â”€â”€ WebState unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ WebState unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestWebState:
@@ -157,7 +157,7 @@ class TestWebState:
         assert state.session_summary == "v2"
 
 
-# â”€â”€ ConnectionManager unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ ConnectionManager unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestConnectionManager:
@@ -216,7 +216,7 @@ class TestConnectionManager:
         await mgr.broadcast({"type": "empty"})
 
 
-# â”€â”€ WebSocketBridge unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ WebSocketBridge unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestWebSocketBridge:
@@ -282,7 +282,7 @@ class TestWebSocketBridge:
         assert payload["data"]["component"] == "listener"
 
 
-# â”€â”€ REST endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ REST endpoint tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestRESTEndpoints:
@@ -592,7 +592,39 @@ class TestRESTEndpoints:
         assert len(downloaded.content) > 0
 
 
-# â”€â”€ Integration: event bus â†’ WebState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+class TestStatusEndpoint:
+    async def test_status_includes_active_session_title_none(self, client) -> None:
+        resp = await client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "active_session_title" in data
+        assert data["active_session_title"] is None
+
+    async def test_status_includes_active_session_title_from_db(
+        self, client, app
+    ) -> None:
+        from rpg_scribe.web import routes as _routes
+
+        state = _routes.router.state
+        state.active_session_id = "sess-abc"
+
+        db_mock = AsyncMock()
+        db_mock.sessions.get_session = AsyncMock(
+            return_value={"id": "sess-abc", "title": "El dragón rojo", "status": "active"}
+        )
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.get("/api/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["active_session_title"] == "El dragón rojo"
+        finally:
+            state.active_session_id = None
+            _routes.router.database = None
+
+
+# â"€â"€ Integration: event bus â†’ WebState â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestEventBusIntegration:
@@ -646,7 +678,7 @@ class TestEventBusIntegration:
         assert len(state.transcriptions) == 3
 
 
-# â”€â”€ Session list endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Session list endpoint tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestSessionListEndpoint:
@@ -748,7 +780,7 @@ class TestSessionListEndpoint:
             assert preview.endswith("...")
 
 
-# â”€â”€ create_app factory tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ create_app factory tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestFinalizeEndpoint:
@@ -887,6 +919,102 @@ class TestCreateApp:
         assert app.title == "RPG Scribe"
 
 
+class TestSessionTitleStatusEndpoints:
+    async def test_patch_title_no_db_returns_503(self, client) -> None:
+        resp = await client.patch(
+            "/api/sessions/s1/title", json={"title": "nuevo titulo"}
+        )
+        assert resp.status_code == 503
 
+    async def test_patch_status_no_db_returns_503(self, client) -> None:
+        resp = await client.patch(
+            "/api/sessions/s1/status", json={"status": "completed"}
+        )
+        assert resp.status_code == 503
 
+    async def test_patch_title_not_found_returns_404(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_title = AsyncMock(return_value=False)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/missing/title", json={"title": "test"}
+            )
+            assert resp.status_code == 404
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_title_success(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_title = AsyncMock(return_value=True)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/title", json={"title": "El dragón rojo"}
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {"ok": True}
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_status_invalid_value_returns_422(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_status = AsyncMock(
+            side_effect=ValueError("status must be 'active' or 'completed'")
+        )
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/status", json={"status": "paused"}
+            )
+            assert resp.status_code == 422
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_status_success(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_status = AsyncMock(return_value=True)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/status", json={"status": "completed"}
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {"ok": True}
+        finally:
+            _routes.router.database = None
+
+    async def test_post_generate_title_no_db_returns_503(self, client) -> None:
+        resp = await client.post("/api/sessions/s1/generate-title")
+        assert resp.status_code == 503
+
+    async def test_post_generate_title_not_found_returns_404(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.get_session = AsyncMock(return_value=None)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.post("/api/sessions/missing/generate-title")
+            assert resp.status_code == 404
+        finally:
+            _routes.router.database = None
 
