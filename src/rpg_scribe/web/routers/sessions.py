@@ -91,6 +91,7 @@ async def _load_session_export_data(session_id: str) -> SessionExportData | None
             started_at=session_row.get("started_at", ""),
             ended_at=session_row.get("ended_at", ""),
             status=session_row.get("status", "active") or "active",
+            title=session_row.get("title")
         )
 
     if db is not None:
@@ -111,6 +112,7 @@ async def _load_session_export_data(session_id: str) -> SessionExportData | None
                 started_at=session_row.get("started_at", ""),
                 ended_at=session_row.get("ended_at", ""),
                 status=str(session_row.get("status", "") or ""),
+                title=str(session_row.get("title", "") or ""),
             )
 
     if live_transcriptions:
@@ -120,6 +122,7 @@ async def _load_session_export_data(session_id: str) -> SessionExportData | None
             session_summary="",
             session_chronology="",
             status="snapshot",
+            title="",
         )
 
     return None
@@ -394,7 +397,7 @@ async def generate_session_summary(session_id: str) -> dict[str, Any]:
 
     summary = await summarizer.generate_session_summary_from_transcriptions(rows)
     if summary:
-        await db.sessions.end_session(session_id, summary)
+        await db.sessions.update_session_summary(session_id, summary)
         if session_id == state.active_session_id:
             state.session_summary = summary
 

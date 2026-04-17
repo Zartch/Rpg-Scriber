@@ -82,16 +82,16 @@ class TestApplication:
         """Test that the application can start and shutdown cleanly."""
         app = Application(config)
 
-        # Mock transcriber to avoid real API calls
-        with patch(
-            "rpg_scribe.transcribers.openai_transcriber.OpenAITranscriber"
-        ) as MockTranscriber, patch(
+        # Mock transcriber setup and web server to avoid real API calls.
+        # Patch _setup_transcriber directly so the test is independent of
+        # which transcriber_type is set in default.toml.
+        with patch.object(
+            app, "_setup_transcriber", new_callable=AsyncMock
+        ) as mock_setup_transcriber, patch(
             "uvicorn.Config"
         ), patch(
             "uvicorn.Server"
         ) as MockServer:
-            mock_transcriber = AsyncMock()
-            MockTranscriber.return_value = mock_transcriber
             mock_server_instance = AsyncMock()
             MockServer.return_value = mock_server_instance
 
@@ -100,8 +100,8 @@ class TestApplication:
             # Verify DB is connected
             assert app.db._conn is not None
 
-            # Verify transcriber started
-            mock_transcriber.start.assert_called_once()
+            # Verify transcriber setup was called
+            mock_setup_transcriber.assert_called_once()
 
             await app.shutdown()
             assert app.db._conn is None

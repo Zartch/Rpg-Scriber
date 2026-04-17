@@ -943,8 +943,9 @@ class TestFinalizeSessionWithExtraction:
     ):
         """finalize_session should extract NPCs via a second LLM call and save them."""
         db = AsyncMock(spec=Database)
-        db.npc_exists = AsyncMock(return_value=False)
-        db.save_npc = AsyncMock()
+        db.entities = AsyncMock()
+        db.entities.npc_exists = AsyncMock(return_value=False)
+        db.entities.save_npc = AsyncMock()
 
         summarizer = ClaudeSummarizer(
             bus, config, campaign, client=mock_client, database=db
@@ -972,7 +973,7 @@ class TestFinalizeSessionWithExtraction:
         await summarizer.finalize_session()
 
         # Verify NPC was saved
-        db.save_npc.assert_called_once_with(
+        db.entities.save_npc.assert_called_once_with(
             campaign_id="test-campaign",
             name="Gareth",
             description="Mercader ambulante",
@@ -983,8 +984,9 @@ class TestFinalizeSessionWithExtraction:
     async def test_finalize_skips_known_npcs(self, bus, config, campaign, mock_client):
         """Known NPCs should not be saved again."""
         db = AsyncMock(spec=Database)
-        db.npc_exists = AsyncMock(return_value=True)
-        db.save_npc = AsyncMock()
+        db.entities = AsyncMock()
+        db.entities.npc_exists = AsyncMock(return_value=True)
+        db.entities.save_npc = AsyncMock()
 
         summarizer = ClaudeSummarizer(
             bus, config, campaign, client=mock_client, database=db
@@ -1006,7 +1008,7 @@ class TestFinalizeSessionWithExtraction:
         await summarizer.start("session-1")
         await summarizer.finalize_session()
 
-        db.save_npc.assert_not_called()
+        db.entities.save_npc.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_finalize_no_database_skips_extraction(
@@ -1036,6 +1038,7 @@ class TestFinalizeSessionWithExtraction:
     ):
         """If extraction LLM call fails, finalize_session should still complete."""
         db = AsyncMock(spec=Database)
+        db.entities = AsyncMock()
 
         summarizer = ClaudeSummarizer(
             bus, config, campaign, client=mock_client, database=db
@@ -1067,8 +1070,9 @@ class TestFinalizeSessionWithExtraction:
     ):
         """NPCs with empty names should be skipped."""
         db = AsyncMock(spec=Database)
-        db.npc_exists = AsyncMock(return_value=False)
-        db.save_npc = AsyncMock()
+        db.entities = AsyncMock()
+        db.entities.npc_exists = AsyncMock(return_value=False)
+        db.entities.save_npc = AsyncMock()
 
         summarizer = ClaudeSummarizer(
             bus, config, campaign, client=mock_client, database=db
@@ -1093,7 +1097,7 @@ class TestFinalizeSessionWithExtraction:
         await summarizer.finalize_session()
 
         # Only the valid NPC should be saved
-        db.save_npc.assert_called_once_with(
+        db.entities.save_npc.assert_called_once_with(
             campaign_id="test-campaign",
             name="Valida",
             description="NPC vÃ¡lida",

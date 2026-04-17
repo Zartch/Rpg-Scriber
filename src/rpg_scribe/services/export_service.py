@@ -690,6 +690,7 @@ def _render_html(
 class SessionExportData:
     """Normalized data needed to render an export bundle."""
 
+    title: str
     session_id: str
     transcriptions: list[dict[str, Any]]
     session_summary: str
@@ -709,7 +710,7 @@ class SessionExportService:
     def _session_prefix(self, session_id: str) -> str:
         return f"session-export-{_sanitize_path_segment(session_id)}-"
 
-    def _next_export_path(self, session_id: str, now: datetime) -> tuple[str, Path]:
+    def _next_export_path(self, session_title: str, session_id: str, now: datetime) -> tuple[str, Path]:
         root = self._root
 
         date_part = _filename_export_date(now)
@@ -721,14 +722,15 @@ class SessionExportService:
             export_id = f"{base_export_id}-{index:02d}"
             index += 1
 
-        zip_name = f"{self._session_prefix(session_id)}{export_id.replace('export-', '')}.zip"
+        safe_title = _sanitize_path_segment(session_title) if session_title else "session"
+        zip_name = f"{safe_title}-{self._session_prefix(session_id)}{export_id.replace('export-', '')}.zip"
         zip_path = root / zip_name
         return zip_name, zip_path
 
     def build_export(self, data: SessionExportData) -> dict[str, Any]:
         now = datetime.now()
         export_date_display = _display_export_date(now)
-        zip_name, zip_path = self._next_export_path(data.session_id, now)
+        zip_name, zip_path = self._next_export_path(data.title, data.session_id, now)
         export_id = zip_path.stem
 
         with tempfile.TemporaryDirectory(prefix="rpg-export-", dir=str(self._root)) as tmp_dir:
@@ -798,7 +800,7 @@ class SessionExportService:
     def list_exports(self, session_id: str) -> list[dict[str, Any]]:
         exports: list[dict[str, Any]] = []
         prefix = self._session_prefix(session_id)
-        for zip_path in self._root.glob(f"{prefix}*.zip"):
+        for zip_path in self._root.glob(f"*{prefix}*.zip"):
             if not zip_path.is_file():
                 continue
             created = datetime.fromtimestamp(zip_path.stat().st_mtime)
@@ -831,13 +833,13 @@ class SessionExportService:
         zip_path = (self._root / export_name).resolve()
         if self._root not in zip_path.parents or not zip_path.is_file():
             return None
-        if not zip_path.name.startswith(self._session_prefix(session_id)):
+        if self._session_prefix(session_id) not in zip_path.name:
             return None
         return zip_path
 
     def clear_session_exports(self, session_id: str) -> None:
         """Test helper to remove all ZIP exports for one session."""
         prefix = self._session_prefix(session_id)
-        for zip_path in self._root.glob(f"{prefix}*.zip"):
+        for zip_path in self._root.glob(f"*{prefix}*.zip"):
             if zip_path.is_file():
                 zip_path.unlink()

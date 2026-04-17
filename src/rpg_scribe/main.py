@@ -174,10 +174,28 @@ class Application:
     # ── Component setup ────────────────────────────────────────────
 
     async def _setup_transcriber(self) -> None:
-        """Create and start the transcriber."""
-        from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber
+        """Create and start the transcriber based on config."""
+        transcriber_type = self.config.transcriber.transcriber_type
 
-        self._transcriber = OpenAITranscriber(self.event_bus, self.config.transcriber)
+        if transcriber_type == "openai":
+            from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber
+
+            self._transcriber = OpenAITranscriber(self.event_bus, self.config.transcriber)
+        elif transcriber_type == "faster-whisper":
+            from rpg_scribe.transcribers.faster_whisper_transcriber import (
+                FasterWhisperTranscriber,
+            )
+
+            self._transcriber = FasterWhisperTranscriber(
+                self.event_bus, self.config.transcriber
+            )
+        else:
+            raise ValueError(
+                f"Unknown transcriber_type '{transcriber_type}'. "
+                f"Valid options: 'openai', 'faster-whisper'"
+            )
+
+        logger.info("Using transcriber: %s", transcriber_type)
         await self._transcriber.start()  # type: ignore[union-attr]
 
     async def _setup_summarizer(self, session_id: str) -> None:

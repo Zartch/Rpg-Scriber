@@ -17,12 +17,40 @@
 }
 .status-card {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.2rem;
   padding: 0.5rem 0.75rem;
   background: var(--bg);
   border-radius: 0.375rem;
   font-size: 0.85rem;
+}
+.status-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.status-config {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.1rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding-left: 1.25rem;
+  min-height: 1em;
+}
+.config-token {
+  cursor: help;
+  white-space: nowrap;
+}
+.config-token + .config-token::before {
+  content: " · ";
+}
+.status-db-path {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  padding-left: 0.25rem;
+  cursor: help;
 }
 .status-dot {
   width: 8px; height: 8px;

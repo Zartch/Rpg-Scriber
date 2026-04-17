@@ -8,7 +8,7 @@ import { updateSummary, handleGenerationProgress, addLogEntry, clearLog, renderE
 import { renderPlayers, renderNpcs, renderLocations, renderEntities, fetchWordReplacements, initEntityFormListeners, setCampaignRefresher as setEntityCampaignRefresher } from "./entities.js";
 import { renderRelationships, initRelationshipListeners, setCampaignRefresher as setRelCampaignRefresher } from "./relationships/index.js";
 import { createRelationshipGraph3D } from "./relationships/graph-3d.js";
-import { fetchSessionList, pollQuestions, setMode, initSessionListeners, setOnFetchCampaignInfo, setOnSelectBrowseCampaign } from "./sessions.js";
+import { fetchSessionList, pollQuestions, setMode, initSessionListeners, setOnFetchCampaignInfo, setOnSelectBrowseCampaign, setOnBannerSession } from "./sessions.js";
 import { initTTS } from "./tts.js";
 import { withLoading } from "./utils.js";
 
@@ -80,6 +80,97 @@ function latencyClass(seconds) {
   if (seconds < 2) return "latency-good";
   if (seconds < 10) return "latency-ok";
   return "latency-slow";
+}
+
+// ── Config token definitions ─────────────────────────────────────────────────
+
+var TOKEN_DEFS = {
+  listener: [
+    { key: "chunk_duration_s",     label: function(v) { return "chunk: " + v + "s"; },                           tip: "Duración de cada chunk de audio antes de procesarse. Menor valor reduce latencia percibida; mayor valor mejora precisión." },
+    { key: "vad_aggressiveness",   label: function(v) { return "vad: " + v; },                                   tip: "Agresividad del detector de actividad de voz (0–3). Mayor valor descarta más silencios pero puede cortar palabras." },
+    { key: "audio_filter_enabled", label: function(v) { return "filter: " + (v ? "on" : "off"); },               tip: "Filtro de audio pre-procesamiento. Descarta chunks sin contenido de voz relevante antes de transcribir." },
+    { key: "post_filter_enabled",  label: function(v) { return "post-filter: " + (v ? "on" : "off"); },          tip: "Filtro post-transcripción. Descarta salidas del modelo con características anómalas (p.ej. alucinaciones)." },
+  ],
+  transcriber: [
+    { key: "transcriber_type", label: function(v) { return String(v); }, tip: "Tipo de motor de transcripción activo. Local = sin coste por uso, consume recursos del equipo. Remoto = coste por uso vía API." },
+    { key: "model",            label: function(v) { return String(v); }, tip: "Modelo de transcripción configurado. Afecta a precisión, velocidad y, en backends remotos, a coste por uso." },
+    { key: "language",         label: function(v) { return String(v); }, tip: "Idioma de transcripción. Afecta al modelo de reconocimiento de voz." },
+    { key: "compute_type",     label: function(v) { return String(v); }, tip: "Tipo de cómputo del modelo local. Afecta a velocidad de inferencia y compatibilidad con el hardware disponible." },
+    { key: "device",           label: function(v) { return String(v); }, tip: "Dispositivo de inferencia configurado. Determina en qué hardware se ejecuta el modelo." },
+  ],
+  summarizer: [
+    { key: "model",                      label: function(v) { return String(v); },                                                                   tip: "Modelo de lenguaje configurado para generar resúmenes y extraer entidades." },
+    { key: "extraction_every_n_updates", label: function(v) { return v === 0 ? "extract: on finalize" : "extract: every " + v; },                    tip: "Frecuencia con la que se extraen entidades y relaciones desde los resúmenes generados." },
+  ],
+};
+
+function _renderTtsConfig(tts, container) {
+  container.innerHTML = "";
+  if (!tts.enabled) {
+    var span = document.createElement("span");
+    span.className = "config-token";
+    span.title = "Narración TTS desactivada. Activar con tts.enabled = true en la configuración.";
+    span.textContent = "off";
+    container.appendChild(span);
+    return;
+  }
+  [
+    { key: "voice",    tip: "Voz configurada para la síntesis de habla." },
+    { key: "model",    tip: "Modelo de síntesis de voz. Afecta a la calidad y velocidad de generación de audio." },
+    { key: "provider", tip: "Proveedor del servicio de síntesis de voz." },
+  ].forEach(function(def) {
+    if (tts[def.key] == null) return;
+    var span = document.createElement("span");
+    span.className = "config-token";
+    span.title = def.tip;
+    span.textContent = String(tts[def.key]);
+    container.appendChild(span);
+  });
+}
+
+function renderStatusConfig(config) {
+  ["listener", "transcriber", "summarizer"].forEach(function(component) {
+    var card = componentStatusEl ? componentStatusEl.querySelector('[data-component="' + component + '"]') : null;
+    if (!card) return;
+    var configEl = card.querySelector(".status-config");
+    if (!configEl) return;
+    configEl.innerHTML = "";
+    var defs = TOKEN_DEFS[component] || [];
+    var data = config[component] || {};
+    defs.forEach(function(def) {
+      if (data[def.key] == null) return;
+      var span = document.createElement("span");
+      span.className = "config-token";
+      span.title = def.tip;
+      span.textContent = def.label(data[def.key]);
+      configEl.appendChild(span);
+    });
+  });
+  var ttsCard = componentStatusEl ? componentStatusEl.querySelector('[data-component="tts"]') : null;
+  if (ttsCard && config.tts) {
+    var ttsConfigEl = ttsCard.querySelector(".status-config");
+    if (ttsConfigEl) _renderTtsConfig(config.tts, ttsConfigEl);
+  }
+}
+
+function fetchStatus() {
+  fetch("/api/status")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var components = data.components || {};
+      Object.keys(components).forEach(function(key) {
+        updateStatus(components[key]);
+      });
+      if (data.config) {
+        renderStatusConfig(data.config);
+      }
+      var dbEl = document.getElementById("status-db-path");
+      if (dbEl && data.config && data.config.database && data.config.database.path) {
+        dbEl.title = "Ruta del fichero de base de datos activo.";
+        dbEl.textContent = "DB: " + data.config.database.path;
+      }
+    })
+    .catch(function() {});
 }
 
 // ── Callback wiring (breaks circular deps via injection) ────────────────────
@@ -181,6 +272,7 @@ initTTS();
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
 connectWS();
+fetchStatus();
 fetchCampaignInfo();
 pollQuestions();
 setInterval(function () {
@@ -211,26 +303,20 @@ setMode("live");
     titleInput.value = title || "";
     statusSelect.value = currentStatus || "active";
     bannerEl.classList.remove("hidden");
-    state.activeSessionId = sessionId;
   }
 
   function hideBanner() {
     bannerEl.classList.add("hidden");
   }
 
-  // Fetch current status on page load to set banner initial state
-  fetch("/api/status")
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      if (data.active_session_id) {
-        showBanner(
-          data.active_session_id,
-          data.active_session_title || "",
-          "active"
-        );
-      }
-    })
-    .catch(function () {});
+  // Show/hide the banner whenever a session is selected from the list
+  setOnBannerSession(function (session) {
+    if (session) {
+      showBanner(session.id, session.title || "", session.status || "active");
+    } else {
+      hideBanner();
+    }
+  });
 
   // Save title on blur or Enter
   function saveTitle() {

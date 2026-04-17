@@ -153,6 +153,20 @@ function clamp(value, min, max) {
       renderFrame();
     }
 
+    function fitAll() {
+      if (!state.viewGraph || !state.viewGraph.nodes.length) return;
+      var maxDist = 0;
+      state.viewGraph.nodes.forEach(function (node) {
+        var pos = ensurePosition(node.id);
+        var dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+        if (dist > maxDist) maxDist = dist;
+      });
+      var halfScreen = Math.min(state.width, state.height) / 2 * 0.85;
+      var idealDistance = (maxDist * state.camera.focal) / Math.max(halfScreen, 1);
+      state.camera.distance = clamp(idealDistance + maxDist * 0.15, 220, 1900);
+      scheduleFrame();
+    }
+
     function ensurePosition(nodeId) {
       if (state.positions[nodeId]) return state.positions[nodeId];
       var angleA = Math.random() * Math.PI * 2;
@@ -233,6 +247,18 @@ function clamp(value, min, max) {
         });
         if (!changed) break;
       }
+      var kindPseudoLabels = { player: "__kind_player", npc: "__kind_npc",
+                               location: "__kind_location", entity: "__kind_entity" };
+      nodes.forEach(function (node) {
+        if (labels[node.id] === node.id && (adjacency[node.id] || []).length === 0) {
+          labels[node.id] = kindPseudoLabels[node.kind] || "__kind_other";
+        }
+      });
+      var kindCommunityNames = {
+        "__kind_player": "Players (unlinked)", "__kind_npc": "NPCs (unlinked)",
+        "__kind_location": "Locations (unlinked)", "__kind_entity": "Entities (unlinked)",
+        "__kind_other": "Other (unlinked)",
+      };
       var communityNames = {};
       var communityIds = {};
       var counter = 1;
@@ -240,7 +266,7 @@ function clamp(value, min, max) {
         var raw = labels[node.id] || node.id;
         if (!communityIds[raw]) {
           communityIds[raw] = String(counter);
-          communityNames[communityIds[raw]] = "Community " + counter;
+          communityNames[communityIds[raw]] = kindCommunityNames[raw] || ("Community " + counter);
           counter += 1;
         }
         node.community = communityIds[raw];
@@ -429,7 +455,7 @@ function clamp(value, min, max) {
       var componentKeys = Object.keys(componentMap).sort(function (a, b) {
         return componentMap[b].nodes.length - componentMap[a].nodes.length || a.localeCompare(b);
       });
-      var componentRadius = Math.max(360, 260 + componentKeys.length * 120);
+      var componentRadius = Math.min(300, Math.max(160, 120 + componentKeys.length * 40));
 
       componentKeys.forEach(function (componentId, componentIndex) {
         var component = componentMap[componentId];
@@ -443,7 +469,7 @@ function clamp(value, min, max) {
         var communityKeys = Object.keys(component.communities).sort(function (a, b) {
           return component.communities[b].length - component.communities[a].length || a.localeCompare(b);
         });
-        var communityRadius = Math.max(110, 70 + communityKeys.length * 44);
+        var communityRadius = Math.min(140, Math.max(60, 40 + communityKeys.length * 18));
         communityKeys.forEach(function (communityId, communityIndex) {
           var communityAngle = (Math.PI * 2 * communityIndex) / Math.max(1, communityKeys.length);
           var communityOffset = communityKeys.length === 1 ? 0 : communityRadius;
@@ -799,18 +825,62 @@ function clamp(value, min, max) {
 
       if (!state.viewGraph || !state.viewGraph.nodes.length) return;
 
+      var LABEL_FONT = "600 10px Consolas, 'Lucida Console', monospace";
+      var LABEL_H = 14;
+      ctx.font = LABEL_FONT;
+
       var projectionCache = {};
       state.projectedNodes = [];
       state.viewGraph.nodes.forEach(function (node) {
         var position = ensurePosition(node.id);
         var projection = project(position);
         if (!projection) return;
-        var value = node.metrics[state.metric] || 0;
-        var radius = clamp(4.6 + (node.metrics.degree || 0) * 0.72 + value * 9.5, 4.6, 13.5);
         projection.node = node;
-        projection.radius = radius * Math.max(0.48, projection.scale * 2.25);
+        // Small fixed marker; degree adds tiny increment to distinguish hubs
+        projection.radius = clamp(4.5 + (node.metrics.degree || 0) * 0.28, 4.5, 7);
+        // Label dimensions
+        projection.labelText = node.shortLabel || node.label;
+        projection.labelW = ctx.measureText(projection.labelText).width + 10;
+        projection.labelH = LABEL_H;
+        // Default: label to the right; flip left if near canvas right edge
+        var rightEdge = projection.x + projection.radius + 5 + projection.labelW;
+        if (rightEdge > state.width - 6) {
+          projection.labelX = projection.x - projection.radius - 5 - projection.labelW;
+        } else {
+          projection.labelX = projection.x + projection.radius + 5;
+        }
+        projection.labelY = projection.y; // tentative; adjusted in placement pass
         projectionCache[node.id] = projection;
         state.projectedNodes.push(projection);
+      });
+
+      // Greedy vertical label placement: nudge colliding labels up/down
+      var prioritized = state.projectedNodes.slice().sort(function (a, b) {
+        var aH = (a.node.id === state.selectedKey || a.node.id === state.hoveredKey) ? 0 : 1;
+        var bH = (b.node.id === state.selectedKey || b.node.id === state.hoveredKey) ? 0 : 1;
+        return aH - bH || a.depth - b.depth;
+      });
+      var placedLabels = [];
+      var nudgeOffsets = [0, -15, 15, -29, 29, -43, 43, -57, 57];
+      prioritized.forEach(function (proj) {
+        var placed = false;
+        for (var oi = 0; oi < nudgeOffsets.length; oi++) {
+          var testY = proj.y + nudgeOffsets[oi];
+          var lx = proj.labelX, rx = proj.labelX + proj.labelW;
+          var ty = testY - LABEL_H + 2, by = testY + 3;
+          var overlaps = false;
+          for (var pi = 0; pi < placedLabels.length; pi++) {
+            var pl = placedLabels[pi];
+            if (lx < pl.rx && rx > pl.lx && ty < pl.by && by > pl.ty) { overlaps = true; break; }
+          }
+          if (!overlaps) {
+            proj.labelY = testY;
+            placedLabels.push({ lx: lx, ty: ty, rx: rx, by: by });
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) proj.labelY = proj.y;
       });
 
       var hoveredKey = state.hoveredKey;
@@ -836,16 +906,55 @@ function clamp(value, min, max) {
           (hoveredKey && (link.source === hoveredKey || link.target === hoveredKey)) ||
           (selectedKey && (link.source === selectedKey || link.target === selectedKey))
         );
+        var edgeColor = highlighted ? typeColor(link.typeKey, index) : "rgba(148, 163, 184, 0.26)";
         ctx.beginPath();
         ctx.moveTo(source.x, source.y);
         ctx.lineTo(target.x, target.y);
         ctx.lineWidth = highlighted ? 2.5 : 1.1;
-        ctx.strokeStyle = highlighted ? typeColor(link.typeKey, index) : "rgba(148, 163, 184, 0.26)";
+        ctx.strokeStyle = edgeColor;
         ctx.globalAlpha = highlighted ? 0.95 : 0.55;
         ctx.stroke();
+
+        // 3D: directional arrow at target end
+        var arrowLen = highlighted ? 9 : 6;
+        var edgeDx = target.x - source.x;
+        var edgeDy = target.y - source.y;
+        var edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+        if (edgeLen > arrowLen * 2) {
+          var ux = edgeDx / edgeLen;
+          var uy = edgeDy / edgeLen;
+          var tipX = target.x - ux * (target.radius || 6);
+          var tipY = target.y - uy * (target.radius || 6);
+          ctx.beginPath();
+          ctx.moveTo(tipX, tipY);
+          ctx.lineTo(tipX - ux * arrowLen - uy * arrowLen * 0.45, tipY - uy * arrowLen + ux * arrowLen * 0.45);
+          ctx.lineTo(tipX - ux * arrowLen + uy * arrowLen * 0.45, tipY - uy * arrowLen - ux * arrowLen * 0.45);
+          ctx.closePath();
+          ctx.fillStyle = edgeColor;
+          ctx.fill();
+        }
+
+        // 3B: edge type label on hover/select
+        if (highlighted && link.typeLabel) {
+          var midX = (source.x + target.x) / 2;
+          var midY = (source.y + target.y) / 2;
+          ctx.save();
+          ctx.globalAlpha = 1;
+          ctx.font = "600 9px Consolas, 'Lucida Console', monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "bottom";
+          var tw = ctx.measureText(link.typeLabel).width;
+          ctx.fillStyle = "rgba(5, 16, 22, 0.82)";
+          ctx.fillRect(midX - tw / 2 - 3, midY - 13, tw + 6, 13);
+          ctx.fillStyle = edgeColor;
+          ctx.fillText(link.typeLabel, midX, midY - 1);
+          ctx.restore();
+        }
+
         ctx.globalAlpha = 1;
       });
 
+      // Pass 1 — draw node markers back-to-front (small shapes)
       state.projectedNodes.sort(function (a, b) {
         return b.depth - a.depth;
       }).forEach(function (projection) {
@@ -853,22 +962,59 @@ function clamp(value, min, max) {
         var focused = node.id === selectedKey;
         var hovered = node.id === hoveredKey;
         var highlighted = focused || hovered || !!pathNodes[node.id];
-        var baseColor = mixHexColor(kindAccent(node.kind), node.community ? (parseInt(node.community, 10) % 5) * 0.08 : 0);
-        drawNodeShape(
-          ctx,
-          node,
-          projection.x,
-          projection.y,
-          projection.radius,
-          highlighted ? mixHexColor(baseColor, 0.2) : baseColor,
-          highlighted ? "#f8fafc" : mixHexColor(baseColor, -0.45)
-        );
-        if (highlighted || projection.radius >= 8.5 || state.searchQuery) {
-          ctx.fillStyle = highlighted ? "#d7ffe7" : "#b9f8ff";
-          ctx.font = (focused ? "700 " : "600 ") + Math.round(clamp(9 + projection.radius * 0.16, 9, 12)) + "px Consolas, 'Lucida Console', monospace";
-          ctx.textAlign = "center";
-          ctx.fillText(node.shortLabel || node.label, projection.x, projection.y - projection.radius - 8);
+        var accent = kindAccent(node.kind);
+        var baseColor = mixHexColor(accent, node.community ? (parseInt(node.community, 10) % 5) * 0.08 : 0);
+
+        // Glow behind highlighted markers
+        if (highlighted) {
+          ctx.save();
+          ctx.globalAlpha = 0.38;
+          ctx.beginPath();
+          ctx.arc(projection.x, projection.y, projection.radius * 3, 0, Math.PI * 2);
+          ctx.fillStyle = accent;
+          ctx.shadowColor = accent;
+          ctx.shadowBlur = projection.radius * 4;
+          ctx.fill();
+          ctx.restore();
         }
+
+        drawNodeShape(
+          ctx, node,
+          projection.x, projection.y, projection.radius,
+          highlighted ? mixHexColor(baseColor, 0.25) : baseColor,
+          highlighted ? "#f8fafc" : mixHexColor(baseColor, -0.35)
+        );
+      });
+
+      // Pass 2 — draw labels on top of all markers
+      ctx.font = LABEL_FONT;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      state.projectedNodes.forEach(function (projection) {
+        var node = projection.node;
+        var focused = node.id === selectedKey;
+        var hovered = node.id === hoveredKey;
+        var highlighted = focused || hovered || !!pathNodes[node.id];
+        var accent = kindAccent(node.kind);
+        var lx = projection.labelX;
+        var ly = projection.labelY;
+        var lw = projection.labelW;
+        var lh = projection.labelH;
+        var ty = ly - lh + 2;
+
+        // Background pill
+        ctx.globalAlpha = highlighted ? 0.96 : 0.82;
+        ctx.fillStyle = highlighted ? "rgba(4, 18, 12, 0.95)" : "rgba(4, 12, 18, 0.88)";
+        ctx.fillRect(lx, ty, lw, lh);
+        // Accent bar on the left
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = highlighted ? 1 : 0.85;
+        ctx.fillRect(lx, ty, 2, lh);
+        // Text
+        ctx.fillStyle = highlighted ? "#d7ffe7" : "#b9f0ff";
+        ctx.font = focused ? "700 10px Consolas, 'Lucida Console', monospace" : LABEL_FONT;
+        ctx.fillText(projection.labelText, lx + 5, ty + lh / 2);
+        ctx.globalAlpha = 1;
       });
     }
 
@@ -957,7 +1103,7 @@ function clamp(value, min, max) {
             var pairCount = communityLinks[communityPairKey] || 0;
             separationMultiplier = pairCount ? Math.max(1.1, 1.65 - Math.min(0.42, pairCount * 0.12)) : 2.05;
           }
-          var force = (4200 * separationMultiplier) / distSq;
+          var force = (9000 * separationMultiplier) / distSq;
           aPos.vx += (dx / distance) * force * alpha * 0.016;
           aPos.vy += (dy / distance) * force * alpha * 0.016;
           aPos.vz += (dz / distance) * force * alpha * 0.016;
@@ -1014,6 +1160,11 @@ function clamp(value, min, max) {
         pos.x += pos.vx;
         pos.y += pos.vy;
         pos.z += pos.vz;
+        var posDist = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+        if (posDist > 520) {
+          var ratio = 520 / posDist;
+          pos.x *= ratio; pos.y *= ratio; pos.z *= ratio;
+        }
       });
 
       state.simulationAlpha *= 0.985;
@@ -1033,7 +1184,13 @@ function clamp(value, min, max) {
       state.projectedNodes.forEach(function (projection) {
         var dx = projection.x - x;
         var dy = projection.y - y;
-        if ((dx * dx) + (dy * dy) <= projection.radius * projection.radius) {
+        var hitRadius = Math.max(projection.radius + 4, 10);
+        var inMarker = (dx * dx) + (dy * dy) <= hitRadius * hitRadius;
+        // Also check label bounding box
+        var lx = projection.labelX, ly = projection.labelY;
+        var lw = projection.labelW, lh = projection.labelH;
+        var inLabel = lx != null && x >= lx && x <= lx + lw && y >= ly - lh + 2 && y <= ly + 3;
+        if (inMarker || inLabel) {
           found = !found || projection.depth < found.depth ? projection : found;
         }
       });
@@ -1137,6 +1294,10 @@ function clamp(value, min, max) {
         state.camera.distance = clamp(state.camera.distance + evt.deltaY * 0.55, 220, 1900);
         scheduleFrame();
       }, { passive: false });
+      if (options.fitAllButton) {
+        options.fitAllButton.addEventListener("click", fitAll);
+      }
+
       canvas.addEventListener("dblclick", function () {
         var node = nodeAtPoint(state.pointer.x, state.pointer.y);
         if (!node) return;
@@ -1239,8 +1400,21 @@ function clamp(value, min, max) {
           hideTooltip();
         }
       },
+      fitAll: fitAll,
       render: function (rawGraph) {
-        state.graph = buildGraph(rawGraph || { nodes: [], links: [] });
+        var incoming = rawGraph || { nodes: [], links: [] };
+        var prevNodeIds = state.graph ? Object.keys(state.graph.nodeMap) : [];
+        state.graph = buildGraph(incoming);
+        // If the node set changed, drop positions for removed nodes and
+        // clear positions for new nodes so they spawn fresh
+        var newNodeIds = Object.keys(state.graph.nodeMap);
+        if (prevNodeIds.length !== newNodeIds.length) {
+          var keep = {};
+          newNodeIds.forEach(function (id) { keep[id] = true; });
+          Object.keys(state.positions).forEach(function (id) {
+            if (!keep[id]) delete state.positions[id];
+          });
+        }
         if (state.selectedKey && !state.graph.nodeMap[state.selectedKey]) state.selectedKey = "";
         if (state.pathSourceKey && !state.graph.nodeMap[state.pathSourceKey]) state.pathSourceKey = "";
         if (state.pathTargetKey && !state.graph.nodeMap[state.pathTargetKey]) state.pathTargetKey = "";

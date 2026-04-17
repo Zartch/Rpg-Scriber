@@ -114,7 +114,7 @@
 
 .relationship-graph-controls {
   display: grid;
-  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(140px, 1fr)) auto auto;
   gap: 0.55rem;
   margin-bottom: 0.7rem;
 }
@@ -163,6 +163,15 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.72rem;
+}
+
+.relationship-graph-fit-btn {
+  align-self: end;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .relationship-graph-layout {
@@ -269,6 +278,11 @@
   padding: 0.14rem 0.3rem;
   border: 1px solid rgba(88, 214, 255, 0.16);
   background: rgba(9, 18, 28, 0.72);
+}
+
+.graph-kind-icon {
+  display: block;
+  flex-shrink: 0;
 }
 
 .relationship-node-tooltip {

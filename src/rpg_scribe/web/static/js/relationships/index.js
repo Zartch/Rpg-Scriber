@@ -375,6 +375,7 @@ function ensureRelationshipGraph3d() {
     pathTargetSelect: relationshipGraphPathTarget,
     pathOutput: relationshipGraphPathOutput,
     topList: relationshipGraphTop,
+    fitAllButton: document.getElementById("relationship-graph-fit-all"),
   });
   return state.relationshipGraph3d;
 }

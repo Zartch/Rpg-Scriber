@@ -136,8 +136,28 @@ def _patch_dave_decryption() -> None:
         logger.info("Parcheado PacketDecoder._decode_packet para soportar descifrado DAVE")
 
 
+def _patch_audio_reader() -> None:
+    try:
+        from discord.ext.voice_recv.reader import AudioReader
+    except ImportError:
+        return
+
+    _log = logging.getLogger("discord.ext.voice_recv.reader")
+    _original_callback = AudioReader.callback
+
+    def _quiet_callback(self: AudioReader, packet_data: bytes) -> None:  # type: ignore[type-arg]
+        try:
+            _original_callback(self, packet_data)
+        except struct.error as exc:
+            _log.debug("Paquete RTP malformado ignorado: %s", exc)
+
+    AudioReader.callback = _quiet_callback  # type: ignore[assignment]
+    logger.info("Parcheado AudioReader.callback para silenciar struct.error")
+
+
 _patch_packet_router()
 _patch_dave_decryption()
+_patch_audio_reader()
 
 # Discord sends 48 kHz 16-bit stereo; we convert to mono.
 DISCORD_SAMPLE_RATE = 48000
@@ -416,7 +436,7 @@ class DiscordListener(BaseListener):
             return
         audio, start_ts, duration_ms = buf.flush()
         speaker_name = self._user_names.get(user_id, user_id)
-        logger.info(
+        logger.debug(
             "🎙️  Chunk de audio listo → '%s' (id=%s) | %.1fs | %d bytes → enviando a transcriber",
             speaker_name,
             user_id,

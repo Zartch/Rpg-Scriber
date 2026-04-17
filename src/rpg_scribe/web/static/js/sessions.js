@@ -39,6 +39,13 @@ export function setOnSelectBrowseCampaign(fn) { onSelectBrowseCampaign = fn; }
 var onFetchCampaignInfo = function () {};
 export function setOnFetchCampaignInfo(fn) { onFetchCampaignInfo = fn; }
 
+// Callback from main.js to show/hide the session banner on session selection
+var onBannerSession = null;
+export function setOnBannerSession(fn) { onBannerSession = fn; }
+
+// Cache of session data by id, populated when the list renders
+var sessionDataCache = {};
+
 export function setMode(mode) {
   state.appMode = mode === "browse" ? "browse" : "live";
   if (modeLiveBtn) modeLiveBtn.classList.toggle("active", state.appMode === "live");
@@ -152,6 +159,7 @@ function selectBrowseCampaign(campaignId) {
     var campaignNameEl = document.getElementById("campaign-name");
     var campaignSystemEl = document.getElementById("campaign-system");
     var campaignMasterEl = document.getElementById("campaign-master");
+    var campaignExportBtn = document.getElementById("campaign-export-btn");
     var campaignEditBtn = document.getElementById("campaign-edit-btn");
     var campaignDetailsSection = document.getElementById("campaign-details-section");
     var replacementsSection = document.getElementById("replacements-section");
@@ -159,6 +167,7 @@ function selectBrowseCampaign(campaignId) {
     if (campaignNameEl) campaignNameEl.textContent = "Sin campana";
     if (campaignSystemEl) campaignSystemEl.textContent = "";
     if (campaignMasterEl) campaignMasterEl.textContent = "";
+    if (campaignExportBtn) campaignExportBtn.classList.add("hidden");
     if (campaignEditBtn) campaignEditBtn.classList.add("hidden");
     if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
     if (replacementsSection) replacementsSection.classList.add("hidden");
@@ -304,6 +313,7 @@ function renderSessionList(sessions) {
     return;
   }
   sessionListEl.innerHTML = "";
+  sessions.forEach(function (s) { sessionDataCache[s.id] = s; });
   sessions.forEach(function (s) {
     var item = document.createElement("div");
     var isActive = s.id === state.activeSessionId;
@@ -354,6 +364,7 @@ function renderSessionList(sessions) {
           toggleMergeSelect(session, el);
           return;
         }
+        if (onBannerSession) onBannerSession(session);
         if (state.appMode === "browse" || !isActive) {
           loadHistoricalSession(session.id);
           highlightSession(session.id);
@@ -498,6 +509,9 @@ function switchToLive() {
   if (campaignSummaryEl) campaignSummaryEl.innerHTML = '<p class="placeholder">No campaign summary yet.</p>';
   if (state.activeSessionId) {
     loadLiveSessionSnapshot(state.activeSessionId);
+    if (onBannerSession) onBannerSession(sessionDataCache[state.activeSessionId] || { id: state.activeSessionId, status: "active" });
+  } else {
+    if (onBannerSession) onBannerSession(null);
   }
 }
 

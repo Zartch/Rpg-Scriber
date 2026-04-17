@@ -80,14 +80,16 @@ class ClaudeSummarizer(BaseSummarizer):
             self._client = AsyncAnthropic()
         return self._client
 
-    def _get_extractor(self) -> EntityExtractor:
-        """Return the EntityExtractor, creating it lazily."""
+    def _get_extractor(self) -> EntityExtractor | None:
+        """Return the EntityExtractor, creating it lazily. Returns None if no database."""
+        if self._database is None:
+            return None
         if self._extractor is None:
             self._extractor = EntityExtractor(
                 client=self._get_client(),
                 model=self.config.model,
                 campaign_context=self.campaign,
-                entity_repo=self._database,
+                entity_repo=self._database.entities,
                 event_bus=self.event_bus,
             )
         return self._extractor
@@ -1059,6 +1061,7 @@ class ClaudeSummarizer(BaseSummarizer):
 
     async def _extract_entities(self) -> None:
         """Run entity extraction for the current session and publish EntitiesUpdatedEvent."""
-        await self._get_extractor().extract_and_publish(
-            self._session_id, self._session_summary
-        )
+        extractor = self._get_extractor()
+        if extractor is None:
+            return
+        await extractor.extract_and_publish(self._session_id, self._session_summary)

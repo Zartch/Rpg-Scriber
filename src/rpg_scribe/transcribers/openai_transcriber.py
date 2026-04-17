@@ -84,7 +84,7 @@ class OpenAITranscriber(BaseTranscriber):
 
         wav_data = _pcm_to_wav_bytes(event.audio_data)
 
-        logger.info(
+        logger.debug(
             "🌐 Enviando a OpenAI (%s) | hablante='%s' | tamaño=%.1fKB | idioma=%s",
             self.config.model,
             event.speaker_name,

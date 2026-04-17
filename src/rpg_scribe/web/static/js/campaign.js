@@ -9,6 +9,7 @@ var campaignDisplay = document.getElementById("campaign-display");
 var campaignNameEl = document.getElementById("campaign-name");
 var campaignSystemEl = document.getElementById("campaign-system");
 var campaignMasterEl = document.getElementById("campaign-master");
+var campaignExportBtn = document.getElementById("campaign-export-btn");
 var campaignEditBtn = document.getElementById("campaign-edit-btn");
 var campaignEditForm = document.getElementById("campaign-edit-form");
 var campaignEditCancel = document.getElementById("campaign-edit-cancel");
@@ -79,6 +80,7 @@ export function fetchCampaignInfo() {
         campaignSystemEl.textContent = "";
         campaignMasterEl.textContent = "";
         campaignEditBtn.classList.add("hidden");
+        if (campaignExportBtn) campaignExportBtn.classList.add("hidden");
         if (campaignDetailsSection) campaignDetailsSection.classList.add("hidden");
         if (replacementsSection) replacementsSection.classList.add("hidden");
         state.currentCampaign = null;
@@ -104,6 +106,7 @@ export function renderCampaignBar(campaign) {
   // Hide edit for generic campaigns
   if (campaign.is_generic) {
     campaignEditBtn.classList.add("hidden");
+    if (campaignExportBtn) campaignExportBtn.classList.add("hidden");
     campaignNameEl.textContent = "No campaign \u2014 Resume mode";
     campaignSystemEl.textContent = "";
     campaignMasterEl.textContent = "";
@@ -112,6 +115,10 @@ export function renderCampaignBar(campaign) {
     updateCampaignSummaryStats({});
   } else {
     campaignEditBtn.classList.remove("hidden");
+    if (campaignExportBtn) {
+      var showExport = state.appMode === "browse" && !!campaign.id;
+      campaignExportBtn.classList.toggle("hidden", !showExport);
+    }
   }
 }
 
@@ -217,6 +224,33 @@ function saveCampaignEdit(e) {
 }
 
 export function initCampaignListeners() {
+  if (campaignExportBtn) {
+    campaignExportBtn.addEventListener("click", function () {
+      if (!state.currentCampaign || !state.currentCampaign.id) return;
+      withLoading(campaignExportBtn, function () {
+        return fetch("/api/campaigns/" + encodeURIComponent(state.currentCampaign.id) + "/export", {
+          method: "POST",
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.ok || !data.download_url) {
+              alert("Failed to generate campaign export.");
+              return;
+            }
+            campaignExportBtn.textContent = "Exported";
+            window.location.href = data.download_url;
+            setTimeout(function () {
+              if (campaignExportBtn.textContent === "Exported") {
+                campaignExportBtn.textContent = "Export";
+              }
+            }, 1800);
+          })
+          .catch(function () {
+            alert("Failed to generate campaign export.");
+          });
+      }, { loadingText: "Exporting..." });
+    });
+  }
   campaignEditBtn.addEventListener("click", openCampaignEdit);
   campaignEditCancel.addEventListener("click", closeCampaignEdit);
   campaignEditForm.addEventListener("submit", saveCampaignEdit);

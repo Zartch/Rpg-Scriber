@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
+from rpg_scribe.services.campaign_export_service import (
+    CampaignExportData,
+    CampaignExportService,
+    CampaignExportSessionData,
+)
 from rpg_scribe.web.state import WebState
 
 logger = logging.getLogger(__name__)
@@ -31,6 +39,19 @@ def _get_config():
 def _get_event_bus():
     from rpg_scribe.web import routes as _routes
     return getattr(_routes.router, "event_bus", None)
+
+
+def _exports_root() -> Path:
+    """Return the base directory for immutable exports."""
+    from rpg_scribe.web import routes as _routes
+    return Path(
+        getattr(_routes.router, "export_root", Path("exports").resolve())
+    ).resolve()
+
+
+def _get_campaign_export_service() -> CampaignExportService:
+    """Create the campaign export service using the configured exports root."""
+    return CampaignExportService(_exports_root())
 
 
 def _persist_campaign_toml(config: Any) -> None:
@@ -194,6 +215,70 @@ async def _load_merged_children_maps(
         "merged_locations_by_parent": await db.entities.get_merged_locations_map(campaign_id),
         "merged_entities_by_parent": await db.entities.get_merged_entities_map(campaign_id),
     }
+
+
+async def _load_campaign_export_data(
+    campaign_id: str,
+) -> CampaignExportData | None:
+    """Load all data required to build a campaign export bundle from DB."""
+    db = _get_database()
+    if db is None:
+        return None
+
+    row = await db.campaigns.get_campaign(campaign_id)
+    if not row:
+        return None
+
+    players = await db.entities.get_players(campaign_id)
+    npcs = await db.entities.get_npcs(campaign_id)
+    locations = await db.entities.get_locations(campaign_id)
+    entities = await db.entities.get_entities(campaign_id)
+    relationship_types = await db.entities.get_relationship_types(campaign_id)
+    relationships = await db.entities.get_character_relationships(campaign_id)
+    merged_maps = await _load_merged_children_maps(db, campaign_id)
+    sessions_rows = await db.sessions.list_sessions(campaign_id)
+
+    sessions: list[CampaignExportSessionData] = []
+    for session in sessions_rows:
+        session_id = str(session.get("id", "") or "")
+        transcriptions = []
+        if session_id:
+            transcriptions = [
+                dict(item)
+                for item in await db.transcriptions.get_transcriptions(session_id)
+            ]
+        sessions.append(
+            CampaignExportSessionData(
+                session_id=session_id,
+                title=str(session.get("title", "") or ""),
+                started_at=session.get("started_at", ""),
+                ended_at=session.get("ended_at", ""),
+                status=str(session.get("status", "") or ""),
+                session_summary=str(session.get("session_summary", "") or ""),
+                session_chronology=str(session.get("session_chronology", "") or ""),
+                transcriptions=transcriptions,
+            )
+        )
+
+    return CampaignExportData(
+        campaign_id=campaign_id,
+        name=str(row.get("name", "") or ""),
+        game_system=str(row.get("game_system", "") or ""),
+        language=str(row.get("language", "es") or "es"),
+        description=str(row.get("description", "") or ""),
+        campaign_summary=str(row.get("campaign_summary", "") or ""),
+        dm_speaker_id=str(row.get("dm_speaker_id", "") or ""),
+        players=[dict(item) for item in players],
+        npcs=[dict(item) for item in npcs],
+        locations=[dict(item) for item in locations],
+        entities=[dict(item) for item in entities],
+        relationship_types=[dict(item) for item in relationship_types],
+        relationships=[dict(item) for item in relationships],
+        merged_npcs_by_parent=merged_maps["merged_npcs_by_parent"],
+        merged_locations_by_parent=merged_maps["merged_locations_by_parent"],
+        merged_entities_by_parent=merged_maps["merged_entities_by_parent"],
+        sessions=sessions,
+    )
 
 
 _CAMPAIGN_SUMMARY_PREVIEW_LEN = 200
@@ -384,6 +469,78 @@ async def get_browse_campaign(campaign_id: str) -> dict[str, Any]:
     return {"campaign": campaign}
 
 
+@router.post("/api/campaigns/{campaign_id}/export")
+async def create_campaign_export(campaign_id: str) -> dict[str, Any]:
+    """Generate a new immutable export bundle for a campaign."""
+    if _get_database() is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    data = await _load_campaign_export_data(campaign_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    service = _get_campaign_export_service()
+    manifest = service.build_export(data)
+    export_id = str(manifest["export_id"])
+    return {
+        "ok": True,
+        "campaign_id": campaign_id,
+        "export_id": export_id,
+        "exported_at": manifest.get("created_at", ""),
+        "display_date": manifest.get("display_date", ""),
+        "zip_name": manifest.get("zip_name", ""),
+        "files": manifest.get("files", []),
+        "download_url": (
+            f"/api/campaigns/{quote(campaign_id)}/export/download"
+            f"?export_id={quote(export_id)}"
+        ),
+    }
+
+
+@router.get("/api/campaigns/{campaign_id}/exports")
+async def list_campaign_exports(campaign_id: str) -> dict[str, Any]:
+    """List immutable export bundles previously generated for a campaign."""
+    service = _get_campaign_export_service()
+    exports = []
+    for item in service.list_exports(campaign_id):
+        export_id = str(item.get("export_id", ""))
+        exports.append(
+            {
+                "campaign_id": item.get("campaign_id", campaign_id),
+                "export_id": export_id,
+                "created_at": item.get("created_at", ""),
+                "display_date": item.get("display_date", ""),
+                "zip_name": item.get("zip_name", ""),
+                "files": item.get("files", []),
+                "download_url": (
+                    f"/api/campaigns/{quote(campaign_id)}/export/download"
+                    f"?export_id={quote(export_id)}"
+                ),
+            }
+        )
+    return {"campaign_id": campaign_id, "exports": exports}
+
+
+@router.get("/api/campaigns/{campaign_id}/export/download")
+async def download_campaign_export(
+    campaign_id: str,
+    export_id: str = Query(default=""),
+) -> FileResponse:
+    """Download one concrete version of a campaign export bundle."""
+    if not export_id.strip():
+        raise HTTPException(status_code=400, detail="export_id is required")
+
+    service = _get_campaign_export_service()
+    zip_path = service.get_export_zip(campaign_id, export_id)
+    if zip_path is None:
+        raise HTTPException(status_code=404, detail="Export not found")
+    return FileResponse(
+        path=zip_path,
+        filename=zip_path.name,
+        media_type="application/zip",
+    )
+
+
 @router.patch("/api/campaigns/{campaign_id}")
 async def update_campaign(campaign_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update editable fields of a campaign."""
@@ -532,7 +689,7 @@ async def generate_campaign_summary_on_demand(campaign_id: str) -> dict[str, Any
                 rows
             )
             if summary:
-                await db.sessions.end_session(session_id, summary)
+                await db.sessions.update_session_summary(session_id, summary)
                 sessions_processed += 1
                 logger.info("Generated missing summary for session %s", session_id)
         except Exception as exc:

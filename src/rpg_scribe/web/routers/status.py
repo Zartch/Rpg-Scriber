@@ -42,6 +42,48 @@ async def favicon():
     return Response(status_code=204)
 
 
+def _build_config_payload(config) -> dict[str, Any] | None:
+    if config is None:
+        return None
+    t = config.transcriber
+    has_local_compute_fields = t.transcriber_type != "openai"
+    transcriber: dict[str, Any] = {
+        "transcriber_type": t.transcriber_type,
+        "model": t.local_model_size if has_local_compute_fields else t.model,
+        "language": t.language,
+    }
+    if has_local_compute_fields:
+        transcriber["compute_type"] = t.compute_type
+        transcriber["device"] = t.device
+
+    s = config.summarizer
+    li = config.listener
+    tts = config.tts
+    tts_data: dict[str, Any] = {"enabled": tts.enabled}
+    if tts.enabled:
+        tts_data["voice"] = tts.voice
+        tts_data["model"] = tts.model
+        tts_data["provider"] = tts.provider
+
+    return {
+        "listener": {
+            "chunk_duration_s": li.chunk_duration_s,
+            "vad_aggressiveness": li.vad_aggressiveness,
+            # These live on TranscriberConfig but are shown on the Listener card
+            # because they govern pre-transcription audio filtering.
+            "audio_filter_enabled": t.audio_filter_enabled,
+            "post_filter_enabled": t.post_filter_enabled,
+        },
+        "transcriber": transcriber,
+        "summarizer": {
+            "model": s.model,
+            "extraction_every_n_updates": s.extraction_every_n_updates,
+        },
+        "tts": tts_data,
+        "database": {"path": config.database_path},
+    }
+
+
 @router.get("/api/status")
 async def get_status() -> dict[str, Any]:
     """Return current component statuses."""
@@ -67,6 +109,7 @@ async def get_status() -> dict[str, Any]:
             "transcriptions_buffer_max_items": state.max_transcriptions,
             "live_feed_max_items": getattr(config, "web_feed_max_items", 1000),
         },
+        "config": _build_config_payload(config),
     }
 
 
