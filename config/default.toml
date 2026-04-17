@@ -13,17 +13,30 @@ sample_width = 2
 vad_aggressiveness = 2
 
 [transcriber]
-model = "gpt-4o-transcribe"
+# ── Selección de transcriptor ────────────────────────────────────────────────
+# Descomenta el bloque del transcriptor que quieras usar y comenta el otro.
+# También se puede sobreescribir con: RPG_SCRIBE_TRANSCRIBER_TYPE=faster-whisper
+# ────────────────────────────────────────────────────────────────────────────
+
+# ── Opción A: OpenAI API (nube, sin instalación extra) ───────────────────────
+# transcriber_type = "openai"
+# model = "gpt-4o-transcribe"   # o "whisper-1"
+# api_timeout_s = 30.0
+# max_concurrent_requests = 4
+# queue_max_size = 100
+# max_retries = 3
+# retry_base_delay_s = 1.0
+
+# ── Opción B: Faster-Whisper (local, fine-tuneable) ──────────────────────────
+# Requiere: pip install -e ".[local]"
+transcriber_type = "faster-whisper"
+local_model_size = "large-v3"   # tiny | base | small | medium | large-v3
+device = "auto"                 # auto | cpu | cuda
+compute_type = "int8"           # float16 (GPU) | int8 (CPU, más rápido y compatible)
+prompt_hint = ""                # pista inicial para el modelo (mejora precisión)
+
+# ── Ajustes comunes ──────────────────────────────────────────────────────────
 language = "es"
-api_timeout_s = 30.0
-max_concurrent_requests = 4
-queue_max_size = 100
-max_retries = 3
-retry_base_delay_s = 1.0
-prompt_hint = ""
-local_model_size = "medium"
-device = "auto"
-compute_type = "float16"
 audio_filter_enabled = true
 audio_filter_rms_threshold = 200.0
 audio_filter_speech_ratio_threshold = 0.15

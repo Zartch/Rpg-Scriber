@@ -1,0 +1,140 @@
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.export-shell {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.export-sidebar,
+.export-main {
+  min-height: 280px;
+}
+
+.export-session-item {
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+}
+
+.export-session-item.selected {
+  border-color: var(--accent);
+  background: rgba(125, 246, 255, 0.08);
+}
+
+.export-session-header {
+  margin-bottom: 0.75rem;
+}
+
+.export-session-header-copy {
+  min-width: 0;
+}
+
+.export-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.export-links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.summary-content {
+  max-height: none;
+  overflow: visible;
+}
+
+.editable-paragraph {
+  cursor: default;
+}
+
+.editable-paragraph:hover {
+  background: transparent;
+  outline: none;
+}
+
+.export-banner-meta {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.export-campaign-display {
+  align-items: center;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.session-id,
+.session-date,
+.session-duration,
+.session-preview {
+  font-family: Consolas, "Lucida Console", monospace;
+}
+
+.session-id,
+.session-date,
+.session-duration {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.session-title {
+  margin: 0.25rem 0;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.session-preview {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid rgba(88, 214, 255, 0.24);
+  background: rgba(7, 10, 16, 0.98);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.summary-stat .stat-icon {
+  font-size: 0.72rem;
+  font-family: Consolas, "Lucida Console", monospace;
+}
+
+@media (max-width: 1100px) {
+  .export-grid {
+    grid-template-columns: 1fr;
+  }
+}

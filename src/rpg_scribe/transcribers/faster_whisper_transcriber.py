@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import logging
-import struct
 import wave
 
 from rpg_scribe.core.event_bus import EventBus

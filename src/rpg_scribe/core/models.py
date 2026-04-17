@@ -50,8 +50,10 @@ class EntityInfo:
     """A known campaign entity (clan, corporation, faction, group)."""
 
     name: str
-    entity_type: str = "group"
+    entity_type: str = "other"
     description: str = ""
+    tags: list[str] = field(default_factory=list)
+    status: str = "active"
 
 
 @dataclass
@@ -61,6 +63,9 @@ class RelationshipTypeInfo:
     key: str
     label: str
     category: str = "general"
+    relation_family: str = ""
+    polarity: str = "neutral"
+    is_canonical: bool = False
 
 
 @dataclass
@@ -72,6 +77,16 @@ class CharacterRelationshipInfo:
     relation_type_key: str
     relation_type_label: str
     notes: str = ""
+    relation_family: str = ""
+    strength: float = 0.5
+    confidence: float = 0.5
+    polarity: str = "neutral"
+    certainty: str = "explicit"
+    origin: str = "extracted"
+    is_active: bool = True
+    source_session_id: str = ""
+    tags: list[str] = field(default_factory=list)
+    type_label_raw: str = ""
 
 
 
@@ -118,6 +133,9 @@ class CampaignContext:
 class TranscriberConfig:
     """Configuration for a transcriber."""
 
+    # Transcriber selection: "openai" or "faster-whisper"
+    transcriber_type: str = "openai"
+
     # OpenAI API settings
     model: str = "gpt-4o-transcribe"  # or "whisper-1"
     language: str = "es"  # ISO 639-1 language code
@@ -134,7 +152,8 @@ class TranscriberConfig:
     # Local (FasterWhisper) settings
     local_model_size: str = "medium"  # tiny, base, small, medium, large-v3
     device: str = "auto"  # "auto", "cpu", "cuda"
-    compute_type: str = "float16"  # float16, int8, etc.
+    compute_type: str = "int8"  # int8 (CPU), float16 (GPU)
+    prompt_hint: str = ""  # Initial prompt hint for local models
 
     # Pre-transcription audio filter
     audio_filter_enabled: bool = True

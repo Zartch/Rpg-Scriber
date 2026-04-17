@@ -79,8 +79,8 @@ class TestScribeSummary:
 
     @pytest.mark.asyncio
     async def test_summary_no_summary_yet(self) -> None:
-        db = AsyncMock()
-        db.get_session = AsyncMock(return_value={"session_summary": ""})
+        db = MagicMock()
+        db.sessions.get_session = AsyncMock(return_value={"session_summary": ""})
         cog = _make_cog(database=db, session_id="session-1")
         interaction = _make_interaction()
 
@@ -92,8 +92,8 @@ class TestScribeSummary:
 
     @pytest.mark.asyncio
     async def test_summary_returns_embed(self) -> None:
-        db = AsyncMock()
-        db.get_session = AsyncMock(
+        db = MagicMock()
+        db.sessions.get_session = AsyncMock(
             return_value={"session_summary": "El grupo exploró la cueva."}
         )
         cog = _make_cog(database=db, session_id="session-1")
@@ -111,8 +111,8 @@ class TestScribeSummary:
     @pytest.mark.asyncio
     async def test_summary_truncates_long_text(self) -> None:
         long_text = "A" * 5000
-        db = AsyncMock()
-        db.get_session = AsyncMock(
+        db = MagicMock()
+        db.sessions.get_session = AsyncMock(
             return_value={"session_summary": long_text}
         )
         cog = _make_cog(database=db, session_id="session-1")
@@ -127,8 +127,8 @@ class TestScribeSummary:
 
     @pytest.mark.asyncio
     async def test_summary_session_not_found(self) -> None:
-        db = AsyncMock()
-        db.get_session = AsyncMock(return_value=None)
+        db = MagicMock()
+        db.sessions.get_session = AsyncMock(return_value=None)
         cog = _make_cog(database=db, session_id="session-1")
         interaction = _make_interaction()
 
@@ -169,8 +169,8 @@ class TestScribeAsk:
 
     @pytest.mark.asyncio
     async def test_ask_no_pending_questions(self) -> None:
-        db = AsyncMock()
-        db.get_pending_questions = AsyncMock(return_value=[])
+        db = MagicMock()
+        db.entities.get_pending_questions = AsyncMock(return_value=[])
         cog = _make_cog(database=db, session_id="session-1")
         interaction = _make_interaction()
 
@@ -182,8 +182,8 @@ class TestScribeAsk:
 
     @pytest.mark.asyncio
     async def test_ask_shows_modal_with_question(self) -> None:
-        db = AsyncMock()
-        db.get_pending_questions = AsyncMock(
+        db = MagicMock()
+        db.entities.get_pending_questions = AsyncMock(
             return_value=[
                 {"id": 42, "question": "¿Quién habla ahora?", "status": "pending"}
             ]
@@ -201,8 +201,8 @@ class TestScribeAsk:
     @pytest.mark.asyncio
     async def test_ask_truncates_long_question_label(self) -> None:
         long_question = "A" * 60
-        db = AsyncMock()
-        db.get_pending_questions = AsyncMock(
+        db = MagicMock()
+        db.entities.get_pending_questions = AsyncMock(
             return_value=[
                 {"id": 1, "question": long_question, "status": "pending"}
             ]
@@ -224,8 +224,8 @@ class TestScribeAsk:
 class TestAnswerQuestionModal:
     @pytest.mark.asyncio
     async def test_on_submit_saves_answer(self) -> None:
-        db = AsyncMock()
-        db.answer_question = AsyncMock()
+        db = MagicMock()
+        db.entities.answer_question = AsyncMock()
         modal = AnswerQuestionModal(
             question_id=42,
             question_text="¿Es un PNJ?",
@@ -236,7 +236,7 @@ class TestAnswerQuestionModal:
         interaction = _make_interaction()
         await modal.on_submit(interaction)
 
-        db.answer_question.assert_called_once_with(42, "Sí, es el tabernero.")
+        db.entities.answer_question.assert_called_once_with(42, "Sí, es el tabernero.")
         interaction.response.send_message.assert_called_once()
         args, kwargs = interaction.response.send_message.call_args
         assert "Respuesta guardada" in args[0]

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from rpg_scribe.config import AppConfig, load_app_config
-from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
     SessionEndRequestEvent,
     SessionStartRequestEvent,
-    SummaryUpdateEvent,
     TranscriptionEvent,
 )
 from rpg_scribe.main import Application, build_parser
@@ -85,16 +82,16 @@ class TestApplication:
         """Test that the application can start and shutdown cleanly."""
         app = Application(config)
 
-        # Mock transcriber to avoid real API calls
-        with patch(
-            "rpg_scribe.transcribers.openai_transcriber.OpenAITranscriber"
-        ) as MockTranscriber, patch(
+        # Mock transcriber setup and web server to avoid real API calls.
+        # Patch _setup_transcriber directly so the test is independent of
+        # which transcriber_type is set in default.toml.
+        with patch.object(
+            app, "_setup_transcriber", new_callable=AsyncMock
+        ) as mock_setup_transcriber, patch(
             "uvicorn.Config"
         ), patch(
             "uvicorn.Server"
         ) as MockServer:
-            mock_transcriber = AsyncMock()
-            MockTranscriber.return_value = mock_transcriber
             mock_server_instance = AsyncMock()
             MockServer.return_value = mock_server_instance
 
@@ -103,8 +100,8 @@ class TestApplication:
             # Verify DB is connected
             assert app.db._conn is not None
 
-            # Verify transcriber started
-            mock_transcriber.start.assert_called_once()
+            # Verify transcriber setup was called
+            mock_setup_transcriber.assert_called_once()
 
             await app.shutdown()
             assert app.db._conn is None
@@ -132,10 +129,10 @@ class TestApplication:
         """Test that transcriptions are persisted to the database."""
         app = Application(config)
         await app.db.connect()
-        await app.db.upsert_campaign(
+        await app.db.campaigns.upsert_campaign(
             campaign_id="integration-test", name="Test"
         )
-        await app.db.create_session("s1", "integration-test")
+        await app.db.sessions.create_session("s1", "integration-test")
 
         event = TranscriptionEvent(
             session_id="s1",
@@ -148,7 +145,7 @@ class TestApplication:
         )
         await app._persist_transcription(event)
 
-        rows = await app.db.get_transcriptions("s1")
+        rows = await app.db.transcriptions.get_transcriptions("s1")
         assert len(rows) == 1
         assert rows[0]["text"] == "Hello world"
 
@@ -158,10 +155,10 @@ class TestApplication:
         """Partial transcriptions should not be persisted."""
         app = Application(config)
         await app.db.connect()
-        await app.db.upsert_campaign(
+        await app.db.campaigns.upsert_campaign(
             campaign_id="integration-test", name="Test"
         )
-        await app.db.create_session("s1", "integration-test")
+        await app.db.sessions.create_session("s1", "integration-test")
 
         event = TranscriptionEvent(
             session_id="s1",
@@ -174,7 +171,7 @@ class TestApplication:
         )
         await app._persist_transcription(event)
 
-        rows = await app.db.get_transcriptions("s1")
+        rows = await app.db.transcriptions.get_transcriptions("s1")
         assert len(rows) == 0
 
         await app.db.close()
@@ -183,22 +180,23 @@ class TestApplication:
         """Test session start and end flows."""
         app = Application(config)
         await app.db.connect()
-        await app.db.upsert_campaign(
+        await app.db.campaigns.upsert_campaign(
             campaign_id="integration-test", name="Test"
         )
 
         await app.on_session_start("s1")
-        session = await app.db.get_session("s1")
+        session = await app.db.sessions.get_session("s1")
         assert session is not None
         assert session["status"] == "active"
 
         # Mock summarizer for finalize
         app._summarizer = AsyncMock()
         app._summarizer.finalize_session = AsyncMock(return_value="Final summary")
+        app._summarizer._session_chronology = ""
         app._summarizer.stop = AsyncMock()
 
         await app.on_session_end("s1")
-        session = await app.db.get_session("s1")
+        session = await app.db.sessions.get_session("s1")
         assert session is not None
         assert session["status"] == "completed"
         assert session["session_summary"] == "Final summary"
@@ -211,7 +209,7 @@ class TestApplication:
         """SessionStartRequestEvent should trigger on_session_start."""
         app = Application(config)
         await app.db.connect()
-        await app.db.upsert_campaign(
+        await app.db.campaigns.upsert_campaign(
             campaign_id="integration-test", name="Test"
         )
 
@@ -227,7 +225,7 @@ class TestApplication:
             )
 
         assert app._active_session_id == "evt-s1"
-        session = await app.db.get_session("evt-s1")
+        session = await app.db.sessions.get_session("evt-s1")
         assert session is not None
         assert session["status"] == "active"
 
@@ -239,15 +237,16 @@ class TestApplication:
         """SessionEndRequestEvent should trigger on_session_end via background task."""
         app = Application(config, log_dir=tmp_path)
         await app.db.connect()
-        await app.db.upsert_campaign(
+        await app.db.campaigns.upsert_campaign(
             campaign_id="integration-test", name="Test"
         )
-        await app.db.create_session("evt-s2", "integration-test")
+        await app.db.sessions.create_session("evt-s2", "integration-test")
         app._active_session_id = "evt-s2"
 
         # Mock summarizer
         app._summarizer = AsyncMock()
         app._summarizer.finalize_session = AsyncMock(return_value="Final")
+        app._summarizer._session_chronology = ""
         app._summarizer.get_campaign_summary = AsyncMock(return_value="Campaign")
         app._summarizer.stop = AsyncMock()
 
@@ -265,7 +264,7 @@ class TestApplication:
         await app._finalize_task
 
         assert app._active_session_id is None
-        session = await app.db.get_session("evt-s2")
+        session = await app.db.sessions.get_session("evt-s2")
         assert session["status"] == "completed"
         assert session["session_summary"] == "Final"
 

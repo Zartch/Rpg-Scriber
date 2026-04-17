@@ -19,11 +19,11 @@ from rpg_scribe.core.events import (
     TranscriptionEvent,
 )
 from rpg_scribe.web.app import create_app
-from rpg_scribe.web.routes import WebState
+from rpg_scribe.web.state import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 
-# â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Fixtures â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _make_status(**overrides) -> SystemStatusEvent:
     return SystemStatusEvent(**defaults)
 
 
-# â”€â”€ WebState unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ WebState unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestWebState:
@@ -157,7 +157,7 @@ class TestWebState:
         assert state.session_summary == "v2"
 
 
-# â”€â”€ ConnectionManager unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ ConnectionManager unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestConnectionManager:
@@ -216,7 +216,7 @@ class TestConnectionManager:
         await mgr.broadcast({"type": "empty"})
 
 
-# â”€â”€ WebSocketBridge unit tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ WebSocketBridge unit tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestWebSocketBridge:
@@ -282,7 +282,7 @@ class TestWebSocketBridge:
         assert payload["data"]["component"] == "listener"
 
 
-# â”€â”€ REST endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ REST endpoint tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestRESTEndpoints:
@@ -303,7 +303,7 @@ class TestRESTEndpoints:
 
     async def test_get_full_transcriptions_prefers_db(self, event_bus: EventBus):
         db = AsyncMock()
-        db.get_transcriptions = AsyncMock(return_value=[
+        db.transcriptions.get_transcriptions = AsyncMock(return_value=[
             {
                 "session_id": "sess-001",
                 "speaker_name": "Ana",
@@ -334,13 +334,13 @@ class TestRESTEndpoints:
         self, event_bus: EventBus
     ):
         db = AsyncMock()
-        db.get_session = AsyncMock(return_value={
+        db.sessions.get_session = AsyncMock(return_value={
             "id": "sess-001",
             "campaign_id": "camp-1",
             "session_summary": "Stored DB summary",
             "ended_at": 1700001111.0,
         })
-        db.get_campaign = AsyncMock(return_value={"campaign_summary": "Camp DB summary"})
+        db.campaigns.get_campaign = AsyncMock(return_value={"campaign_summary": "Camp DB summary"})
 
         app = create_app(event_bus, database=db)
         from rpg_scribe.web.routes import router
@@ -365,7 +365,7 @@ class TestRESTEndpoints:
 
     async def test_get_questions_from_db_active_session(self, event_bus: EventBus):
         db = AsyncMock()
-        db.get_pending_questions = AsyncMock(return_value=[
+        db.entities.get_pending_questions = AsyncMock(return_value=[
             {"id": 10, "question": "¿Quién es el PNJ?", "status": "pending"},
         ])
 
@@ -383,7 +383,7 @@ class TestRESTEndpoints:
         body = resp.json()
         assert len(body["questions"]) == 1
         assert body["questions"][0]["id"] == 10
-        db.get_pending_questions.assert_awaited_once_with("sess-live")
+        db.entities.get_pending_questions.assert_awaited_once_with("sess-live")
     async def test_get_campaigns_empty(self, client: AsyncClient):
         resp = await client.get("/api/campaigns")
         assert resp.status_code == 200
@@ -443,7 +443,7 @@ class TestRESTEndpoints:
 
     async def test_answer_question_persists_to_db(self, event_bus: EventBus):
         db = AsyncMock()
-        db.answer_question = AsyncMock()
+        db.entities.answer_question = AsyncMock()
 
         app = create_app(event_bus, database=db)
         from rpg_scribe.web.routes import router
@@ -460,7 +460,7 @@ class TestRESTEndpoints:
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        db.answer_question.assert_awaited_once_with(42, "Es el herrero.")
+        db.entities.answer_question.assert_awaited_once_with(42, "Es el herrero.")
     async def test_answer_question_missing(self, client: AsyncClient):
         resp = await client.post(
             "/api/questions/nonexistent/answer",
@@ -552,7 +552,7 @@ class TestRESTEndpoints:
         self, event_bus: EventBus, tmp_path
     ):
         db = AsyncMock()
-        db.get_session = AsyncMock(return_value={
+        db.sessions.get_session = AsyncMock(return_value={
             "id": "sess-db",
             "started_at": 1700000000.0,
             "ended_at": 1700003600.0,
@@ -560,7 +560,7 @@ class TestRESTEndpoints:
             "session_summary": "Stored summary",
             "session_chronology": "",
         })
-        db.get_transcriptions = AsyncMock(return_value=[
+        db.transcriptions.get_transcriptions = AsyncMock(return_value=[
             {
                 "id": 1,
                 "session_id": "sess-db",
@@ -591,8 +591,277 @@ class TestRESTEndpoints:
         assert downloaded.headers["content-type"] == "application/zip"
         assert len(downloaded.content) > 0
 
+    async def test_create_campaign_export_from_db(
+        self, event_bus: EventBus, tmp_path
+    ):
+        db = AsyncMock()
+        db.campaigns.get_campaign = AsyncMock(return_value={
+            "id": "camp-1",
+            "name": "Night City Files",
+            "game_system": "Cyberpunk RED",
+            "language": "es",
+            "description": "A campaign in Night City.",
+            "campaign_summary": "The crew is deep into a corporate conspiracy.",
+            "dm_speaker_id": "dm-1",
+            "custom_instructions": "",
+        })
+        db.entities.get_players = AsyncMock(return_value=[
+            {
+                "discord_id": "p-1",
+                "discord_name": "Ada",
+                "character_name": "Nyx",
+                "character_description": "Netrunner",
+            },
+        ])
+        db.entities.get_npcs = AsyncMock(return_value=[
+            {"name": "Fixer Rojo", "description": "A dangerous fixer."},
+        ])
+        db.entities.get_locations = AsyncMock(return_value=[
+            {"name": "Afterlife", "description": "Legendary bar."},
+        ])
+        db.entities.get_entities = AsyncMock(return_value=[
+            {
+                "name": "Arasaka",
+                "entity_type": "corporation",
+                "description": "Megacorp",
+            },
+        ])
+        db.entities.get_relationship_types = AsyncMock(return_value=[
+            {"canonical_key": "ally", "label": "Ally", "category": "social"},
+        ])
+        db.entities.get_character_relationships = AsyncMock(return_value=[
+            {
+                "source_key": "player:nyx",
+                "target_key": "npc:fixer-rojo",
+                "type_key": "ally",
+                "type_label": "Ally",
+                "notes": "Trusted contact",
+            },
+        ])
+        db.entities.get_merged_npcs_map = AsyncMock(return_value={})
+        db.entities.get_merged_locations_map = AsyncMock(return_value={})
+        db.entities.get_merged_entities_map = AsyncMock(return_value={})
+        db.sessions.list_sessions = AsyncMock(return_value=[
+            {
+                "id": "sess-001",
+                "campaign_id": "camp-1",
+                "title": "Warehouse Job",
+                "started_at": 1700000000.0,
+                "ended_at": 1700003600.0,
+                "status": "completed",
+                "session_summary": "The crew infiltrated a warehouse.",
+                "session_chronology": "22:00 - The crew enters the warehouse.",
+            },
+        ])
+        db.transcriptions.get_transcriptions = AsyncMock(return_value=[
+            {
+                "id": 1,
+                "session_id": "sess-001",
+                "speaker_id": "p-1",
+                "speaker_name": "Ada",
+                "text": "Entramos por la puerta trasera.",
+                "timestamp": 1700000010.0,
+                "confidence": 0.97,
+                "is_ingame": True,
+            },
+        ])
 
-# â”€â”€ Integration: event bus â†’ WebState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        router.export_root = tmp_path  # type: ignore[attr-defined]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.post("/api/campaigns/camp-1/export")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["campaign_id"] == "camp-1"
+        assert body["download_url"].endswith("export_id=" + body["export_id"])
+
+        zip_path = tmp_path / body["zip_name"]
+        assert zip_path.exists()
+        with zipfile.ZipFile(zip_path) as zf:
+            names = sorted(zf.namelist())
+            assert "index.html" in names
+            assert "assets/export.css" in names
+            assert "assets/export.js" in names
+            assert "data/campaign.json" in names
+            assert "data/campaign-summary.md" in names
+            assert "data/sessions/index.json" in names
+            assert "data/sessions/sess-001/transcript.csv" in names
+            assert "data/sessions/sess-001/summary.md" in names
+            assert "data/sessions/sess-001/chronology.md" in names
+            assert not any("replacement" in name.lower() for name in names)
+            assert not any(name.lower().endswith((".mp3", ".wav", ".ogg", ".m4a")) for name in names)
+
+    async def test_list_and_download_campaign_export(
+        self, event_bus: EventBus, tmp_path
+    ):
+        db = AsyncMock()
+        db.campaigns.get_campaign = AsyncMock(return_value={
+            "id": "camp-1",
+            "name": "Night City Files",
+            "game_system": "Cyberpunk RED",
+            "language": "es",
+            "description": "",
+            "campaign_summary": "Summary",
+            "dm_speaker_id": "",
+            "custom_instructions": "",
+        })
+        db.entities.get_players = AsyncMock(return_value=[])
+        db.entities.get_npcs = AsyncMock(return_value=[])
+        db.entities.get_locations = AsyncMock(return_value=[])
+        db.entities.get_entities = AsyncMock(return_value=[])
+        db.entities.get_relationship_types = AsyncMock(return_value=[])
+        db.entities.get_character_relationships = AsyncMock(return_value=[])
+        db.entities.get_merged_npcs_map = AsyncMock(return_value={})
+        db.entities.get_merged_locations_map = AsyncMock(return_value={})
+        db.entities.get_merged_entities_map = AsyncMock(return_value={})
+        db.sessions.list_sessions = AsyncMock(return_value=[])
+
+        app = create_app(event_bus, database=db)
+        from rpg_scribe.web.routes import router
+
+        router.export_root = tmp_path  # type: ignore[attr-defined]
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            created = await c.post("/api/campaigns/camp-1/export")
+            export_id = created.json()["export_id"]
+            listing = await c.get("/api/campaigns/camp-1/exports")
+            downloaded = await c.get(
+                "/api/campaigns/camp-1/export/download",
+                params={"export_id": export_id},
+            )
+
+        assert created.status_code == 200
+        assert listing.status_code == 200
+        exports = listing.json()["exports"]
+        assert len(exports) == 1
+        assert exports[0]["export_id"] == export_id
+        assert downloaded.status_code == 200
+        assert downloaded.headers["content-type"] == "application/zip"
+        assert len(downloaded.content) > 0
+
+
+class TestStatusEndpoint:
+    async def test_status_includes_active_session_title_none(self, client) -> None:
+        resp = await client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "active_session_title" in data
+        assert data["active_session_title"] is None
+
+    async def test_status_includes_active_session_title_from_db(
+        self, client, app
+    ) -> None:
+        from rpg_scribe.web import routes as _routes
+
+        state = _routes.router.state
+        state.active_session_id = "sess-abc"
+
+        db_mock = AsyncMock()
+        db_mock.sessions.get_session = AsyncMock(
+            return_value={"id": "sess-abc", "title": "El dragón rojo", "status": "active"}
+        )
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.get("/api/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["active_session_title"] == "El dragón rojo"
+        finally:
+            state.active_session_id = None
+            _routes.router.database = None
+
+    async def test_status_config_null_when_no_config(self, client) -> None:
+        resp = await client.get("/api/status")
+        data = resp.json()
+        assert "config" in data
+        assert data["config"] is None
+
+    async def test_status_config_faster_whisper(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from rpg_scribe.config import AppConfig
+        from rpg_scribe.core.models import (
+            TranscriberConfig, SummarizerConfig, TTSConfig, ListenerConfig
+        )
+        cfg = AppConfig()
+        cfg.transcriber = TranscriberConfig(
+            transcriber_type="faster-whisper", local_model_size="large-v3",
+            device="cpu", compute_type="int8", language="es",
+            audio_filter_enabled=True, post_filter_enabled=True,
+        )
+        cfg.summarizer = SummarizerConfig(model="claude-test", extraction_every_n_updates=0)
+        cfg.tts = TTSConfig(enabled=True, provider="openai", voice="nova", model="tts-1")
+        cfg.listener = ListenerConfig(chunk_duration_s=10.0, vad_aggressiveness=2)
+        cfg.database_path = "test.db"
+        _routes.router.config = cfg
+        try:
+            resp = await client.get("/api/status")
+            data = resp.json()
+            c = data["config"]
+            assert c["transcriber"]["transcriber_type"] == "faster-whisper"
+            assert c["transcriber"]["model"] == "large-v3"
+            assert c["transcriber"]["device"] == "cpu"
+            assert c["transcriber"]["compute_type"] == "int8"
+            assert c["transcriber"]["language"] == "es"
+            assert c["listener"]["chunk_duration_s"] == 10.0
+            assert c["listener"]["vad_aggressiveness"] == 2
+            assert c["listener"]["audio_filter_enabled"] is True
+            assert c["listener"]["post_filter_enabled"] is True
+            assert c["summarizer"]["model"] == "claude-test"
+            assert c["summarizer"]["extraction_every_n_updates"] == 0
+            assert c["tts"]["enabled"] is True
+            assert c["tts"]["voice"] == "nova"
+            assert c["tts"]["model"] == "tts-1"
+            assert c["tts"]["provider"] == "openai"
+            assert c["database"]["path"] == "test.db"
+        finally:
+            _routes.router.config = None
+
+    async def test_status_config_openai_omits_local_fields(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from rpg_scribe.config import AppConfig
+        from rpg_scribe.core.models import TranscriberConfig
+        cfg = AppConfig()
+        cfg.transcriber = TranscriberConfig(
+            transcriber_type="openai", model="gpt-4o-transcribe", language="es"
+        )
+        _routes.router.config = cfg
+        try:
+            resp = await client.get("/api/status")
+            t = resp.json()["config"]["transcriber"]
+            assert t["transcriber_type"] == "openai"
+            assert t["model"] == "gpt-4o-transcribe"
+            assert "device" not in t
+            assert "compute_type" not in t
+        finally:
+            _routes.router.config = None
+
+    async def test_status_config_tts_disabled(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from rpg_scribe.config import AppConfig
+        from rpg_scribe.core.models import TTSConfig
+        cfg = AppConfig()
+        cfg.tts = TTSConfig(enabled=False)
+        _routes.router.config = cfg
+        try:
+            resp = await client.get("/api/status")
+            tts = resp.json()["config"]["tts"]
+            assert tts["enabled"] is False
+            assert "voice" not in tts
+            assert "model" not in tts
+            assert "provider" not in tts
+        finally:
+            _routes.router.config = None
+
+
+# â"€â"€ Integration: event bus â†’ WebState â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestEventBusIntegration:
@@ -646,7 +915,7 @@ class TestEventBusIntegration:
         assert len(state.transcriptions) == 3
 
 
-# â”€â”€ Session list endpoint tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ Session list endpoint tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestSessionListEndpoint:
@@ -663,7 +932,7 @@ class TestSessionListEndpoint:
     async def test_list_sessions_returns_sessions(self, event_bus: EventBus):
         """With a database, sessions are returned with truncated summaries."""
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-001",
                 "campaign_id": "camp-1",
@@ -698,7 +967,7 @@ class TestSessionListEndpoint:
     async def test_list_sessions_ordered_by_date(self, event_bus: EventBus):
         """Sessions should be returned in the order provided by database (desc by started_at)."""
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-new",
                 "campaign_id": "camp-1",
@@ -728,7 +997,7 @@ class TestSessionListEndpoint:
         """Long summaries should be truncated to 150 chars with ellipsis."""
         long_summary = "A" * 200
         db = AsyncMock()
-        db.list_sessions = AsyncMock(return_value=[
+        db.sessions.list_sessions = AsyncMock(return_value=[
             {
                 "id": "sess-long",
                 "campaign_id": "camp-1",
@@ -748,7 +1017,7 @@ class TestSessionListEndpoint:
             assert preview.endswith("...")
 
 
-# â”€â”€ create_app factory tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# â"€â"€ create_app factory tests â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 class TestFinalizeEndpoint:
@@ -882,11 +1151,110 @@ class TestCreateApp:
         assert "/api/sessions/{session_id}/export" in paths
         assert "/api/sessions/{session_id}/exports" in paths
         assert "/api/sessions/{session_id}/export/download" in paths
+        assert "/api/campaigns/{campaign_id}/export" in paths
+        assert "/api/campaigns/{campaign_id}/exports" in paths
+        assert "/api/campaigns/{campaign_id}/export/download" in paths
 
     def test_app_title(self, app):
         assert app.title == "RPG Scribe"
 
 
+class TestSessionTitleStatusEndpoints:
+    async def test_patch_title_no_db_returns_503(self, client) -> None:
+        resp = await client.patch(
+            "/api/sessions/s1/title", json={"title": "nuevo titulo"}
+        )
+        assert resp.status_code == 503
 
+    async def test_patch_status_no_db_returns_503(self, client) -> None:
+        resp = await client.patch(
+            "/api/sessions/s1/status", json={"status": "completed"}
+        )
+        assert resp.status_code == 503
 
+    async def test_patch_title_not_found_returns_404(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_title = AsyncMock(return_value=False)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/missing/title", json={"title": "test"}
+            )
+            assert resp.status_code == 404
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_title_success(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_title = AsyncMock(return_value=True)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/title", json={"title": "El dragón rojo"}
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {"ok": True}
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_status_invalid_value_returns_422(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_status = AsyncMock(
+            side_effect=ValueError("status must be 'active' or 'completed'")
+        )
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/status", json={"status": "paused"}
+            )
+            assert resp.status_code == 422
+        finally:
+            _routes.router.database = None
+
+    async def test_patch_status_success(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.update_session_status = AsyncMock(return_value=True)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.patch(
+                "/api/sessions/s1/status", json={"status": "completed"}
+            )
+            assert resp.status_code == 200
+            assert resp.json() == {"ok": True}
+        finally:
+            _routes.router.database = None
+
+    async def test_post_generate_title_no_db_returns_503(self, client) -> None:
+        resp = await client.post("/api/sessions/s1/generate-title")
+        assert resp.status_code == 503
+
+    async def test_post_generate_title_not_found_returns_404(self, client, app) -> None:
+        from rpg_scribe.web import routes as _routes
+        from unittest.mock import AsyncMock
+
+        db_mock = AsyncMock()
+        db_mock.sessions.get_session = AsyncMock(return_value=None)
+        _routes.router.database = db_mock
+
+        try:
+            resp = await client.post("/api/sessions/missing/generate-title")
+            assert resp.status_code == 404
+        finally:
+            _routes.router.database = None
 

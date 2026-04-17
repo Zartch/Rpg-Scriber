@@ -1,0 +1,284 @@
+.badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+}
+.badge-connected { background: var(--green); color: #000; }
+.badge-idle      { background: var(--border); color: var(--text-muted); }
+
+.btn-small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.btn-small:hover {
+  border-color: var(--accent);
+  background: rgba(124, 106, 240, 0.1);
+}
+.btn-small:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--bg);
+}
+.btn-save {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-save:hover { opacity: 0.85; }
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-cancel {
+  color: var(--text-muted);
+}
+
+.btn-danger { background: var(--red); color: #fff; border: none; }
+.btn-danger:hover { background: #ef4444; }
+
+/* Finalize button */
+.btn-finalize {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+  font-weight: 700;
+}
+.btn-finalize:hover { opacity: 0.85; }
+.btn-finalize:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-add {
+  margin-top: 0.5rem;
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+.btn-add:hover {
+  background: rgba(124, 106, 240, 0.1);
+}
+
+/* Status latency indicators */
+.status-latency {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.25rem;
+}
+.latency-good { color: var(--green); }
+.latency-ok   { color: var(--yellow); }
+.latency-slow { color: var(--red); }
+
+/* Questions badge */
+.q-badge {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+.q-badge.pulse {
+  animation: badge-pulse 0.4s ease-out;
+}
+@keyframes badge-pulse {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.placeholder { color: var(--text-muted); font-style: italic; }
+
+/* Loading States & UX Components */
+
+/* Spinner animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Inline spinner for buttons */
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top: 2px solid var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.4em;
+  animation: spin 0.6s linear infinite;
+}
+
+.btn-small .spinner-inline {
+  width: 12px;
+  height: 12px;
+}
+
+/* Panel loading overlay */
+.panel-loadable {
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 17, 23, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: inherit;
+}
+
+.loading-overlay .spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid transparent;
+  border-top: 3px solid #ffffff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Skeleton shimmer effect */
+.skeleton-line {
+  height: 1em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-block {
+  height: 3em;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border) 25%, #3a3d4a 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-line + .skeleton-line,
+.skeleton-block + .skeleton-line,
+.skeleton-line + .skeleton-block,
+.skeleton-block + .skeleton-block {
+  margin-top: 0.5rem;
+}
+
+/* Natural width variation for skeleton lines */
+.skeleton-line:nth-child(odd) { width: 85%; }
+.skeleton-line:nth-child(even) { width: 65%; }
+
+/* Content refresh state (for polling updates) */
+.content-refreshing {
+  opacity: 0.5;
+  filter: blur(1px);
+  pointer-events: none;
+  transition: opacity 0.2s, filter 0.2s;
+}
+
+/* Global cyberpunk console theme — component overrides */
+
+.badge,
+.q-badge {
+  border-radius: 0;
+  border: 1px solid rgba(88, 214, 255, 0.18);
+  font-family: Consolas, "Lucida Console", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.badge-connected {
+  background: rgba(52, 255, 181, 0.14);
+  color: #d8fff3;
+}
+
+.badge-idle {
+  background: rgba(12, 20, 32, 0.96);
+  color: var(--text-muted);
+}
+
+.btn-small,
+.question-card button,
+.entry-actions button,
+.btn-play,
+.replacement-delete,
+.btn-narrate-ctrl,
+.mode-btn {
+  border-radius: 0;
+  border: 1px solid rgba(88, 214, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(6, 18, 26, 0.98), rgba(7, 10, 16, 0.98));
+  color: var(--text);
+  font-family: Consolas, "Lucida Console", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+.btn-small:hover,
+.question-card button:hover,
+.entry-actions button:hover,
+.btn-play:hover,
+.btn-narrate-ctrl:hover:not(:disabled),
+.mode-btn:hover {
+  border-color: rgba(35, 255, 185, 0.7);
+  background: rgba(10, 28, 36, 0.98);
+  color: #e5fff8;
+}
+
+.btn-save,
+.mode-btn.active,
+.btn-narrate-playpause {
+  background: linear-gradient(180deg, rgba(35, 255, 185, 0.2), rgba(10, 54, 46, 0.95));
+  border-color: rgba(35, 255, 185, 0.55);
+  color: #dffef6 !important;
+}
+
+.btn-finalize {
+  background: linear-gradient(180deg, rgba(255, 107, 136, 0.18), rgba(74, 14, 30, 0.96));
+  border-color: rgba(255, 107, 136, 0.4);
+}
+
+.btn-add {
+  border-style: solid;
+}
+
+.edit-row input[type="text"],
+.edit-row textarea,
+.edit-row select,
+.word-edit-input,
+.paragraph-edit-textarea,
+.question-card input[type="text"],
+.relationship-filter-field input,
+.relationship-filter-field select,
+.relationship-graph-control input,
+.relationship-graph-control select,
+.relationship-graph-path-controls select {
+  background: linear-gradient(180deg, rgba(5, 16, 22, 0.98), rgba(7, 10, 16, 0.98));
+  border: 1px solid rgba(88, 214, 255, 0.24);
+  border-radius: 0;
+  color: var(--text);
+  font-family: Consolas, "Lucida Console", monospace;
+}
+
+.edit-row input[type="text"]:focus,
+.edit-row textarea:focus,
+.edit-row select:focus,
+.word-edit-input:focus,
+.paragraph-edit-textarea:focus,
+.question-card input[type="text"]:focus {
+  border-color: rgba(35, 255, 185, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(35, 255, 185, 0.35),
+    0 0 0 1px rgba(35, 255, 185, 0.12);
+}

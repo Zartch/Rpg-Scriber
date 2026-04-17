@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Campaign Export</title>
+  <link rel="stylesheet" href="./assets/export.css" />
+</head>
+<body>
+  <div class="export-shell">
+    <section id="campaign-bar" class="panel campaign-bar">
+      <div class="campaign-display export-campaign-display">
+        <div class="campaign-info">
+          <span class="campaign-label">Campaign:</span>
+          <strong id="campaign-name">-</strong>
+          <span class="campaign-meta" id="campaign-system"></span>
+          <span class="campaign-meta" id="campaign-master"></span>
+        </div>
+        <div class="export-banner-meta">
+          <span class="campaign-meta" id="campaign-export-date"></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="campaign-details-section" class="panel entity-section">
+      <div class="entity-header" id="campaign-details-header">
+        <h2>Campaign Details</h2>
+        <div class="campaign-summary-stats" id="campaign-summary-stats">
+          <span class="summary-stat" title="Players"><span class="stat-icon">P</span><span class="stat-value" id="stat-players">0</span></span>
+          <span class="summary-stat" title="NPCs"><span class="stat-icon">N</span><span class="stat-value" id="stat-npcs">0</span></span>
+          <span class="summary-stat" title="Locations"><span class="stat-icon">L</span><span class="stat-value" id="stat-locations">0</span></span>
+          <span class="summary-stat" title="Entities"><span class="stat-icon">E</span><span class="stat-value" id="stat-entities">0</span></span>
+          <span class="summary-stat" title="Relationships"><span class="stat-icon">R</span><span class="stat-value" id="stat-relationships">0</span></span>
+        </div>
+        <span class="collapse-arrow">&#9660;</span>
+      </div>
+      <div id="campaign-details-body" class="entity-body">
+        <div class="campaign-details-tabs">
+          <button class="summary-tab active" data-detail-tab="players" type="button">Players</button>
+          <button class="summary-tab" data-detail-tab="npcs" type="button">NPCs</button>
+          <button class="summary-tab" data-detail-tab="locations" type="button">Locations</button>
+          <button class="summary-tab" data-detail-tab="entities" type="button">Entities</button>
+          <button class="summary-tab" data-detail-tab="relationships" type="button">Relationships</button>
+          <button class="summary-tab" data-detail-tab="graph" type="button">Graph</button>
+        </div>
+
+        <div id="players-tab" class="detail-tab-content active"><div id="players-list" class="entity-list"></div></div>
+        <div id="npcs-tab" class="detail-tab-content"><div id="npcs-list" class="entity-list"></div></div>
+        <div id="locations-tab" class="detail-tab-content"><div id="locations-list" class="entity-list"></div></div>
+        <div id="entities-tab" class="detail-tab-content"><div id="entities-list" class="entity-list"></div></div>
+        <div id="relationships-tab" class="detail-tab-content"><div id="relationships-list" class="entity-list"></div></div>
+
+        <div id="graph-tab" class="detail-tab-content">
+          <section id="relationship-graph-panel" class="relationship-graph">
+            <div class="relationship-graph-header">
+              <strong>Relationship Graph 3D</strong>
+              <span id="relationship-graph-hint" class="relationship-graph-hint">Orbit with drag, zoom with wheel, click a node to focus it.</span>
+            </div>
+            <div class="relationship-graph-filters">
+              <label><input id="graph-filter-players" type="checkbox" checked /> Players</label>
+              <label><input id="graph-filter-npcs" type="checkbox" checked /> NPCs</label>
+              <label><input id="graph-filter-locations" type="checkbox" checked /> Locations</label>
+              <label><input id="graph-filter-entities" type="checkbox" checked /> Entities</label>
+            </div>
+            <div class="relationship-graph-controls">
+              <label class="relationship-graph-control">
+                <span>Search</span>
+                <input id="relationship-graph-search" type="search" placeholder="Find node..." />
+              </label>
+              <label class="relationship-graph-control">
+                <span>Community</span>
+                <select id="relationship-graph-community"><option value="all">All communities</option></select>
+              </label>
+              <label class="relationship-graph-control">
+                <span>Neighborhood</span>
+                <select id="relationship-graph-neighborhood">
+                  <option value="0">All graph</option>
+                  <option value="1">Focus radius 1</option>
+                  <option value="2">Focus radius 2</option>
+                </select>
+              </label>
+              <label class="relationship-graph-control">
+                <span>Node size</span>
+                <select id="relationship-graph-metric">
+                  <option value="degree">Degree</option>
+                  <option value="betweenness">Bridge score</option>
+                  <option value="closeness">Closeness</option>
+                </select>
+              </label>
+              <label class="relationship-graph-toggle">
+                <input id="relationship-graph-isolate-component" type="checkbox" />
+                <span>Isolate component</span>
+              </label>
+              <button id="relationship-graph-fit-all" class="btn-small relationship-graph-fit-btn" type="button">Fit All</button>
+            </div>
+            <div class="relationship-graph-layout">
+              <div class="relationship-graph-stage">
+                <canvas id="relationship-graph-canvas" class="relationship-graph-canvas"></canvas>
+                <div id="relationship-graph-empty" class="relationship-graph-empty hidden"></div>
+                <div id="relationship-node-tooltip" class="relationship-node-tooltip hidden"></div>
+              </div>
+              <aside class="relationship-graph-sidebar">
+                <div class="relationship-graph-sidebar-block">
+                  <div class="relationship-graph-sidebar-title">Legend</div>
+                  <div id="relationship-legend" class="relationship-legend"></div>
+                </div>
+                <div class="relationship-graph-sidebar-block">
+                  <div class="relationship-graph-sidebar-title">Graph stats</div>
+                  <div id="relationship-graph-stats" class="relationship-graph-stats"></div>
+                </div>
+                <div class="relationship-graph-sidebar-block">
+                  <div class="relationship-graph-sidebar-title">Selected node</div>
+                  <div id="relationship-graph-details" class="relationship-graph-details"></div>
+                </div>
+                <div class="relationship-graph-sidebar-block">
+                  <div class="relationship-graph-sidebar-title">Shortest path</div>
+                  <div class="relationship-graph-path-controls">
+                    <select id="relationship-graph-path-source"><option value="">Path source</option></select>
+                    <select id="relationship-graph-path-target"><option value="">Path target</option></select>
+                  </div>
+                  <div id="relationship-graph-path-output" class="relationship-graph-path-output"></div>
+                </div>
+                <div class="relationship-graph-sidebar-block">
+                  <div class="relationship-graph-sidebar-title">Top nodes</div>
+                  <div id="relationship-graph-top" class="relationship-graph-top"></div>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="export-grid">
+      <aside class="panel export-sidebar">
+        <div class="panel-header-row">
+          <h2>Sessions</h2>
+          <span id="sessions-count" class="campaign-meta"></span>
+        </div>
+        <div id="session-list" class="session-list"></div>
+      </aside>
+
+      <main class="panel export-main">
+        <div class="panel-header-row export-session-header">
+          <div class="export-session-header-copy">
+            <h2 id="session-title">Select a session</h2>
+            <div id="session-meta" class="campaign-meta"></div>
+          </div>
+          <div id="session-download-links" class="export-links"></div>
+        </div>
+
+        <div class="summary-tabs export-summary-tabs">
+          <button class="summary-tab active" data-session-tab="narrative" type="button">Narrative</button>
+          <button class="summary-tab" data-session-tab="chronology" type="button">Chronology</button>
+          <button class="summary-tab" data-session-tab="transcript" type="button">Transcript</button>
+          <button class="summary-tab" data-session-tab="campaign" type="button">Campaign</button>
+        </div>
+
+        <section id="session-panel-narrative" class="export-session-panel active">
+          <div id="session-summary" class="summary-content"></div>
+        </section>
+        <section id="session-panel-chronology" class="export-session-panel hidden">
+          <div id="session-chronology" class="summary-content"></div>
+        </section>
+        <section id="session-panel-transcript" class="export-session-panel hidden">
+          <div id="session-transcript"></div>
+        </section>
+        <section id="session-panel-campaign" class="export-session-panel hidden">
+          <div id="campaign-summary" class="summary-content"></div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script id="campaign-export-data" type="application/json">__PAYLOAD__</script>
+  <script src="./assets/utils.js"></script>
+  <script src="./assets/graph-3d.js"></script>
+  <script src="./assets/export.js"></script>
+</body>
+</html>

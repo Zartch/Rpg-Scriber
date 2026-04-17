@@ -1,0 +1,103 @@
+/* Transcription feed */
+.feed {
+  max-height: 400px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.feed-entry {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+.feed-entry .speaker {
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 0.4rem;
+}
+.feed-entry .ts {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+}
+.feed-entry.partial { opacity: 0.6; border-left-color: var(--text-muted); }
+
+/* Action buttons on transcriptions (always visible, left side) */
+.entry-actions { display: inline-flex; gap: 0.2rem; margin-right: 0.4rem; opacity: 0.5; vertical-align: middle; }
+.feed-entry:hover .entry-actions { opacity: 1; }
+.entry-actions button {
+  font-size: 0.7rem; padding: 0 0.35rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+}
+.entry-actions .btn-delete:hover { background: #e53e3e; color: #fff; }
+.entry-actions .btn-meta:hover { background: var(--accent); color: #fff; }
+
+/* Play audio button */
+.btn-play {
+  font-size: 0.65rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+  margin-left: 0.3rem; opacity: 0.5; vertical-align: middle; transition: opacity 0.15s;
+}
+.feed-entry:hover .btn-play { opacity: 1; }
+.btn-play:hover { background: var(--green); color: #fff; }
+.btn-play.playing { background: var(--green); color: #fff; opacity: 1; }
+
+/* META transcription state */
+.feed-entry.meta { border-left-color: var(--text-muted); opacity: 0.7; }
+.feed-entry.meta .btn-meta { background: var(--accent); color: #fff; }
+.meta-badge {
+  display: none; font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+  background: var(--border); padding: 0.05rem 0.3rem; border-radius: 3px;
+  margin-right: 0.3rem;
+}
+.feed-entry.meta .meta-badge { display: inline; }
+
+/* Editable words in transcriptions */
+.editable-word { cursor: pointer; border-radius: 2px; transition: background 0.15s; }
+.editable-word:hover { background: rgba(124, 58, 237, 0.15); }
+.word-edit-input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--accent);
+  border-radius: 3px; font-size: 0.85rem; padding: 0 0.25rem;
+  font-family: inherit; outline: none;
+}
+.word-edit-actions { display: inline-flex; gap: 0.2rem; margin-left: 0.25rem; vertical-align: middle; }
+.word-edit-actions button {
+  font-size: 0.7rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.4;
+}
+.word-edit-actions .word-confirm { background: var(--accent); color: #fff; }
+.word-edit-actions .word-cancel { background: var(--border); color: var(--text-muted); }
+.word-replace-option {
+  display: block; font-size: 0.7rem; color: var(--text-muted);
+  margin-top: 0.2rem; padding-left: 0.5rem;
+}
+.word-replace-option input[type="checkbox"] { margin-right: 0.25rem; vertical-align: middle; }
+
+/* Generation log */
+.generation-log {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.25);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border-left: 2px solid var(--accent);
+}
+.log-entry {
+  padding: 0.15rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+/* Global cyberpunk console theme — feed overrides */
+
+.feed-entry {
+  border-left-color: var(--accent);
+}

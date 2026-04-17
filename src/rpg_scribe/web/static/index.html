@@ -4,7 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RPG Scribe</title>
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/css/variables.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/features/campaign.css">
+  <link rel="stylesheet" href="/css/features/entities.css">
+  <link rel="stylesheet" href="/css/features/relationships.css">
+  <link rel="stylesheet" href="/css/features/feed.css">
+  <link rel="stylesheet" href="/css/features/summary.css">
 </head>
 <body>
   <header>
@@ -27,7 +35,10 @@
         <span class="campaign-meta" id="campaign-system"></span>
         <span class="campaign-meta" id="campaign-master"></span>
       </div>
-      <button id="campaign-edit-btn" class="btn-small" title="Edit campaign">Edit</button>
+      <div class="campaign-actions">
+        <button id="campaign-export-btn" class="btn-small hidden" title="Export campaign">Export</button>
+        <button id="campaign-edit-btn" class="btn-small" title="Edit campaign">Edit</button>
+      </div>
     </div>
     <form id="campaign-edit-form" class="campaign-edit hidden">
       <div class="edit-row">
@@ -277,10 +288,30 @@
             <span id="relationship-graph-hint" class="relationship-graph-hint">Orbit with drag, zoom with wheel, click a node to focus it.</span>
           </div>
           <div class="relationship-graph-filters">
-            <label><input id="graph-filter-players" type="checkbox" checked /> Players</label>
-            <label><input id="graph-filter-npcs" type="checkbox" checked /> NPCs</label>
-            <label><input id="graph-filter-locations" type="checkbox" checked /> Locations</label>
-            <label><input id="graph-filter-entities" type="checkbox" checked /> Entities</label>
+            <label>
+              <svg class="graph-kind-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <circle cx="7" cy="7" r="5" fill="#60a5fa" stroke="#1e3a5f" stroke-width="1.5"/>
+              </svg>
+              <input id="graph-filter-players" type="checkbox" checked /> Players
+            </label>
+            <label>
+              <svg class="graph-kind-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <rect x="2" y="2" width="10" height="10" fill="#f59e0b" stroke="#7c4a00" stroke-width="1.5"/>
+              </svg>
+              <input id="graph-filter-npcs" type="checkbox" checked /> NPCs
+            </label>
+            <label>
+              <svg class="graph-kind-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <polygon points="7,1 13,7 7,13 1,7" fill="#34d399" stroke="#065f46" stroke-width="1.5"/>
+              </svg>
+              <input id="graph-filter-locations" type="checkbox" checked /> Locations
+            </label>
+            <label>
+              <svg class="graph-kind-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <polygon points="1,4 13,4 11,12 3,12" fill="#f97316" stroke="#7c2d12" stroke-width="1.5"/>
+              </svg>
+              <input id="graph-filter-entities" type="checkbox" checked /> Entities
+            </label>
           </div>
           <div class="relationship-graph-controls">
             <label class="relationship-graph-control">
@@ -313,6 +344,7 @@
               <input id="relationship-graph-isolate-component" type="checkbox" />
               <span>Isolate component</span>
             </label>
+            <button id="relationship-graph-fit-all" class="btn-small relationship-graph-fit-btn" type="button">Fit All</button>
           </div>
           <div class="relationship-graph-layout">
             <div class="relationship-graph-stage">
@@ -400,20 +432,52 @@
         <h2>System Status</h2>
         <div id="component-status" class="status-grid">
           <div class="status-card" data-component="listener">
-            <span class="status-dot idle"></span>
-            <strong>Listener</strong>
-            <span class="status-msg">idle</span>
+            <div class="status-card-header">
+              <span class="status-dot idle"></span>
+              <strong>Listener</strong>
+              <span class="status-msg">idle</span>
+              <span class="status-latency"></span>
+            </div>
+            <div class="status-config"></div>
           </div>
           <div class="status-card" data-component="transcriber">
-            <span class="status-dot idle"></span>
-            <strong>Transcriber</strong>
-            <span class="status-msg">idle</span>
+            <div class="status-card-header">
+              <span class="status-dot idle"></span>
+              <strong>Transcriber</strong>
+              <span class="status-msg">idle</span>
+              <span class="status-latency"></span>
+            </div>
+            <div class="status-config"></div>
           </div>
           <div class="status-card" data-component="summarizer">
-            <span class="status-dot idle"></span>
-            <strong>Summarizer</strong>
-            <span class="status-msg">idle</span>
+            <div class="status-card-header">
+              <span class="status-dot idle"></span>
+              <strong>Summarizer</strong>
+              <span class="status-msg">idle</span>
+              <span class="status-latency"></span>
+            </div>
+            <div class="status-config"></div>
           </div>
+          <div class="status-card" data-component="tts">
+            <div class="status-card-header">
+              <span class="status-dot idle"></span>
+              <strong>TTS</strong>
+              <span class="status-msg">idle</span>
+            </div>
+            <div class="status-config"></div>
+          </div>
+        </div>
+        <div id="status-db-path" class="status-db-path"></div>
+        <div id="session-banner" class="session-banner hidden">
+          <span class="session-banner-live">LIVE</span>
+          <span id="session-banner-id" class="session-banner-id"></span>
+          <input id="session-banner-title" class="session-banner-title" type="text" placeholder="Sin título..." maxlength="60" />
+          <button id="session-banner-autotitle" class="session-banner-autotitle" title="Autogenerar título">✨ Auto</button>
+          <select id="session-banner-status" class="session-banner-status">
+            <option value="active">active</option>
+            <option value="completed">completed</option>
+          </select>
+          <button id="session-banner-apply" class="session-banner-apply">Aplicar</button>
         </div>
       </section>
 
@@ -494,8 +558,7 @@
     </div>
   </main>
 
-  <script src="/relationship-graph-3d.js"></script>
-  <script src="/app.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>
 

@@ -20,7 +20,8 @@ from rpg_scribe.core.events import (
     SystemStatusEvent,
     TranscriptionEvent,
 )
-from rpg_scribe.web.routes import WebState, router
+from rpg_scribe.web.routes import router
+from rpg_scribe.web.state import WebState
 from rpg_scribe.web.websocket import ConnectionManager, WebSocketBridge
 
 logger = logging.getLogger(__name__)
@@ -78,13 +79,13 @@ def create_app(
         if database is None:
             return
         try:
-            state.active_campaign["npcs"] = await database.get_npcs(event.campaign_id)
-            state.active_campaign["locations"] = await database.get_locations(event.campaign_id)
-            state.active_campaign["entities"] = await database.get_entities(event.campaign_id)
-            state.active_campaign["relationships"] = await database.get_character_relationships(
+            state.active_campaign["npcs"] = await database.entities.get_npcs(event.campaign_id)
+            state.active_campaign["locations"] = await database.entities.get_locations(event.campaign_id)
+            state.active_campaign["entities"] = await database.entities.get_entities(event.campaign_id)
+            state.active_campaign["relationships"] = await database.entities.get_character_relationships(
                 event.campaign_id
             )
-            state.active_campaign["relationship_types"] = await database.get_relationship_types(
+            state.active_campaign["relationship_types"] = await database.entities.get_relationship_types(
                 event.campaign_id
             )
         except Exception as exc:
@@ -171,6 +172,21 @@ def create_app(
         }
 
     app.include_router(router)
+
+    from rpg_scribe.web.routers import (
+        campaigns as campaigns_router,
+        sessions as sessions_router,
+        entities as entities_router,
+        transcriptions as transcriptions_router,
+        tts as tts_router,
+        status as status_router,
+    )
+    app.include_router(campaigns_router.router)
+    app.include_router(sessions_router.router)
+    app.include_router(entities_router.router)
+    app.include_router(transcriptions_router.router)
+    app.include_router(tts_router.router)
+    app.include_router(status_router.router)
 
     # Serve saved audio chunks as static files (data/audio/)
     audio_dir = Path.cwd() / "data" / "audio"

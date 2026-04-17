@@ -1,0 +1,182 @@
+/* ── Campaign bar ──────────────────────────────────────────────────────────── */
+.campaign-bar {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.campaign-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.campaign-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.campaign-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.campaign-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#campaign-name {
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.campaign-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Campaign edit form */
+.campaign-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.edit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.edit-row label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding-top: 0.35rem;
+  text-align: right;
+}
+
+.edit-row input[type="text"],
+.edit-row textarea,
+.edit-row select {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.edit-row input[type="text"]:focus,
+.edit-row textarea:focus,
+.edit-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding-top: 0.25rem;
+}
+
+/* Campaign summary stats in collapsed header */
+#campaign-details-header {
+  gap: 0.5rem;
+}
+.campaign-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+.summary-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  transition: opacity 0.2s;
+}
+.summary-stat.dimmed {
+  opacity: 0.35;
+}
+.stat-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 1ch;
+}
+
+.browse-campaigns {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.campaign-item {
+  padding: 0.45rem 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.campaign-item:hover {
+  border-color: var(--accent);
+}
+
+.campaign-item.active {
+  border-color: var(--accent);
+  background: rgba(124, 106, 240, 0.08);
+}
+
+.campaign-item .campaign-item-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.campaign-item .campaign-item-meta {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Campaign summary header row */
+.campaign-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.campaign-summary-header h3 { margin: 0; }
+.campaign-summary-actions { display: flex; gap: 0.4rem; align-items: center; }
+
+/* Global cyberpunk console theme — campaign overrides */
+
+.edit-row label,
+.campaign-label,
+.campaign-meta {
+  color: var(--text-muted);
+}
+
+#campaign-name {
+  color: var(--accent);
+}

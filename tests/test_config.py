@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import argparse
 import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from rpg_scribe.config import AppConfig, load_app_config, load_campaign_toml, _apply_defaults_to_config
+from rpg_scribe.config import AppConfig, load_app_config, load_campaign_toml
 
 
 SAMPLE_CAMPAIGN_TOML = """\
@@ -181,7 +180,6 @@ path = "custom.db"
 class TestDefaultTomlLoading:
     def test_defaults_from_toml_override_dataclass_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Values from default.toml should override dataclass defaults."""
-        import os
         for k in list(os.environ):
             if k.startswith("RPG_SCRIBE_") or k == "DISCORD_BOT_TOKEN":
                 monkeypatch.delenv(k, raising=False)
@@ -363,3 +361,39 @@ class TestImportCampaignScript:
         assert _slugify("My Cool Campaign!") == "my-cool-campaign"
         assert _slugify("  spaces  ") == "spaces"
         assert _slugify("D&D 5e Game") == "d-d-5e-game"
+
+
+class TestTranscriberTypeConfig:
+    def test_default_transcriber_type_is_openai(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """transcriber_type defaults to 'openai'."""
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
+        monkeypatch.delenv("RPG_SCRIBE_TRANSCRIBER_TYPE", raising=False)
+        nonexistent = tmp_path / "nonexistent.toml"
+        config = load_app_config(defaults_path=nonexistent)
+        assert config.transcriber.transcriber_type == "openai"
+
+    def test_transcriber_type_loaded_from_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """transcriber_type can be set via TOML."""
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
+        monkeypatch.delenv("RPG_SCRIBE_TRANSCRIBER_TYPE", raising=False)
+        defaults_file = tmp_path / "default.toml"
+        defaults_file.write_text('[transcriber]\ntranscriber_type = "faster-whisper"\n')
+        config = load_app_config(defaults_path=defaults_file)
+        assert config.transcriber.transcriber_type == "faster-whisper"
+
+    def test_env_var_overrides_toml_transcriber_type(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RPG_SCRIBE_TRANSCRIBER_TYPE env var overrides TOML value."""
+        defaults_file = tmp_path / "default.toml"
+        defaults_file.write_text('[transcriber]\ntranscriber_type = "openai"\n')
+        monkeypatch.setenv("RPG_SCRIBE_TRANSCRIBER_TYPE", "faster-whisper")
+        config = load_app_config(defaults_path=defaults_file)
+        assert config.transcriber.transcriber_type == "faster-whisper"
+
+    def test_prompt_hint_loaded_from_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """prompt_hint field is now part of TranscriberConfig and loads from TOML."""
+        monkeypatch.setattr("rpg_scribe.config.load_dotenv", lambda *a, **k: None)
+        monkeypatch.delenv("RPG_SCRIBE_TRANSCRIBER_TYPE", raising=False)
+        defaults_file = tmp_path / "default.toml"
+        defaults_file.write_text('[transcriber]\nprompt_hint = "RPG fantasy espanol"\n', encoding="utf-8")
+        config = load_app_config(defaults_path=defaults_file)
+        assert config.transcriber.prompt_hint == "RPG fantasy espanol"

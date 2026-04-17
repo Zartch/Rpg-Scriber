@@ -7,12 +7,9 @@ through the event bus, verifying that all components communicate correctly.
 from __future__ import annotations
 
 import asyncio
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from rpg_scribe.config import AppConfig, load_app_config
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
@@ -23,7 +20,6 @@ from rpg_scribe.core.events import (
 )
 from rpg_scribe.core.models import (
     CampaignContext,
-    ListenerConfig,
     PlayerInfo,
     SummarizerConfig,
     TranscriberConfig,
@@ -240,14 +236,14 @@ class TestDatabaseIntegration:
         """Test that transcriptions flow through the bus to the database."""
         db = Database(str(tmp_path / "test.db"))
         await db.connect()
-        await db.upsert_campaign(campaign_id="c1", name="Test")
-        await db.create_session("s1", "c1")
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
 
         event_bus = EventBus()
 
         async def persist(event: TranscriptionEvent) -> None:
             if not event.is_partial:
-                await db.save_transcription(
+                await db.transcriptions.save_transcription(
                     session_id=event.session_id,
                     speaker_id=event.speaker_id,
                     speaker_name=event.speaker_name,
@@ -272,7 +268,7 @@ class TestDatabaseIntegration:
                 )
             )
 
-        rows = await db.get_transcriptions("s1")
+        rows = await db.transcriptions.get_transcriptions("s1")
         assert len(rows) == 5
         assert rows[0]["text"] == "Message 0"
         assert rows[4]["text"] == "Message 4"
@@ -283,28 +279,28 @@ class TestDatabaseIntegration:
         """Test full session lifecycle with database."""
         db = Database(str(tmp_path / "test.db"))
         await db.connect()
-        await db.upsert_campaign(campaign_id="c1", name="Test")
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
 
         # Start session
-        await db.create_session("s1", "c1")
-        session = await db.get_session("s1")
+        await db.sessions.create_session("s1", "c1")
+        session = await db.sessions.get_session("s1")
         assert session is not None
         assert session["status"] == "active"
 
         # Add transcriptions
         for i in range(3):
-            await db.save_transcription(
+            await db.transcriptions.save_transcription(
                 "s1", "1", "Alice", f"Line {i}", 1000.0 + i, 0.9
             )
 
         # End session
-        await db.end_session("s1", "The party defeated the dragon.")
-        session = await db.get_session("s1")
+        await db.sessions.end_session("s1", "The party defeated the dragon.")
+        session = await db.sessions.get_session("s1")
         assert session["status"] == "completed"
         assert "dragon" in session["session_summary"]
 
         # List sessions
-        sessions = await db.list_sessions("c1")
+        sessions = await db.sessions.list_sessions("c1")
         assert len(sessions) == 1
 
         await db.close()

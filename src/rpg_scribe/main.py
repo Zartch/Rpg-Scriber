@@ -29,107 +29,11 @@ from rpg_scribe.core.events import (
     TranscriptionEvent,
 )
 from rpg_scribe.logging_config import setup_logging
+from rpg_scribe.services.audio_diagnostics import AudioDiagnosticSaver
+from rpg_scribe.services.file_writer import TranscriptionFileWriter
+from rpg_scribe.services.transcription_service import TranscriptionService
 
 logger = logging.getLogger(__name__)
-
-# Maximum size for a single transcription file before rotating (5 MB)
-_MAX_TRANSCRIPTION_FILE_MB = 5
-
-
-class TranscriptionFileWriter:
-    """Writes transcriptions to text files inside the logs directory.
-
-    Each log run (identified by a unix-timestamp folder) gets its own
-    ``transcriptions_NNN.txt`` file.  When a file exceeds
-    ``_MAX_TRANSCRIPTION_FILE_MB`` a new numbered file is created.
-    """
-
-    def __init__(
-        self, log_dir: Path, max_size_mb: float = _MAX_TRANSCRIPTION_FILE_MB
-    ) -> None:
-        self._dir = log_dir
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._max_bytes = int(max_size_mb * 1024 * 1024)
-        self._file_index = 0
-        self._path = self._next_path()
-
-    def _next_path(self) -> Path:
-        """Return the next numbered transcription file path."""
-        while True:
-            suffix = f"_{self._file_index}" if self._file_index > 0 else ""
-            path = self._dir / f"transcriptions{suffix}.txt"
-            if not path.exists() or path.stat().st_size < self._max_bytes:
-                return path
-            self._file_index += 1
-
-    def write(self, event: "TranscriptionEvent") -> None:
-        """Append a transcription line to the current file.
-
-        Format:  [HH:MM:SS] Speaker: text
-        """
-        if not event.text.strip():
-            return
-
-        # Rotate if current file is too large
-        if self._path.exists() and self._path.stat().st_size >= self._max_bytes:
-            self._file_index += 1
-            self._path = self._next_path()
-            logger.info(
-                "📄 Transcription file rotated to %s",
-                self._path.name,
-            )
-
-        ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
-        line = f"[{ts}] {event.speaker_name}: {event.text}\n"
-        with open(self._path, "a", encoding="utf-8") as f:
-            f.write(line)
-
-
-class AudioDiagnosticSaver:
-    """Saves audio chunks as WAV files for manual inspection.
-
-    Saves the first ``max_files`` chunks per user as mono WAV files
-    under ``<log_dir>/audio/``.
-    """
-
-    def __init__(self, log_dir: Path, max_files_per_user: int = 3) -> None:
-        self._audio_dir = log_dir / "audio"
-        self._audio_dir.mkdir(parents=True, exist_ok=True)
-        self._max_per_user = max_files_per_user
-        self._counts: dict[str, int] = {}
-
-    async def save(self, event: AudioChunkEvent) -> None:
-        """Save an audio chunk as a mono WAV file."""
-        uid = event.speaker_id
-        count = self._counts.get(uid, 0)
-        if count >= self._max_per_user:
-            return
-
-        import io
-        import wave
-
-        safe_name = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in event.speaker_name
-        )
-        filepath = self._audio_dir / f"{safe_name}_{uid}_{count:03d}.wav"
-
-        try:
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(48000)
-                wf.writeframes(event.audio_data)
-            filepath.write_bytes(buf.getvalue())
-            self._counts[uid] = count + 1
-            logger.info(
-                "🔍 Audio diagnóstico: %s (%.1fKB, %.1fs)",
-                filepath.name,
-                len(event.audio_data) / 1024,
-                event.duration_ms / 1000,
-            )
-        except Exception as exc:
-            logger.error("Error guardando audio diagnóstico: %s", exc)
 
 
 class Application:
@@ -166,51 +70,35 @@ class Application:
         self._discord_publisher: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
+        self._transcription_service = TranscriptionService(
+            transcription_repo=self.db.transcriptions,
+            event_bus=self.event_bus,
+        )
         self._shutdown_event = asyncio.Event()
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
-        self._word_replacements: dict[str, str] = {}  # original -> replacement
 
     # ── Database persistence handlers ──────────────────────────────
 
     async def reload_word_replacements(self) -> None:
-        """Reload word replacement rules from DB into memory cache."""
+        """Reload word replacement rules from DB into service memory cache."""
         if not self.config.campaign:
-            self._word_replacements = {}
             return
-        try:
-            rules = await self.db.get_word_replacements(
-                self.config.campaign.campaign_id
-            )
-            self._word_replacements = {
-                r["original_word"]: r["replacement_word"] for r in rules
-            }
-        except Exception as exc:
-            logger.error("Failed to load word replacements: %s", exc)
-
-    def _apply_word_replacements(self, text: str) -> str:
-        """Apply cached word replacement rules to a text string."""
-        for original, replacement in self._word_replacements.items():
-            text = text.replace(original, replacement)
-        return text
+        await self._transcription_service.reload_replacements(
+            self.config.campaign.campaign_id
+        )
 
     async def _persist_transcription(self, event: TranscriptionEvent) -> None:
         """Save every transcription to the database, applying word replacements."""
-        if event.is_partial:
+        if event.is_partial or event.is_corrected:
             return
-        text = event.text
-        if self._word_replacements:
-            text = self._apply_word_replacements(text)
+        campaign_id = self.config.campaign.campaign_id if self.config.campaign else ""
         try:
-            row_id = await self.db.save_transcription(
-                session_id=event.session_id,
-                speaker_id=event.speaker_id,
-                speaker_name=event.speaker_name,
-                text=text,
-                timestamp=event.timestamp,
-                confidence=event.confidence,
+            data = await self._transcription_service.persist(
+                event, campaign_id=campaign_id, session_id=event.session_id
             )
             # Inject DB id into the in-memory WebState transcription
+            row_id = data.get("id")
             web_state = getattr(self, "_web_state", None)
             if web_state is not None and row_id:
                 for t in web_state.transcriptions:
@@ -221,16 +109,17 @@ class Application:
                     ):
                         t["id"] = row_id
                         break
-            if text != event.text:
+            if data.get("original_text") is not None:
                 # Publish corrected event so WebSocket/UI gets the replaced text
                 corrected = TranscriptionEvent(
                     session_id=event.session_id,
                     speaker_id=event.speaker_id,
                     speaker_name=event.speaker_name,
-                    text=text,
+                    text=data["text"],
                     timestamp=event.timestamp,
                     confidence=event.confidence,
                     is_partial=False,
+                    is_corrected=True,
                 )
                 await self.event_bus.publish(corrected)
         except Exception as exc:
@@ -250,19 +139,15 @@ class Application:
         """Save summary updates to the database."""
         try:
             if event.session_summary:
-                session = await self.db.get_session(event.session_id)
-                if session:
-                    await self.db.conn.execute(
-                        "UPDATE sessions SET session_summary = ? WHERE id = ?",
-                        (event.session_summary, event.session_id),
-                    )
-                    await self.db.conn.commit()
+                await self.db.sessions.update_session_summary(
+                    event.session_id, event.session_summary
+                )
             if event.session_chronology:
-                await self.db.update_session_chronology(
+                await self.db.sessions.update_session_chronology(
                     event.session_id, event.session_chronology
                 )
             if event.campaign_summary and self.config.campaign:
-                await self.db.update_campaign_summary(
+                await self.db.campaigns.update_campaign_summary(
                     self.config.campaign.campaign_id,
                     event.campaign_summary,
                 )
@@ -289,10 +174,28 @@ class Application:
     # ── Component setup ────────────────────────────────────────────
 
     async def _setup_transcriber(self) -> None:
-        """Create and start the transcriber."""
-        from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber
+        """Create and start the transcriber based on config."""
+        transcriber_type = self.config.transcriber.transcriber_type
 
-        self._transcriber = OpenAITranscriber(self.event_bus, self.config.transcriber)
+        if transcriber_type == "openai":
+            from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber
+
+            self._transcriber = OpenAITranscriber(self.event_bus, self.config.transcriber)
+        elif transcriber_type == "faster-whisper":
+            from rpg_scribe.transcribers.faster_whisper_transcriber import (
+                FasterWhisperTranscriber,
+            )
+
+            self._transcriber = FasterWhisperTranscriber(
+                self.event_bus, self.config.transcriber
+            )
+        else:
+            raise ValueError(
+                f"Unknown transcriber_type '{transcriber_type}'. "
+                f"Valid options: 'openai', 'faster-whisper'"
+            )
+
+        logger.info("Using transcriber: %s", transcriber_type)
         await self._transcriber.start()  # type: ignore[union-attr]
 
     async def _setup_summarizer(self, session_id: str) -> None:
@@ -407,7 +310,7 @@ class Application:
             )
 
             c = self.config.campaign
-            existing = await self.db.get_campaign(c.campaign_id)
+            existing = await self.db.campaigns.get_campaign(c.campaign_id)
 
             if existing:
                 # Campaign exists in DB: DB values are the source of truth for runtime.
@@ -423,7 +326,7 @@ class Application:
                 )
                 c.dm_speaker_id = existing.get("dm_speaker_id", c.dm_speaker_id)
 
-                db_players = await self.db.get_players(c.campaign_id)
+                db_players = await self.db.entities.get_players(c.campaign_id)
                 if db_players:
                     c.players = [
                         PlayerInfo(
@@ -440,7 +343,7 @@ class Application:
                     p.discord_id: p.character_name for p in c.players if p.discord_id
                 }
 
-                db_npcs = await self.db.get_npcs(c.campaign_id)
+                db_npcs = await self.db.entities.get_npcs(c.campaign_id)
                 if db_npcs:
                     c.known_npcs = [
                         NPCInfo(
@@ -451,7 +354,7 @@ class Application:
                         if n.get("name")
                     ]
 
-                db_locations = await self.db.get_locations(c.campaign_id)
+                db_locations = await self.db.entities.get_locations(c.campaign_id)
                 if db_locations:
                     c.locations = [
                         LocationInfo(
@@ -462,7 +365,7 @@ class Application:
                         if l.get("name")
                     ]
 
-                db_entities = await self.db.get_entities(c.campaign_id)
+                db_entities = await self.db.entities.get_entities(c.campaign_id)
                 if db_entities:
                     c.entities = [
                         EntityInfo(
@@ -474,7 +377,7 @@ class Application:
                         if e.get("name")
                     ]
 
-                db_relationship_types = await self.db.get_relationship_types(
+                db_relationship_types = await self.db.entities.get_relationship_types(
                     c.campaign_id
                 )
                 if db_relationship_types:
@@ -488,7 +391,7 @@ class Application:
                         if t.get("canonical_key")
                     ]
 
-                db_relationships = await self.db.get_character_relationships(
+                db_relationships = await self.db.entities.get_character_relationships(
                     c.campaign_id
                 )
                 if db_relationships:
@@ -506,7 +409,7 @@ class Application:
                         and r.get("type_key")
                     ]
             else:
-                await self.db.upsert_campaign(
+                await self.db.campaigns.upsert_campaign(
                     campaign_id=c.campaign_id,
                     name=c.name,
                     game_system=c.game_system,
@@ -520,8 +423,8 @@ class Application:
 
             # Persist players from campaign config to DB (idempotent)
             for player in c.players:
-                if not await self.db.player_exists(c.campaign_id, player.discord_id):
-                    await self.db.save_player(
+                if not await self.db.entities.player_exists(c.campaign_id, player.discord_id):
+                    await self.db.entities.save_player(
                         campaign_id=c.campaign_id,
                         discord_id=player.discord_id,
                         discord_name=player.discord_name,
@@ -531,8 +434,8 @@ class Application:
 
             # Persist NPCs from campaign config to DB (idempotent)
             for npc in c.known_npcs:
-                if not await self.db.npc_exists(c.campaign_id, npc.name):
-                    await self.db.save_npc(
+                if not await self.db.entities.npc_exists(c.campaign_id, npc.name):
+                    await self.db.entities.save_npc(
                         c.campaign_id,
                         npc.name,
                         npc.description,
@@ -542,8 +445,8 @@ class Application:
             for loc in c.locations:
                 if not loc.name:
                     continue
-                if not await self.db.location_exists(c.campaign_id, loc.name):
-                    await self.db.save_location(
+                if not await self.db.entities.location_exists(c.campaign_id, loc.name):
+                    await self.db.entities.save_location(
                         c.campaign_id,
                         loc.name,
                         loc.description,
@@ -553,8 +456,8 @@ class Application:
             for entity in c.entities:
                 if not entity.name:
                     continue
-                if not await self.db.entity_exists(c.campaign_id, entity.name):
-                    await self.db.save_entity(
+                if not await self.db.entities.entity_exists(c.campaign_id, entity.name):
+                    await self.db.entities.save_entity(
                         c.campaign_id,
                         entity.name,
                         entity.entity_type,
@@ -563,7 +466,7 @@ class Application:
 
             # Seed relationship thesaurus and relationships from campaign config.
             for relation_type in c.relation_types:
-                await self.db.resolve_relationship_type(
+                await self.db.entities.resolve_relationship_type(
                     c.campaign_id,
                     relation_type.label or relation_type.key,
                     category=relation_type.category or "general",
@@ -574,7 +477,7 @@ class Application:
                     continue
                 if not relation.relation_type_label and not relation.relation_type_key:
                     continue
-                await self.db.save_character_relationship(
+                await self.db.entities.save_character_relationship(
                     c.campaign_id,
                     relation.source_key,
                     relation.target_key,
@@ -582,8 +485,11 @@ class Application:
                     notes=relation.notes,
                 )
 
-        # Load word replacement rules into memory
-        await self.reload_word_replacements()
+        # Load word replacements into TranscriptionService
+        if self.config.campaign:
+            await self._transcription_service.reload_replacements(
+                self.config.campaign.campaign_id
+            )
 
         # Subscribe persistence handlers
         self.event_bus.subscribe(TranscriptionEvent, self._persist_transcription)
@@ -667,7 +573,7 @@ class Application:
         campaign_id = ""
         if self.config.campaign:
             campaign_id = self.config.campaign.campaign_id
-        await self.db.create_session(session_id, campaign_id)
+        await self.db.sessions.create_session(session_id, campaign_id)
         await self._setup_summarizer(session_id)
         logger.info("Session %s started", session_id)
 
@@ -683,7 +589,7 @@ class Application:
             except Exception as exc:
                 logger.error("Failed to finalize session: %s", exc)
 
-        await self.db.end_session(session_id, summary, chronology)
+        await self.db.sessions.end_session(session_id, summary, chronology)
         self._active_session_id = None
 
         # Generate and persist campaign summary from all session summaries
@@ -706,7 +612,7 @@ class Application:
             return ""
 
         try:
-            sessions = await self.db.list_sessions(campaign.campaign_id)
+            sessions = await self.db.sessions.list_sessions(campaign.campaign_id)
             # Only completed sessions with a non-empty summary, oldest first
             completed = sorted(
                 [
@@ -724,7 +630,6 @@ class Application:
             # Reuse the existing summarizer client if available, else create a fresh one
             summarizer = self._summarizer
             if summarizer is None or not isinstance(summarizer, ClaudeSummarizer):
-                from rpg_scribe.core.models import SummarizerConfig
 
                 summarizer = ClaudeSummarizer(
                     self.event_bus,
@@ -738,7 +643,7 @@ class Application:
             )
 
             if campaign_summary:
-                await self.db.save_campaign_summary(
+                await self.db.campaigns.save_campaign_summary(
                     campaign_id=campaign.campaign_id,
                     content=campaign_summary,
                     trigger_session_id=trigger_session_id,

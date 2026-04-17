@@ -289,6 +289,11 @@ def load_app_config(
     config.discord_summary_channel_id = os.environ.get(
         "DISCORD_SUMMARY_CHANNEL_ID", config.discord_summary_channel_id
     )
+    # Transcriber type via env
+    config.transcriber.transcriber_type = os.environ.get(
+        "RPG_SCRIBE_TRANSCRIBER_TYPE", config.transcriber.transcriber_type
+    )
+
     # Summarizer configuration via env:
     # - RPG_SCRIBE_SUMMARIZER_MODEL controls the Claude model ID.
     # - RPG_SCRIBE_SUMMARIZER_MAX_TOKENS controls max output tokens per call.

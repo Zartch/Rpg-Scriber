@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -11,292 +10,30 @@ import time
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
-    EntitiesUpdatedEvent,
     SystemStatusEvent,
     TranscriptionEvent,
 )
 from rpg_scribe.core.models import (
     CampaignContext,
-    EntityInfo,
-    LocationInfo,
-    NPCInfo,
     SummarizerConfig,
 )
 from rpg_scribe.summarizers.base import BaseSummarizer, TranscriptionEntry
+from rpg_scribe.summarizers.entity_extractor import EntityExtractor
+from rpg_scribe.summarizers.prompts import (
+    CAMPAIGN_SUMMARY_COMPRESS_USER,
+    CAMPAIGN_SUMMARY_SYSTEM,
+    CAMPAIGN_SUMMARY_USER,
+    CHRONOLOGY_SYSTEM_PROMPT,
+    CHRONOLOGY_UPDATE_USER,
+    CHRONOLOGY_USER,
+    FINALIZE_USER,
+    GENERIC_SYSTEM_PROMPT,
+    QUESTION_PATTERN,
+    SESSION_SYSTEM_PROMPT,
+    SESSION_UPDATE_USER,
+)
 
 logger = logging.getLogger(__name__)
-
-# Regex for extracting [PREGUNTA: ...] markers from LLM responses
-QUESTION_PATTERN = re.compile(r"\[PREGUNTA:\s*(.+?)\]")
-
-# ---------------------------------------------------------------------------
-# System prompt template
-# ---------------------------------------------------------------------------
-
-GENERIC_SYSTEM_PROMPT = """\
-Eres un cronista que resume conversaciones de voz en tiempo real.
-
-INSTRUCCIONES:
-1. Escribe un resumen claro y estructurado de lo que dicen los participantes.
-2. Usa los nombres de los hablantes tal como aparecen.
-3. Distingue entre temas diferentes si la conversación cambia de asunto.
-4. Mantén el resumen coherente y fluido.
-5. Si algo no está claro, márcalo con [PREGUNTA: ...].
-"""
-
-SESSION_SYSTEM_PROMPT = """\
-Eres un cronista experto de partidas de rol. Tu trabajo es escribir \
-un resumen narrativo de lo que ocurre en la sesión.
-
-CONTEXTO DE LA CAMPAÑA:
-- Sistema: {game_system}
-- Campaña: {name} — {description}
-- Resumen hasta ahora: {campaign_summary}
-
-JUGADORES:
-{players_block}
-
-PNJS CONOCIDOS:
-{npcs_block}
-
-LOCALIZACIONES CONOCIDAS:
-{locations_block}
-
-ENTIDADES CONOCIDAS:
-{entities_block}
-
-RELACIONES CONOCIDAS:
-{relationships_block}
-
-{custom_instructions}
-
-INSTRUCCIONES:
-1. Escribe en tercera persona, estilo narrativo. Los personajes \
-jugadores (PJs) son los PROTAGONISTAS de la historia — el relato \
-debe centrarse en sus acciones, decisiones y experiencias.
-2. Distingue entre lo que dicen los personajes (in-game) y las \
-conversaciones de los jugadores (meta-rol). El meta-rol NO va \
-en el resumen narrativo, pero puedes anotarlo como [META] si \
-es relevante (decisiones de grupo, dudas de reglas, etc.).
-3. El DM ({dm_name}) habla como múltiples PNJs y también como narrador \
-de escena. Cuando habla el DM, su texto puede ser ambientación, \
-resultados de tiradas, consecuencias de acciones, eventos del mundo \
-o interpretación de distintos PNJs. No lo atribuyas automáticamente \
-a un único PNJ sin evidencia contextual. Las líneas del DM marcadas \
-con [MASTER] en la transcripción indican que es el director narrando.
-4. Mantén el resumen coherente y fluido. Reescribe secciones \
-anteriores si nueva información las clarifica.
-5. Si algo no está claro, márcalo con [PREGUNTA: ...].
-"""
-
-SESSION_UPDATE_USER = """\
-TRANSCRIPCIÓN RECIENTE:
-{recent_transcriptions}
-
-RESUMEN ACTUAL DE LA SESIÓN:
-{current_session_summary}
-{user_answers_block}\
-Actualiza el resumen incorporando la nueva transcripción. \
-Devuelve ÚNICAMENTE el resumen actualizado, sin explicaciones adicionales."""
-
-FINALIZE_USER = """\
-La sesión ha terminado. A continuación tienes el resumen de sesión \
-y la transcripción completa pendiente.
-
-RESUMEN DE SESIÓN ACTUAL:
-{session_summary}
-
-TRANSCRIPCIÓN PENDIENTE:
-{pending_transcriptions}
-
-Genera:
-1. Un resumen final pulido de la sesión (narrativo, detallado).
-2. Una actualización del resumen de campaña incorporando esta sesión.
-
-Responde con el siguiente formato exacto:
-
----SESSION_SUMMARY---
-(resumen final de la sesión)
-
----CAMPAIGN_SUMMARY---
-(resumen actualizado de la campaña)
-"""
-
-CAMPAIGN_SUMMARY_SYSTEM = """\
-Eres un cronista experto de campañas de rol. Tu trabajo es escribir un resumen \
-narrativo global de toda la campaña hasta la fecha, a partir de los resúmenes \
-de cada sesión jugada.
-
-CONTEXTO DE LA CAMPAÑA:
-- Sistema: {game_system}
-- Campaña: {name} — {description}
-
-JUGADORES:
-{players_block}
-
-PNJS CONOCIDOS:
-{npcs_block}
-
-ENTIDADES CONOCIDAS:
-{entities_block}
-
-RELACIONES CONOCIDAS:
-{relationships_block}
-
-{custom_instructions}
-
-INSTRUCCIONES:
-1. Escribe en tercera persona, estilo crónica narrativa.
-2. Organiza la información por grandes arcos o temas si los hay.
-3. Incluye: eventos clave, PNJs relevantes, localizaciones importantes, \
-relaciones entre personajes y el estado actual de la trama.
-4. El resumen debe ser completo pero conciso — útil para retomar la campaña \
-tras un parón largo.
-5. NO incluyas meta-conversaciones de los jugadores.
-"""
-
-CAMPAIGN_SUMMARY_USER = """\
-A continuación tienes los resúmenes de las {session_count} sesiones jugadas \
-hasta ahora, en orden cronológico.
-
-{sessions_block}
-
-Genera el resumen global de la campaña incorporando toda esta información. \
-Devuelve ÚNICAMENTE el resumen, sin explicaciones adicionales.
-"""
-
-CAMPAIGN_SUMMARY_COMPRESS_USER = """\
-Los resúmenes de sesión son demasiado extensos para procesarlos de una vez. \
-A continuación tienes resúmenes de las sesiones más antiguas que necesitas \
-condensar antes de combinarlos con las sesiones recientes.
-
-{sessions_block}
-
-Genera un resumen condensado de estas sesiones que preserve los eventos clave, \
-PNJs, localizaciones y arcos narrativos. Devuelve ÚNICAMENTE el resumen condensado.
-"""
-
-CHRONOLOGY_SYSTEM_PROMPT = """\
-Eres un guionista de sesiones de rol. Tu trabajo es escribir una cronología \
-detallada de la sesión: un relato escena a escena, en orden estricto, que \
-pudiera servir como boceto de guión de película.
-
-CONTEXTO:
-- Sistema: {game_system}
-- Campaña: {name} — {description}
-
-JUGADORES:
-{players_block}
-
-LOCALIZACIONES CONOCIDAS:
-{locations_block}
-
-PNJS CONOCIDOS:
-{npcs_block}
-
-RELACIONES CONOCIDAS:
-{relationships_block}
-
-INSTRUCCIONES:
-1. Escribe en orden cronológico estricto, cubriendo TODAS las localizaciones \
-visitadas y escenas principales.
-2. Adapta el tono al setting de la campaña. Ejemplos: para ciberpunk usa un \
-estilo noir y directo con jerga urbana; para fantasía medieval usa tono de \
-crónica épica; para horror cósmico usa un tono inquietante y atmosférico. \
-Sé creativo con el tono pero mantén la claridad.
-3. ESCENAS PARALELAS: Cuando el MASTER dice "mientras tanto", "por otro lado", \
-"en otro lugar" o cambia bruscamente de grupo de personajes/localización, \
-significa que hay escenas que ocurren simultáneamente en distintos lugares. \
-Preséntalo como cortes de escena paralelos (ej. "Mientras tanto, en [lugar]...") \
-y deja claro que ambas líneas temporales suceden a la vez. En la transcripción, \
-las líneas marcadas con [CAMBIO DE ESCENA] indican estos momentos.
-4. Para cada escena, incluye: los eventos principales, diálogos significativos \
-entre PJs y PNJs (parafraseados o con citas breves), interacciones relevantes \
-entre personajes, y conflictos o tensiones que surjan. Escribe como si \
-describieras las escenas de una película: quién dice qué, qué reacciones \
-provoca, qué tensión hay en el ambiente.
-5. Formato: párrafos cortos separados por escena/localización, con \
-marcadores temporales si aplican.
-6. Las líneas marcadas con [META] son conversaciones fuera de personaje. \
-Si alguna aporta contexto útil para entender la escena (ej. una aclaración \
-de reglas que afecta a lo que ocurre), puedes incorporar ese contexto en la \
-narración. Pero NUNCA cites una línea [META] como diálogo de un personaje \
-ni la incluyas como acción in-game.
-7. Escribe con fluidez narrativa, no como una lista de puntos.
-"""
-
-CHRONOLOGY_USER = """\
-A partir de la siguiente transcripción completa de la sesión, genera una \
-cronología temporal detallada de lo que ocurrió, incluyendo las \
-interacciones y diálogos más relevantes entre personajes.
-
-TRANSCRIPCIÓN:
-{transcriptions}
-
-Genera ÚNICAMENTE la cronología detallada, sin explicaciones adicionales."""
-
-CHRONOLOGY_UPDATE_USER = """\
-Continúa la cronología de la sesión. A continuación tienes la última escena \
-escrita (complétala si quedó a medias, o déjala y continúa si ya estaba \
-cerrada) y una nueva sección de transcripción.
-
-ÚLTIMA ESCENA ESCRITA:
-{last_scene}
-
-SIGUIENTE SECCIÓN DE TRANSCRIPCIÓN:
-{transcriptions}
-
-Genera la continuación empezando desde la última escena (reescríbela si \
-necesita completarse) y las escenas nuevas. Sin explicaciones adicionales."""
-
-EXTRACTION_USER = """\
-A partir del siguiente resumen de sesión, extrae TODOS los elementos \
-narrativos relevantes:
-
-1. **PNJs nuevos**: cualquier personaje con nombre propio que NO sea un jugador
-2. **Localizaciones nuevas**: lugares con nombre propio mencionados
-3. **Entidades nuevas**: corporaciones, facciones, clanes, grupos, organizaciones, \
-fuerzas militares/policiales, o cualquier entidad con nombre propio que no sea \
-un personaje individual ni un lugar. IMPORTANTE: incluye TODA corporación, grupo \
-u organización mencionada, aunque parezca secundaria o de contexto.
-4. **Relaciones nuevas**: vínculos entre personajes, organizaciones y lugares
-
-REGLA CRÍTICA: Si una entidad aparece en una relación (source o target), \
-DEBE existir previamente en las listas de NPCs, localizaciones o entidades \
-(ya conocidas o recién extraídas en esta respuesta). No crees relaciones \
-que referencien entidades que no existen en ninguna lista.
-
-JUGADORES (NO son PNJs, no los extraigas como NPCs):
-{players_block}
-
-RESUMEN DE LA SESIÓN:
-{session_summary}
-
-PNJS YA CONOCIDOS (NO los incluyas de nuevo):
-{known_npcs}
-
-LOCALIZACIONES YA CONOCIDAS (NO las incluyas de nuevo):
-{known_locations}
-
-ENTIDADES YA CONOCIDAS (NO las incluyas de nuevo):
-{known_entities}
-
-RELACIONES YA CONOCIDAS (NO las repitas):
-{known_relationships}
-
-Responde ÚNICAMENTE con un JSON válido con este formato exacto, sin \
-texto adicional antes o después:
-
-{{"npcs": [{{"name": "Nombre del PNJ", "description": "Breve descripción"}}], \
-"locations": [{{"name": "Nombre del lugar", "description": "Breve descripción"}}], \
-"entities": [{{"name": "Nombre de la entidad", "entity_type": "corporacion|faccion|clan|grupo|fuerza|otro", "description": "Breve descripción"}}], \
-"relationships": [{{"source_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
-"target_key": "player:123|npc:Nombre|loc:Lugar|ent:Entidad", \
-"relation_type": "aliado de|enemigo de|miembro de...", \
-"category": "general|politica|familiar|social", "notes": "opcional"}}]}}
-
-Si no hay nuevos elementos, devuelve listas vacías.
-"""
 
 
 class ClaudeSummarizer(BaseSummarizer):
@@ -324,6 +61,7 @@ class ClaudeSummarizer(BaseSummarizer):
         self._extraction_counter: int = (
             0  # Count of _update_summary() calls for periodic extraction
         )
+        self._extractor: EntityExtractor | None = None
 
     # ------------------------------------------------------------------
     # Lazy client
@@ -341,6 +79,20 @@ class ClaudeSummarizer(BaseSummarizer):
                 ) from exc
             self._client = AsyncAnthropic()
         return self._client
+
+    def _get_extractor(self) -> EntityExtractor | None:
+        """Return the EntityExtractor, creating it lazily. Returns None if no database."""
+        if self._database is None:
+            return None
+        if self._extractor is None:
+            self._extractor = EntityExtractor(
+                client=self._get_client(),
+                model=self.config.model,
+                campaign_context=self.campaign,
+                entity_repo=self._database.entities,
+                event_bus=self.event_bus,
+            )
+        return self._extractor
 
     # ------------------------------------------------------------------
     # Shared block builders
@@ -597,6 +349,31 @@ class ClaudeSummarizer(BaseSummarizer):
             f"Claude API failed after {self.config.max_retries} attempts: {last_exc}"
         ) from last_exc
 
+    async def generate_title_from_summary(self, summary: str) -> str:
+        """Generate a short session title (≤60 chars) from an existing summary.
+
+        Returns a generic fallback if the summary is empty or the LLM call fails.
+        """
+        import datetime
+
+        if not summary or not summary.strip():
+            today = datetime.date.today().strftime("%Y-%m-%d")
+            return f"Sesión {today}"
+
+        system = (
+            "Eres un asistente que genera títulos cortos y descriptivos para sesiones de rol. "
+            "El título debe tener máximo 60 caracteres. "
+            "Responde ÚNICAMENTE con el título, sin comillas ni explicaciones."
+        )
+        user = f"Resumen de la sesión:\n\n{summary[:2000]}"
+        try:
+            title = await self._call_api(system, user, purpose="generate_title")
+            title = title.strip().strip('"').strip("'")
+            return title[:60] if title else f"Sesión {datetime.date.today():%Y-%m-%d}"
+        except Exception:
+            import datetime as _dt
+            return f"Sesión {_dt.date.today():%Y-%m-%d}"
+
     # ------------------------------------------------------------------
     # Core summarization logic
     # ------------------------------------------------------------------
@@ -615,10 +392,16 @@ class ClaudeSummarizer(BaseSummarizer):
             user_answers_block = await self._build_user_answers_block()
 
             system = self._build_system_prompt()
+            chronology_block = (
+                f"CRONOLOGÍA DE LA SESIÓN:\n{self._session_chronology}\n\n"
+                if self._session_chronology
+                else ""
+            )
             user_msg = SESSION_UPDATE_USER.format(
                 recent_transcriptions=self._format_transcriptions(entries),
                 current_session_summary=self._session_summary or "(inicio de sesión)",
                 user_answers_block=user_answers_block if user_answers_block else "\n",
+                chronology_block=chronology_block,
             )
 
             try:
@@ -781,6 +564,24 @@ class ClaudeSummarizer(BaseSummarizer):
 
         system = self._build_system_prompt()
 
+        # Step 1: Generate chronology first so the final narrative can use it as context
+        if all_entries:
+            try:
+                self._session_chronology = await self.generate_chronology(
+                    entries=all_entries,
+                )
+                logger.info("Session chronology generated")
+            except Exception as exc:
+                logger.error("Chronology generation failed: %s", exc)
+                self._session_chronology = ""
+
+        chronology_block = (
+            f"CRONOLOGÍA DE LA SESIÓN:\n{self._session_chronology}\n\n"
+            if self._session_chronology
+            else ""
+        )
+
+        # Step 2: Generate final narrative summary (with chronology as context)
         # Calculate overhead from the finalize template (without dynamic content)
         template_overhead = len(FINALIZE_USER) + len(self._session_summary or "") + 200
         # Max chars available for transcriptions in a single call
@@ -799,6 +600,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 FINALIZE_USER.format(
                     session_summary=self._session_summary or "(sin resumen todavía)",
                     pending_transcriptions=pending_text or "(ninguna)",
+                    chronology_block=chronology_block,
                 ),
                 purpose="finalize_session",
             )
@@ -829,6 +631,7 @@ class ClaudeSummarizer(BaseSummarizer):
                     user_msg = FINALIZE_USER.format(
                         session_summary=running_summary,
                         pending_transcriptions=batch_text,
+                        chronology_block=chronology_block,
                     )
                     result = await self._call_api(
                         system, user_msg, purpose="finalize_session_last_batch"
@@ -840,6 +643,7 @@ class ClaudeSummarizer(BaseSummarizer):
                         recent_transcriptions=batch_text,
                         current_session_summary=running_summary,
                         user_answers_block="\n",
+                        chronology_block="",
                     )
                     result = await self._call_api(
                         system, user_msg, purpose=f"finalize_session_batch_{i + 1}"
@@ -855,16 +659,6 @@ class ClaudeSummarizer(BaseSummarizer):
         self._session_summary = session_part
         if campaign_part:
             self._campaign_summary = campaign_part
-
-        # Generate chronological timeline from the final summary + transcriptions
-        try:
-            self._session_chronology = await self.generate_chronology(
-                entries=all_entries,
-            )
-            logger.info("Session chronology generated")
-        except Exception as exc:
-            logger.error("Chronology generation failed: %s", exc)
-            self._session_chronology = ""
 
         await self._publish_summary("final")
 
@@ -910,6 +704,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 FINALIZE_USER.format(
                     session_summary="(inicio de sesión)",
                     pending_transcriptions=pending_text,
+                    chronology_block="",
                 ),
                 purpose="posthoc_session_summary",
             )
@@ -927,6 +722,7 @@ class ClaudeSummarizer(BaseSummarizer):
                         FINALIZE_USER.format(
                             session_summary=running_summary,
                             pending_transcriptions=batch_text,
+                            chronology_block="",
                         ),
                         purpose="posthoc_session_summary_last_batch",
                     )
@@ -938,6 +734,7 @@ class ClaudeSummarizer(BaseSummarizer):
                             recent_transcriptions=batch_text,
                             current_session_summary=running_summary,
                             user_answers_block="\n",
+                            chronology_block="",
                         ),
                         purpose=f"posthoc_session_summary_batch_{i + 1}",
                     )
@@ -1243,45 +1040,13 @@ class ClaudeSummarizer(BaseSummarizer):
         return result
 
     # ------------------------------------------------------------------
-    # Structured entity extraction
-    # ------------------------------------------------------------------
-
+    # Structured entity extraction (delegated to EntityExtractor)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_extraction_response(text: str) -> dict:
-        """Parse the JSON extraction response from the LLM.
-
-        Returns a dict with 'npcs', 'locations', 'entities', 'relationships'
-        lists. Missing or invalid lists are normalized to empty lists.
-        """
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
-        try:
-            data = json.loads(match.group())
-        except (json.JSONDecodeError, ValueError):
-            return {"npcs": [], "locations": [], "entities": [], "relationships": []}
-
-        npcs = data.get("npcs", [])
-        locations = data.get("locations", [])
-        entities = data.get("entities", [])
-        relationships = data.get("relationships", [])
-        if not isinstance(npcs, list):
-            npcs = []
-        if not isinstance(locations, list):
-            locations = []
-        if not isinstance(entities, list):
-            entities = []
-        if not isinstance(relationships, list):
-            relationships = []
-
-        return {
-            "npcs": npcs,
-            "locations": locations,
-            "entities": entities,
-            "relationships": relationships,
-        }
+        """Parse the JSON extraction response. Delegates to EntityExtractor."""
+        return EntityExtractor._parse_extraction_response(text)
 
     async def extract_entities_from_summary(
         self,
@@ -1290,252 +1055,13 @@ class ClaudeSummarizer(BaseSummarizer):
     ) -> dict[str, list[str]]:
         """Extract and persist new NPCs, locations, entities and relationships.
 
-        Public interface usable both during live sessions and for retroactive
-        processing of historical sessions. Updates the in-memory campaign
-        context after saving so subsequent system prompts include new entities.
-
-        Returns:
-            dict with 'new_npcs', 'new_locations', 'new_entities', 'new_relationships'.
+        Delegates to EntityExtractor. Public interface kept for backward compat.
         """
-        results: dict[str, list[str]] = {
-            "new_npcs": [],
-            "new_locations": [],
-            "new_entities": [],
-            "new_relationships": [],
-        }
-
-        if not self._database or not session_summary:
-            return results
-        if self.campaign.is_generic:
-            return results
-
-        # Build known-context blocks for the prompt (dedup layer 1: LLM skips known)
-        known_npcs_lines = [
-            f"- {n.name}: {n.description}" for n in self.campaign.known_npcs
-        ] or ["(ninguno)"]
-
-        known_locations_lines = [
-            f"- {loc.name}: {loc.description}" if loc.description else f"- {loc.name}"
-            for loc in self.campaign.locations
-        ] or ["(ninguna)"]
-
-        known_entities_lines = [
-            f"- ent:{ent.name} [{ent.entity_type}]: {ent.description}"
-            if ent.description
-            else f"- ent:{ent.name} [{ent.entity_type}]"
-            for ent in self.campaign.entities
-        ] or ["(ninguna)"]
-
-        known_relationships_lines = [
-            f"- {rel.source_key} -> {rel.target_key}: {rel.relation_type_label or rel.relation_type_key}"
-            for rel in self.campaign.relationships
-        ] or ["(ninguna)"]
-
-        # Build a simple player list so the LLM knows who is a PC (not NPC)
-        players_lines = [
-            f"- {p.discord_name} juega como {p.character_name}"
-            for p in self.campaign.players
-            if p.character_name
-        ] or ["(ninguno registrado)"]
-
-        user_msg = EXTRACTION_USER.format(
-            session_summary=session_summary,
-            players_block="\n".join(players_lines),
-            known_npcs="\n".join(known_npcs_lines),
-            known_locations="\n".join(known_locations_lines),
-            known_entities="\n".join(known_entities_lines),
-            known_relationships="\n".join(known_relationships_lines),
-        )
-
-        try:
-            result = await self._call_api(
-                "Eres un asistente que extrae información estructurada de "
-                "resúmenes de partidas de rol. Responde solo con JSON válido.",
-                user_msg,
-                purpose="entity_extraction",
-            )
-            extracted = self._parse_extraction_response(result)
-
-            # ── NPCs ───────────────────────────────────────────────
-            for npc in extracted["npcs"]:
-                name = npc.get("name", "").strip()
-                description = npc.get("description", "").strip()
-                if not name:
-                    continue
-                if await self._database.npc_exists(self.campaign.campaign_id, name):
-                    continue
-                await self._database.save_npc(
-                    campaign_id=self.campaign.campaign_id,
-                    name=name,
-                    description=description,
-                    first_seen_session=session_id,
-                )
-                self.campaign.known_npcs.append(
-                    NPCInfo(name=name, description=description)
-                )
-                results["new_npcs"].append(name)
-
-            # ── Locations ──────────────────────────────────────────
-            for loc in extracted["locations"]:
-                name = loc.get("name", "").strip()
-                description = loc.get("description", "").strip()
-                if not name:
-                    continue
-                if await self._database.location_exists(
-                    self.campaign.campaign_id, name
-                ):
-                    continue
-                await self._database.save_location(
-                    campaign_id=self.campaign.campaign_id,
-                    name=name,
-                    description=description,
-                    first_seen_session=session_id,
-                )
-                self.campaign.locations.append(
-                    LocationInfo(name=name, description=description)
-                )
-                results["new_locations"].append(name)
-
-            # ── Entities ───────────────────────────────────────────
-            for entity in extracted["entities"]:
-                name = str(entity.get("name", "")).strip()
-                entity_type = (
-                    str(entity.get("entity_type", "group") or "group").strip()
-                    or "group"
-                )
-                description = str(entity.get("description", "")).strip()
-                if not name:
-                    continue
-                if await self._database.entity_exists(self.campaign.campaign_id, name):
-                    continue
-                await self._database.save_entity(
-                    campaign_id=self.campaign.campaign_id,
-                    name=name,
-                    entity_type=entity_type,
-                    description=description,
-                    first_seen_session=session_id,
-                )
-                self.campaign.entities.append(
-                    EntityInfo(
-                        name=name, entity_type=entity_type, description=description
-                    )
-                )
-                results["new_entities"].append(name)
-
-            # ── Build relation seed map (all known + newly saved) ──
-            relation_seed_map: dict[str, str] = {}
-            for p in self.campaign.players:
-                if p.discord_id:
-                    relation_seed_map[p.character_name.strip().casefold()] = (
-                        f"player:{p.discord_id}"
-                    )
-            for n in self.campaign.known_npcs:
-                relation_seed_map[n.name.strip().casefold()] = f"npc:{n.name}"
-            for loc in self.campaign.locations:
-                relation_seed_map[loc.name.strip().casefold()] = f"loc:{loc.name}"
-            for ent in self.campaign.entities:
-                relation_seed_map[ent.name.strip().casefold()] = f"ent:{ent.name}"
-
-            def _resolve_relation_key(raw_key: str, fallback_name: str = "") -> str:
-                candidate = str(raw_key or "").strip()
-                if not candidate and fallback_name:
-                    candidate = relation_seed_map.get(fallback_name.casefold(), "")
-                if candidate.startswith("location:"):
-                    candidate = "loc:" + candidate[len("location:") :]
-                if candidate.startswith("entity:"):
-                    candidate = "ent:" + candidate[len("entity:") :]
-                if ":" in candidate:
-                    return candidate
-                if candidate:
-                    return relation_seed_map.get(candidate.casefold(), "")
-                return ""
-
-            # ── Auto-create entities referenced in relationships ──
-            async def _ensure_entity_from_key(key: str) -> None:
-                """If key is ent:Name and the entity doesn't exist, create it."""
-                if not key.startswith("ent:"):
-                    return
-                ent_name = key[4:].strip()
-                if not ent_name:
-                    return
-                if await self._database.entity_exists(
-                    self.campaign.campaign_id, ent_name
-                ):
-                    return
-                await self._database.save_entity(
-                    campaign_id=self.campaign.campaign_id,
-                    name=ent_name,
-                    entity_type="group",
-                    description="",
-                    first_seen_session=session_id,
-                )
-                self.campaign.entities.append(
-                    EntityInfo(name=ent_name, entity_type="group", description="")
-                )
-                relation_seed_map[ent_name.casefold()] = f"ent:{ent_name}"
-                results["new_entities"].append(ent_name)
-
-            # ── Relationships ──────────────────────────────────────
-            for rel in extracted["relationships"]:
-                source_key = _resolve_relation_key(
-                    str(rel.get("source_key", "")).strip(),
-                    str(rel.get("source", "")).strip(),
-                )
-                target_key = _resolve_relation_key(
-                    str(rel.get("target_key", "")).strip(),
-                    str(rel.get("target", "")).strip(),
-                )
-                relation_type = str(rel.get("relation_type", "")).strip()
-                category = (
-                    str(rel.get("category", "general") or "general").strip()
-                    or "general"
-                )
-                notes = str(rel.get("notes", "")).strip()
-                if not source_key or not target_key or not relation_type:
-                    continue
-                try:
-                    # Auto-create entities referenced in relationships
-                    await _ensure_entity_from_key(source_key)
-                    await _ensure_entity_from_key(target_key)
-                    await self._database.save_character_relationship(
-                        self.campaign.campaign_id,
-                        source_key,
-                        target_key,
-                        relation_type,
-                        notes=notes,
-                        category=category,
-                    )
-                    results["new_relationships"].append(
-                        f"{source_key} -> {target_key}: {relation_type}"
-                    )
-                except Exception:
-                    continue
-
-            logger.info(
-                "Extraction: %d new NPC(s), %d new location(s), %d new entity(s), %d new relationship(s)",
-                len(results["new_npcs"]),
-                len(results["new_locations"]),
-                len(results["new_entities"]),
-                len(results["new_relationships"]),
-            )
-        except Exception as exc:
-            logger.error("Entity extraction failed: %s", exc)
-
-        return results
+        return await self._get_extractor().extract_from_summary(session_id, session_summary)
 
     async def _extract_entities(self) -> None:
         """Run entity extraction for the current session and publish EntitiesUpdatedEvent."""
-        results = await self.extract_entities_from_summary(
-            self._session_id, self._session_summary
-        )
-        if any(results.values()):
-            await self.event_bus.publish(
-                EntitiesUpdatedEvent(
-                    campaign_id=self.campaign.campaign_id,
-                    session_id=self._session_id,
-                    new_npcs=tuple(results["new_npcs"]),
-                    new_locations=tuple(results["new_locations"]),
-                    new_entities=tuple(results["new_entities"]),
-                    new_relationships=tuple(results["new_relationships"]),
-                )
-            )
+        extractor = self._get_extractor()
+        if extractor is None:
+            return
+        await extractor.extract_and_publish(self._session_id, self._session_summary)
