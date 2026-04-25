@@ -1139,6 +1139,8 @@ class TestFinalizeEndpoint:
         body = resp.json()
         assert body["ok"] is False
         assert "No active session" in body["error"]
+
+
 class TestDeleteTranscriptionDiscard:
     async def test_delete_moves_audio_to_discard(
         self, event_bus: EventBus, tmp_path, monkeypatch

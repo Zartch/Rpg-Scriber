@@ -19,6 +19,8 @@ def _audio_base() -> Path:
 def _do_discard(session_id: str, filename: str) -> None:
     base = _audio_base()
     src = base / session_id / filename
+    if not src.resolve().is_relative_to(base.resolve()):
+        return
     if not src.exists():
         return
     dest_dir = base / "discard" / session_id
@@ -35,6 +37,8 @@ def _do_retrain(session_id: str, filename: str, body: dict[str, Any]) -> bool:
     """Returns False if source wav not found."""
     base = _audio_base()
     src = base / session_id / filename
+    if not src.resolve().is_relative_to(base.resolve()):
+        return False
     if not src.exists():
         return False
     dest_dir = base / "retrain" / session_id
