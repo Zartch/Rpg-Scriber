@@ -40,6 +40,7 @@ export function addTranscription(data) {
     '<span class="speaker">' + escapeHtml(data.speaker_name) + ":</span>" +
     '<span class="transcription-text">' + wordHtml + "</span>" +
     '<button class="btn-play" title="Reproducir audio" data-audio-url="' + escapeHtml(audioUrl) + '">\u25B6</button>' +
+    '<button class="btn-retrain" title="Corregir transcripción">✎</button>' +
     '<span class="ts">' + formatTime(data.timestamp) + "</span>";
 
   // Store metadata for editing
@@ -165,6 +166,102 @@ export function initTranscriptionListeners() {
       }).finally(function () {
         setRefreshing(entry, false);
       });
+    });
+  });
+
+  // ── Retrain inline edit ──────────────────────────────────────
+  transcriptionFeed.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn-retrain");
+    if (!btn) return;
+    var entry = btn.closest(".feed-entry");
+    if (!entry) return;
+    if (entry.querySelector(".retrain-textarea")) return; // already editing
+
+    var textSpan = entry.querySelector(".transcription-text");
+    var originalText = textSpan ? textSpan.textContent : "";
+
+    var textarea = document.createElement("textarea");
+    textarea.className = "retrain-textarea";
+    textarea.value = originalText;
+    textarea.rows = 2;
+
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "btn-retrain-save";
+    saveBtn.title = "Guardar corrección";
+    saveBtn.textContent = "✓";
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn-retrain-cancel";
+    cancelBtn.title = "Cancelar";
+    cancelBtn.textContent = "✗";
+
+    if (textSpan) textSpan.replaceWith(textarea);
+    btn.replaceWith(saveBtn);
+    saveBtn.insertAdjacentElement("afterend", cancelBtn);
+    textarea.focus();
+    textarea.select();
+
+    function doCancel() {
+      var restoredSpan = document.createElement("span");
+      restoredSpan.className = "transcription-text";
+      restoredSpan.textContent = originalText;
+      textarea.replaceWith(restoredSpan);
+      saveBtn.replaceWith(btn);
+      cancelBtn.remove();
+    }
+
+    function doSave() {
+      var newText = textarea.value.trim();
+      if (!newText || newText === originalText) { doCancel(); return; }
+
+      var restoredSpan = document.createElement("span");
+      restoredSpan.className = "transcription-text";
+      restoredSpan.textContent = newText;
+      textarea.replaceWith(restoredSpan);
+      saveBtn.replaceWith(btn);
+      cancelBtn.remove();
+
+      var playBtn = entry.querySelector(".btn-play");
+      var audioUrl = playBtn ? playBtn.dataset.audioUrl : "";
+      var filename = audioUrl ? audioUrl.split("/").pop() : "";
+      var sessionId = entry.dataset.sessionId;
+      var speakerEl = entry.querySelector(".speaker");
+      var speaker = speakerEl ? speakerEl.textContent.replace(/:$/, "").trim() : "";
+
+      resolveTranscriptionId(entry).then(function (id) {
+        var promises = [];
+        if (id) {
+          promises.push(fetch("/api/transcriptions/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: newText }),
+          }));
+        }
+        if (filename && sessionId) {
+          promises.push(fetch(
+            "/api/audio/" + encodeURIComponent(sessionId) +
+              "/" + encodeURIComponent(filename) + "/retrain",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                original: originalText,
+                corrected: newText,
+                speaker: speaker,
+                timestamp: parseFloat(entry.dataset.timestamp) || 0,
+              }),
+            }
+          ));
+        }
+        return Promise.all(promises);
+      });
+    }
+
+    saveBtn.addEventListener("click", doSave);
+    cancelBtn.addEventListener("click", doCancel);
+    textarea.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSave(); }
+      if (e.key === "Escape") { e.preventDefault(); doCancel(); }
     });
   });
 }
