@@ -70,6 +70,15 @@ class TranscriptionRepository:
         await self.conn.commit()
         return cursor.rowcount > 0
 
+    async def get_transcription_by_id(self, transcription_id: int) -> dict[str, Any] | None:
+        """Get a single transcription by ID. Returns None if not found."""
+        cursor = await self.conn.execute(
+            "SELECT * FROM transcriptions WHERE id = ?",
+            (transcription_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
     async def update_transcription_is_ingame(
         self, transcription_id: int, is_ingame: bool
     ) -> bool:

@@ -160,6 +160,25 @@ class TestDatabaseTranscriptions:
         result = await db.transcriptions.get_transcriptions("no-session")
         assert result == []
 
+    async def test_get_transcription_by_id_returns_row(self, db: Database) -> None:
+        row_id = await db.transcriptions.save_transcription(
+            session_id="s1",
+            speaker_id="spk1",
+            speaker_name="Ana",
+            text="Hola",
+            timestamp=1700000000.0,
+            confidence=0.9,
+        )
+        result = await db.transcriptions.get_transcription_by_id(row_id)
+        assert result is not None
+        assert result["speaker_name"] == "Ana"
+        assert result["session_id"] == "s1"
+        assert result["timestamp"] == 1700000000.0
+
+    async def test_get_transcription_by_id_returns_none_if_missing(self, db: Database) -> None:
+        result = await db.transcriptions.get_transcription_by_id(99999)
+        assert result is None
+
 
 class TestDatabaseNPCs:
     async def test_save_and_get_npcs(self, db: Database) -> None:
