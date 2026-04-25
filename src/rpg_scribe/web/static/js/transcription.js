@@ -123,13 +123,28 @@ export function initTranscriptionListeners() {
 
     import("./utils.js").then(function (utils) {
       utils.withLoading(btn, function () {
-        return resolveTranscriptionId(entry).then(function (id) {
-          if (!id) return Promise.reject(new Error("No transcription ID"));
-          return fetch("/api/transcriptions/" + id, { method: "DELETE" })
-            .then(function (r) {
-              if (r.ok) entry.remove();
-              else return Promise.reject(new Error("Delete failed"));
-            });
+        var playBtn = entry.querySelector(".btn-play");
+        var audioUrl = playBtn ? playBtn.dataset.audioUrl : "";
+        var filename = audioUrl ? audioUrl.split("/").pop() : "";
+        var sessionId = entry.dataset.sessionId;
+
+        var discardPromise = (filename && sessionId)
+          ? fetch(
+              "/api/audio/" + encodeURIComponent(sessionId) +
+                "/" + encodeURIComponent(filename) + "/discard",
+              { method: "POST" }
+            ).catch(function () {})
+          : Promise.resolve();
+
+        return discardPromise.then(function () {
+          return resolveTranscriptionId(entry).then(function (id) {
+            if (!id) return Promise.reject(new Error("No transcription ID"));
+            return fetch("/api/transcriptions/" + id, { method: "DELETE" })
+              .then(function (r) {
+                if (r.ok) entry.remove();
+                else return Promise.reject(new Error("Delete failed"));
+              });
+          });
         });
       }, { loadingText: "Eliminando..." });
     });
