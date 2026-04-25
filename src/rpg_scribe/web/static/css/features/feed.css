@@ -45,6 +45,23 @@
 .btn-play:hover { background: var(--green); color: #fff; }
 .btn-play.playing { background: var(--green); color: #fff; opacity: 1; }
 
+/* Retrain correction button */
+.btn-retrain {
+  font-size: 0.65rem; padding: 0 0.3rem; border: none; border-radius: 3px;
+  cursor: pointer; line-height: 1.6; background: var(--border); color: var(--text-muted);
+  margin-left: 0.3rem; opacity: 0.5; vertical-align: middle; transition: opacity 0.15s;
+}
+.feed-entry:hover .btn-retrain { opacity: 1; }
+.btn-retrain:hover { background: var(--accent); color: #fff; }
+.btn-retrain-save { background: var(--accent); color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; padding: 0 0.35rem; margin-left: 0.3rem; }
+.btn-retrain-cancel { background: var(--border); color: var(--text-muted); border: none; border-radius: 3px; cursor: pointer; font-size: 0.7rem; padding: 0 0.35rem; margin-left: 0.2rem; }
+.retrain-textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--accent);
+  border-radius: 3px; font-size: 0.85rem; padding: 0.2rem 0.4rem;
+  font-family: inherit; outline: none; width: 60%; resize: vertical;
+  vertical-align: middle;
+}
+
 /* META transcription state */
 .feed-entry.meta { border-left-color: var(--text-muted); opacity: 0.7; }
 .feed-entry.meta .btn-meta { background: var(--accent); color: #fff; }

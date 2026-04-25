@@ -235,6 +235,8 @@ export function initTranscriptionListeners() {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text: newText }),
+          }).then(function (r) {
+            if (!r.ok) return Promise.reject(new Error("Save failed"));
           }));
         }
         if (filename && sessionId) {
@@ -254,6 +256,9 @@ export function initTranscriptionListeners() {
           ));
         }
         return Promise.all(promises);
+      }).catch(function () {
+        var revertSpan = entry.querySelector(".transcription-text");
+        if (revertSpan) revertSpan.textContent = originalText;
       });
     }
 
