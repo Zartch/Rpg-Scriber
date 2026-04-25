@@ -180,6 +180,7 @@ def create_app(
         transcriptions as transcriptions_router,
         tts as tts_router,
         status as status_router,
+        audio as audio_router,
     )
     app.include_router(campaigns_router.router)
     app.include_router(sessions_router.router)
@@ -187,6 +188,7 @@ def create_app(
     app.include_router(transcriptions_router.router)
     app.include_router(tts_router.router)
     app.include_router(status_router.router)
+    app.include_router(audio_router.router)
 
     # Serve saved audio chunks as static files (data/audio/)
     audio_dir = Path.cwd() / "data" / "audio"

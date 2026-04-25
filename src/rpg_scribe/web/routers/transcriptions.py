@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -113,19 +114,27 @@ async def update_transcription(
 
 @router.delete("/api/transcriptions/{transcription_id}")
 async def delete_transcription(transcription_id: int) -> dict[str, Any]:
-    """Delete a transcription by ID."""
+    """Delete a transcription by ID, moving its audio to the discard folder."""
     db = _get_database()
     if db is None:
         raise HTTPException(status_code=503, detail="Database not available")
+
+    row = await db.transcriptions.get_transcription_by_id(transcription_id)
+
     ok = await db.transcriptions.delete_transcription(transcription_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Transcription not found")
+
+    if row:
+        from rpg_scribe.web.routers.audio import _move_audio_to_discard
+        speaker_san = re.sub(r"\W", "_", row.get("speaker_name") or "")[:30]
+        filename = f"{row['timestamp']}_{speaker_san}.wav"
+        await _move_audio_to_discard(row["session_id"], filename)
 
     state = _get_state()
     state.transcriptions = [
         t for t in state.transcriptions if t.get("id") != transcription_id
     ]
-
     return {"ok": True, "id": transcription_id}
 
 

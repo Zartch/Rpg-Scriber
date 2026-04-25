@@ -1139,6 +1139,67 @@ class TestFinalizeEndpoint:
         body = resp.json()
         assert body["ok"] is False
         assert "No active session" in body["error"]
+class TestDeleteTranscriptionDiscard:
+    async def test_delete_moves_audio_to_discard(
+        self, event_bus: EventBus, tmp_path, monkeypatch
+    ) -> None:
+        import rpg_scribe.web.routers.audio as audio_module
+        monkeypatch.setattr(audio_module, "_audio_base", lambda: tmp_path)
+
+        # Create a fake wav file
+        wav = tmp_path / "sess-del" / "1700000000.0_Ana.wav"
+        wav.parent.mkdir(parents=True)
+        wav.write_bytes(b"RIFF")
+
+        db = AsyncMock()
+        db.transcriptions.get_transcription_by_id = AsyncMock(return_value={
+            "id": 1,
+            "session_id": "sess-del",
+            "speaker_id": "spk1",
+            "speaker_name": "Ana",
+            "text": "Hola",
+            "timestamp": 1700000000.0,
+            "confidence": 0.9,
+            "is_ingame": True,
+        })
+        db.transcriptions.delete_transcription = AsyncMock(return_value=True)
+
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.delete("/api/transcriptions/1")
+
+        assert resp.status_code == 200
+        assert not wav.exists()
+        assert (tmp_path / "discard" / "sess-del" / "1700000000.0_Ana.wav").exists()
+
+    async def test_delete_succeeds_even_if_wav_missing(
+        self, event_bus: EventBus, tmp_path, monkeypatch
+    ) -> None:
+        import rpg_scribe.web.routers.audio as audio_module
+        monkeypatch.setattr(audio_module, "_audio_base", lambda: tmp_path)
+
+        db = AsyncMock()
+        db.transcriptions.get_transcription_by_id = AsyncMock(return_value={
+            "id": 2,
+            "session_id": "sess-del",
+            "speaker_id": "spk1",
+            "speaker_name": "Ana",
+            "text": "Hola",
+            "timestamp": 1700000001.0,
+            "confidence": 0.9,
+            "is_ingame": True,
+        })
+        db.transcriptions.delete_transcription = AsyncMock(return_value=True)
+
+        app = create_app(event_bus, database=db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            resp = await c.delete("/api/transcriptions/2")
+
+        assert resp.status_code == 200  # no error even though wav doesn't exist
+
+
 class TestCreateApp:
     def test_app_has_routes(self, app):
         paths = [r.path for r in app.routes]
