@@ -80,21 +80,20 @@ class FasterWhisperTranscriber(BaseTranscriber):
         wav_data = _pcm_to_wav_bytes(event.audio_data)
         audio_file = io.BytesIO(wav_data)
 
-        # faster-whisper is synchronous; run in executor to avoid blocking
-        loop = asyncio.get_running_loop()
-        segments, info = await loop.run_in_executor(
-            None,
-            lambda: model.transcribe(  # type: ignore[union-attr]
+        # faster-whisper returns a lazy generator — consuming it IS the inference work.
+        # Both model.transcribe() and segment iteration must run in the executor to
+        # avoid blocking the asyncio event loop (which would starve Discord heartbeats).
+        def _run_transcription() -> tuple[list[str], object]:
+            segs, inf = model.transcribe(  # type: ignore[union-attr]
                 audio_file,
                 language=self.config.language,
                 initial_prompt=self.config.prompt_hint or None,
-            ),
-        )
+            )
+            return [seg.text.strip() for seg in segs], inf
 
-        # Collect all segments into a single text
-        text_parts = []
-        for segment in segments:
-            text_parts.append(segment.text.strip())
+        loop = asyncio.get_running_loop()
+        text_parts, info = await loop.run_in_executor(None, _run_transcription)
+
         full_text = " ".join(text_parts)
 
         avg_logprob = getattr(info, "avg_logprob", None)

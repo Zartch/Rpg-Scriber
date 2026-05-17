@@ -81,5 +81,10 @@ def setup_logging(
         root.addHandler(file_handler)
 
     # Reduce noise from third-party libraries
-    for noisy in ("discord", "httpx", "httpcore", "openai", "anthropic", "uvicorn.access"):
+    for noisy in ("discord", "httpx", "httpcore", "openai", "anthropic", "uvicorn.access", "faster_whisper"):
         logging.getLogger(noisy).setLevel(max(log_level, logging.WARNING))
+
+    # voice_recv generates thousands of WARNING/ERROR lines per session that are
+    # not actionable (packet loss is normal, struct.error is suppressed via filter).
+    for very_noisy in ("discord.ext.voice_recv.opus", "discord.ext.voice_recv.reader"):
+        logging.getLogger(very_noisy).setLevel(max(log_level, logging.ERROR))

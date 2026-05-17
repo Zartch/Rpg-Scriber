@@ -136,6 +136,19 @@ def _patch_dave_decryption() -> None:
         logger.info("Parcheado PacketDecoder._decode_packet para soportar descifrado DAVE")
 
 
+class _SuppressUnpackError(logging.Filter):
+    """Suppress voice_recv's 'Error unpacking packet' error.
+
+    voice_recv logs this at ERROR level when it receives malformed RTP packets
+    during the initial DAVE handshake. The error is benign and expected — our
+    DAVE patch handles the underlying cause, but voice_recv's own try/except
+    fires before our callback gets a chance to intercept it.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Error unpacking packet" not in record.getMessage()
+
+
 def _patch_audio_reader() -> None:
     try:
         from discord.ext.voice_recv.reader import AudioReader
@@ -143,6 +156,8 @@ def _patch_audio_reader() -> None:
         return
 
     _log = logging.getLogger("discord.ext.voice_recv.reader")
+    _log.addFilter(_SuppressUnpackError())
+
     _original_callback = AudioReader.callback
 
     def _quiet_callback(self: AudioReader, packet_data: bytes) -> None:  # type: ignore[type-arg]
@@ -421,6 +436,18 @@ class DiscordListener(BaseListener):
         try:
             while self._connected:
                 await asyncio.sleep(0.25)
+                # Detect silent voice-connection drops that fire no gateway event
+                if (
+                    self._voice_client is not None
+                    and not self._voice_client.is_connected()
+                ):
+                    logger.warning(
+                        "⚠️  VoiceClient desconectado silenciosamente — "
+                        "deteniendo sesión %s (usa /scribe start para reconectar)",
+                        self._session_id,
+                    )
+                    self._connected = False
+                    break
                 now = time.time()
                 for uid in list(self._user_buffers):
                     buf = self._user_buffers[uid]

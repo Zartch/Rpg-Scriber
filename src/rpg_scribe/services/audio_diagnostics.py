@@ -53,4 +53,10 @@ class AudioDiagnosticSaver:
                 event.duration_ms / 1000,
             )
         except Exception as exc:
-            logger.error("Error guardando audio diagnóstico: %s", exc)
+            logger.error(
+                "Error guardando audio diagnóstico para %s (chunk %d, dir_exists=%s): %s",
+                event.speaker_name,
+                count,
+                self._audio_dir.exists(),
+                exc,
+            )

@@ -587,7 +587,12 @@ class Application:
                 chronology = self._summarizer._session_chronology  # type: ignore[union-attr]
                 await self._summarizer.stop()  # type: ignore[union-attr]
             except Exception as exc:
-                logger.error("Failed to finalize session: %s", exc)
+                chronology = self._summarizer._session_chronology or ""  # type: ignore[union-attr]
+                logger.error(
+                    "Failed to finalize session (chronology=%s, summary=lost): %s",
+                    "saved" if chronology else "not generated",
+                    exc,
+                )
 
         await self.db.sessions.end_session(session_id, summary, chronology)
         self._active_session_id = None

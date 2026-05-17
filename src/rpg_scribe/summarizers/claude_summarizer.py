@@ -321,6 +321,7 @@ class ClaudeSummarizer(BaseSummarizer):
             self.config.max_tokens,
             len(system) + len(user_message),
         )
+        input_size = len(system) + len(user_message)
         client = self._get_client()
         last_exc: Exception | None = None
         for attempt in range(self.config.max_retries):
@@ -338,9 +339,10 @@ class ClaudeSummarizer(BaseSummarizer):
                 if attempt < self.config.max_retries - 1:
                     delay = self.config.retry_base_delay_s * (2**attempt)
                     logger.warning(
-                        "Claude API call failed (attempt %d/%d): %s — retrying in %.1fs",
+                        "Claude API call failed (attempt %d/%d, input≈%d chars): %s — retrying in %.1fs",
                         attempt + 1,
                         self.config.max_retries,
+                        input_size,
                         exc,
                         delay,
                     )

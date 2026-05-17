@@ -163,5 +163,8 @@ Discord opus → voice_recv decrypt → opus decode → stereo PCM (3840 bytes/2
 → stereo_to_mono → UserAudioBuffer → pcm_to_wav_bytes → OpenAI API
 ```
 
+### Observabilidad del transcriber
+`BaseTranscriber` mantiene contadores acumulativos (`chunks_received`, `pre_filtered`, `transcribed`, `hallucination`, `empty`, `errored`) y los vuelca al log cada 30 s desde una tarea `transcriber-stats`. Si hay chunks entrando pero ninguno produce texto en >120 s, emite `WARNING` `"Transcriber stall"` apuntando a stream de audio degradado. Detalles del patrón y marcadores a buscar: ver [`discord-voice.md`](discord-voice.md#stream-de-audio-degradado-vs-transcriber-colgado).
+
 ### Modo genérico
 Sin `--campaign`, `Application` crea `CampaignContext.create_generic()` con `GENERIC_SYSTEM_PROMPT`. El summarizer funciona igual.

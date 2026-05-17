@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -157,6 +158,52 @@ class ScribeCog(commands.Cog):
         logger.info("Sesión %s detenida correctamente", sid)
         await interaction.followup.send(
             f"Recording stopped. Session `{sid}` ended. Finalizing summary..."
+        )
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        """Reset session state when the bot is unexpectedly kicked or disconnected.
+
+        Guarded by ``self.session_id`` (not by ``listener.is_connected()``) so
+        we still run cleanup when ``_periodic_flush`` already flipped the
+        ``_connected`` flag after detecting a silent voice-connection drop.
+        """
+        if self.bot.user is None or member.id != self.bot.user.id:
+            return
+        if before.channel is None or after.channel is not None:
+            return
+        if self.session_id is None or self.listener is None:
+            return
+
+        logger.warning(
+            "⚠️  Bot desconectado inesperadamente del canal '%s' — "
+            "limpiando sesión %s automáticamente",
+            before.channel.name,
+            self.session_id,
+        )
+        sid = self.session_id
+        listener = self.listener
+        self.listener = None
+        self.session_id = None
+
+        # Run the (potentially slow) buffer-flush + disconnect off the gateway
+        # event handler so other Discord events don't queue up behind it.
+        async def _finalize_listener() -> None:
+            try:
+                await listener.disconnect()
+            except Exception:
+                logger.exception("Error al desconectar listener tras kick")
+            await self.event_bus.publish(
+                SessionEndRequestEvent(session_id=sid, source="discord")
+            )
+
+        asyncio.create_task(
+            _finalize_listener(), name=f"voice-kick-cleanup-{sid}"
         )
 
     @scribe_group.command(

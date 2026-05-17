@@ -28,6 +28,7 @@ class TranscriptionFileWriter:
         self._max_bytes = int(max_size_mb * 1024 * 1024)
         self._file_index = 0
         self._path = self._next_path()
+        self._disabled = False
 
     def _next_path(self) -> Path:
         """Return the next numbered transcription file path."""
@@ -55,7 +56,22 @@ class TranscriptionFileWriter:
                 self._path.name,
             )
 
+        if self._disabled:
+            return
+
         ts = datetime.datetime.fromtimestamp(event.timestamp).strftime("%H:%M:%S")
         line = f"[{ts}] {event.speaker_name}: {event.text}\n"
-        with open(self._path, "a", encoding="utf-8") as f:
-            f.write(line)
+        try:
+            with open(self._path, "a", encoding="utf-8") as f:
+                f.write(line)
+        except FileNotFoundError:
+            try:
+                self._dir.mkdir(parents=True, exist_ok=True)
+                with open(self._path, "a", encoding="utf-8") as f:
+                    f.write(line)
+            except Exception as exc:
+                self._disabled = True
+                logger.error(
+                    "Directorio de transcripciones desaparecido, escritura deshabilitada para esta sesión: %s",
+                    exc,
+                )
