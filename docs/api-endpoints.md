@@ -25,4 +25,15 @@
 | GET | `/api/browse/campaigns` | Listar todas las campañas (modo browse) |
 | GET | `/api/browse/campaigns/{id}` | Detalle de campaña (modo browse) |
 | GET | `/api/browse/sessions/uncategorized` | Sesiones sin campaña |
+| POST | `/api/tts/narrate` | Generar audio TTS (NDJSON streaming). Cachea como WAV 48 kHz stereo |
+| POST | `/api/tts/narrate-discord` | Generar + emitir narración por el canal de voz del bot (NDJSON) |
+| POST | `/api/tts/discord/pause` | Pausar reproducción en Discord |
+| POST | `/api/tts/discord/resume` | Reanudar reproducción en Discord |
+| POST | `/api/tts/discord/stop` | Detener y limpiar la cola en Discord |
+| POST | `/api/tts/discord/play-at` | Saltar a un chunk concreto (`{"index": N}`) |
+| GET | `/api/tts/discord/status` | Estado actual del player Discord (para polling) |
+| GET | `/api/tts/voices` | Voces TTS disponibles para el provider activo |
+| GET | `/api/tts/cache/{hash}.wav` | WAV cacheado (servido como estático) |
 | WS | `/ws/live` | WebSocket para eventos en tiempo real |
+
+Detalles del flujo TTS (caché compartida entre navegador y Discord, controles de transporte, drivers frontend) en [`tts-narration.md`](tts-narration.md).

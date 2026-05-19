@@ -61,14 +61,20 @@ def create_bot(
 
     config = listener_config or ListenerConfig()
 
-    @bot.event
-    async def on_ready() -> None:
-        logger.info("Bot ready as %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
+    async def setup_hook() -> None:
+        # Runs once before the gateway connects. on_ready fires on every
+        # reconnect, which would re-trigger add_cog and raise ClientException.
         await bot.add_cog(ScribeCog(bot, event_bus, config, database=database))
         try:
             synced = await bot.tree.sync()
             logger.info("Synced %d slash commands", len(synced))
         except Exception:
             logger.exception("Failed to sync slash commands")
+
+    bot.setup_hook = setup_hook  # type: ignore[method-assign]
+
+    @bot.event
+    async def on_ready() -> None:
+        logger.info("Bot ready as %s (id=%s)", bot.user, bot.user.id if bot.user else "?")
 
     return bot

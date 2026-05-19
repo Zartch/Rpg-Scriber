@@ -81,7 +81,15 @@ class DiscordTTSPlayer:
     async def start_queue(self, wav_paths: list[str]) -> None:
         """Replace the current queue and start playback from index 0."""
         async with self._lock:
+            # Cancelling the asyncio task does NOT stop discord.py's audio
+            # thread; without vc.stop() the next vc.play() raises
+            # "Already playing audio". Mirror stop()'s teardown order.
+            self._stopping = True
+            vc = self.get_voice_client()
+            if vc and (vc.is_playing() or vc.is_paused()):
+                vc.stop()
             await self._cancel_task_locked()
+
             self._queue = list(wav_paths)
             self._index = 0
             self._stopping = False

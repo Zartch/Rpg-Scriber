@@ -89,6 +89,16 @@ Si confirmas este patrón, el fix no está en el filtro ni en el transcriber: ha
 
 El transcriber `openai` no tiene este problema — usa `await` sobre HTTP, que cede al loop naturalmente.
 
+## Playback (output) — narración por voz
+
+Además de escuchar, el bot puede **hablar**: el botón "Narrar en Discord" del Web UI envía el TTS por el `VoiceClient` activo. El servicio responsable es `DiscordTTSPlayer` (`src/rpg_scribe/discord_bot/tts_player.py`), inyectado en `Application` durante el arranque del bot, igual que `DiscordSummaryPublisher`.
+
+- El audio se obtiene de OpenAI como PCM 24 kHz mono y se resamplea a 48 kHz stereo en proceso con `numpy` (sin `ffmpeg`).
+- Se envuelve como WAV de 48 kHz stereo y se cachea en `data/tts_cache/`. El mismo WAV sirve para el navegador y para Discord — el player lee el fichero, descarta los 44 bytes de header y pasa los bytes PCM crudos a `discord.PCMAudio`.
+- El callback `after=` de `voice_client.play()` corre en un hilo del `AudioPlayer`. El bridge a asyncio se hace con `loop.call_soon_threadsafe(event.set)` para que el queue loop pueda usar `await event.wait()`.
+
+Endpoints HTTP de control: `/api/tts/discord/{pause,resume,stop,play-at,status}`. Documentación completa del flujo en [`tts-narration.md`](tts-narration.md).
+
 ## Particularidades Windows
 
 - asyncio ProactorEventLoop requiere `os._exit(0)` para SIGINT handler
