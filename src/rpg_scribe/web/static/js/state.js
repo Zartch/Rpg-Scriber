@@ -32,5 +32,7 @@ export const state = {
   ttsPaused: false,
   ttsActiveBtn: null,
   ttsControlsEl: null,
+  ttsDriver: null,
+  ttsDiscordPoll: null,
   _ttsGen: 0,
 };

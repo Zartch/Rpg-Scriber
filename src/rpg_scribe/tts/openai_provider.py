@@ -38,16 +38,24 @@ class OpenAITTSProvider(BaseTTSProvider):
     def supported_voices(self) -> list[str]:
         return list(OPENAI_VOICES)
 
-    async def synthesize(self, text: str, voice: str) -> bytes:
-        """Generate mp3 audio via OpenAI TTS API."""
+    async def synthesize(self, text: str, voice: str, response_format: str = "mp3") -> bytes:
+        """Generate audio via OpenAI TTS API.
+
+        ``response_format`` is forwarded to the OpenAI client. Supported
+        values include ``"mp3"`` (default, used for browser playback) and
+        ``"pcm"`` (raw 24 kHz mono int16 LE, used for Discord playback).
+        """
         client = self._get_client()
-        logger.debug("TTS request: voice=%s model=%s text=%s...", voice, self._model, text[:60])
+        logger.debug(
+            "TTS request: voice=%s model=%s format=%s text=%s...",
+            voice, self._model, response_format, text[:60],
+        )
         response = await client.audio.speech.create(
             model=self._model,
             voice=voice,
             input=text,
-            response_format="mp3",
+            response_format=response_format,
         )
         audio_bytes = response.read()
-        logger.debug("TTS response: %d bytes", len(audio_bytes))
+        logger.debug("TTS response: %d bytes (format=%s)", len(audio_bytes), response_format)
         return audio_bytes

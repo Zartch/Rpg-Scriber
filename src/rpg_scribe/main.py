@@ -68,6 +68,7 @@ class Application:
         self._bot_task: asyncio.Task[None] | None = None
         self._bot: object | None = None  # discord.py Bot
         self._discord_publisher: object | None = None
+        self._discord_tts_player: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
         self._transcription_service = TranscriptionService(
@@ -77,6 +78,16 @@ class Application:
         self._shutdown_event = asyncio.Event()
         self._active_session_id: str | None = None
         self._finalize_task: asyncio.Task[None] | None = None
+
+    # ── Public accessors ───────────────────────────────────────────
+
+    def get_discord_tts_player(self) -> object | None:
+        """Return the DiscordTTSPlayer if the bot has been started.
+
+        Resolved lazily by the Web router on each request because the
+        Discord bot starts after ``create_app()`` runs.
+        """
+        return self._discord_tts_player
 
     # ── Database persistence handlers ──────────────────────────────
 
@@ -260,6 +271,7 @@ class Application:
 
         from rpg_scribe.discord_bot.bot import create_bot
         from rpg_scribe.discord_bot.publisher import DiscordSummaryPublisher
+        from rpg_scribe.discord_bot.tts_player import DiscordTTSPlayer
 
         bot = create_bot(self.event_bus, self.config.listener)
         self._bot = bot
@@ -271,6 +283,9 @@ class Application:
                 event_bus=self.event_bus,
                 channel_id=int(self.config.discord_summary_channel_id),
             )
+
+        # TTS player for the Web UI "Narrate in Discord" button
+        self._discord_tts_player = DiscordTTSPlayer(bot=bot, event_bus=self.event_bus)
 
         async def _run_bot() -> None:
             try:

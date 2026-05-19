@@ -83,7 +83,7 @@ class TestTTSCache:
         cache = TTSCache(str(tmp_path))
         key = cache.make_key("test", "openai", "nova", "tts-1")
         url = cache.url_for(key)
-        assert url == f"/api/tts/cache/{key}.mp3"
+        assert url == f"/api/tts/cache/{key}.wav"
 
 
 class TestOpenAITTSProvider:
@@ -251,7 +251,10 @@ class TestTTSIntegration:
         fake_audio = b"\xff\xfb\x90\x00" * 50
         call_count = 0
 
-        async def mock_synthesize(text, voice):
+        # 24kHz mono int16 LE: 8 samples of silence
+        fake_audio = b"\x00\x00" * 8
+
+        async def mock_synthesize(text, voice, response_format="mp3"):
             nonlocal call_count
             call_count += 1
             return fake_audio
@@ -288,7 +291,10 @@ class TestTTSIntegration:
         import json
         fake_audio = b"\xff\xfb\x90\x00" * 50
 
-        async def flaky_synthesize(text, voice):
+        # PCM bytes; the endpoint will resample + wrap to WAV.
+        fake_audio = b"\x00\x00" * 8
+
+        async def flaky_synthesize(text, voice, response_format="mp3"):
             if "fail" in text.lower():
                 raise RuntimeError("API timeout")
             return fake_audio
