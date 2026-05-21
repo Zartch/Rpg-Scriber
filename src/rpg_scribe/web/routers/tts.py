@@ -13,24 +13,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from rpg_scribe.tts.synthesizer import _ensure_chunk_wav, _split_text_to_chunks
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_TTS_CHAR_LIMIT = 4096
-
-
-def _split_tts_chunks(text: str, limit: int = _TTS_CHAR_LIMIT) -> list[str]:
-    """Split text into chunks that fit within the TTS char limit."""
-    if len(text) <= limit:
-        return [text]
-    for sep in (".", ",", " "):
-        cut = text.rfind(sep, 0, limit)
-        if cut != -1:
-            head = text[: cut + 1].strip()
-            tail = text[cut + 1 :].strip()
-            return _split_tts_chunks(head, limit) + _split_tts_chunks(tail, limit)
-    return [text[:limit]] + _split_tts_chunks(text[limit:], limit)
 
 
 def _resolve_tts_components():
@@ -48,47 +35,12 @@ def _resolve_tts_components():
     return tts_config, tts_provider, tts_cache
 
 
-def _split_text_to_chunks(text: str) -> list[str]:
-    """Split a multi-paragraph string into TTS chunks, validating non-empty."""
-    text = text.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="text is required")
-    raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if not raw_paragraphs:
-        raise HTTPException(status_code=400, detail="No paragraphs found in text")
-    chunks: list[str] = []
-    for paragraph in raw_paragraphs:
-        chunks.extend(_split_tts_chunks(paragraph))
-    return chunks
-
-
-async def _synthesize_chunk_wav(
-    tts_provider, tts_cache, chunk: str, voice: str, model: str,
-    *, source: str = "tts",
-) -> tuple[str, bool]:
-    """Ensure ``chunk`` is cached as 48 kHz stereo WAV. Returns (key, was_cached)."""
-    from rpg_scribe.tts.audio_utils import (
-        pcm_24k_mono_to_48k_stereo,
-        wrap_pcm_as_wav,
-    )
-
-    provider_name = tts_provider.name
-    key = tts_cache.make_key(chunk, provider_name, voice, model)
-    if tts_cache.has(key):
-        logger.info(
-            "%s cache HIT key=%s chunk_chars=%d", source, key[:12], len(chunk),
-        )
-        return key, True
-
-    logger.info(
-        "%s cache MISS key=%s chunk_chars=%d → OpenAI synth",
-        source, key[:12], len(chunk),
-    )
-    pcm_24k_mono = await tts_provider.synthesize(chunk, voice, response_format="pcm")
-    pcm_48k_stereo = pcm_24k_mono_to_48k_stereo(pcm_24k_mono)
-    wav_bytes = wrap_pcm_as_wav(pcm_48k_stereo, sample_rate=48000, channels=2)
-    tts_cache.put(key, wav_bytes)
-    return key, False
+def _split_or_400(text: str) -> list[str]:
+    """Run the shared splitter and translate ValueError into HTTP 400."""
+    try:
+        return _split_text_to_chunks(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/api/tts/narrate")
@@ -102,7 +54,7 @@ async def tts_narrate(body: dict):
 
     voice = body.get("voice") or tts_config.voice
     model = tts_config.model
-    chunks = _split_text_to_chunks(body.get("text", ""))
+    chunks = _split_or_400(body.get("text", ""))
     total = len(chunks)
     logger.info("TTS narrate: %d chunks, voice=%s", total, voice)
 
@@ -110,8 +62,9 @@ async def tts_narrate(body: dict):
         hits = 0
         for idx, chunk in enumerate(chunks):
             try:
-                key, cached = await _synthesize_chunk_wav(
-                    tts_provider, tts_cache, chunk, voice, model,
+                key, cached = await _ensure_chunk_wav(
+                    chunk, voice,
+                    provider=tts_provider, cache=tts_cache, model=model,
                     source="narrate(web)",
                 )
             except Exception as exc:
@@ -151,7 +104,7 @@ async def tts_narrate_discord(body: dict):
 
     voice = body.get("voice") or tts_config.voice
     model = tts_config.model
-    chunks = _split_text_to_chunks(body.get("text", ""))
+    chunks = _split_or_400(body.get("text", ""))
     total = len(chunks)
     logger.info("TTS narrate-discord: %d chunks, voice=%s", total, voice)
 
@@ -160,8 +113,9 @@ async def tts_narrate_discord(body: dict):
         hits = 0
         for idx, chunk in enumerate(chunks):
             try:
-                key, cached = await _synthesize_chunk_wav(
-                    tts_provider, tts_cache, chunk, voice, model,
+                key, cached = await _ensure_chunk_wav(
+                    chunk, voice,
+                    provider=tts_provider, cache=tts_cache, model=model,
                     source="narrate(discord)",
                 )
             except Exception as exc:

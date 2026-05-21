@@ -69,6 +69,7 @@ class Application:
         self._bot: object | None = None  # discord.py Bot
         self._discord_publisher: object | None = None
         self._discord_tts_player: object | None = None
+        self._trigger_watcher: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
         self._audio_diagnostic: AudioDiagnosticSaver | None = None
         self._transcription_service = TranscriptionService(
@@ -263,6 +264,59 @@ class Application:
                 self.config.web_port,
             )
 
+    async def _start_trigger_watcher(self) -> None:
+        """Wire the bot trigger pipeline (keyword detection → handle → TTS).
+
+        Silently no-ops when TTS is disabled (no voice → no audible reply
+        path) or when no bot subclass is registered.
+        """
+        if self._discord_tts_player is None:
+            return
+        tts_config = getattr(self.config, "tts", None)
+        if tts_config is None or not tts_config.enabled:
+            logger.info("TTS disabled — voice-trigger bots will not be wired")
+            return
+
+        from rpg_scribe.bots.base import discover_bots
+        from rpg_scribe.bots.watcher import TriggerWatcher
+        from rpg_scribe.tts.cache import TTSCache
+
+        try:
+            bots = discover_bots()
+        except Exception as exc:
+            logger.error("Bot discovery failed: %s — skipping trigger watcher", exc)
+            return
+        if not bots:
+            logger.info("No bots registered — trigger watcher not started")
+            return
+
+        if tts_config.provider == "openai":
+            from rpg_scribe.tts.openai_provider import OpenAITTSProvider
+
+            provider = OpenAITTSProvider(model=tts_config.model)
+        else:
+            logger.warning(
+                "Unknown TTS provider '%s' — trigger watcher not started",
+                tts_config.provider,
+            )
+            return
+
+        cache = TTSCache(tts_config.cache_dir)
+        watcher = TriggerWatcher(
+            event_bus=self.event_bus,
+            bots=bots,
+            tts_provider=provider,
+            tts_cache=cache,
+            tts_model=tts_config.model,
+            default_voice=tts_config.voice,
+            player=self._discord_tts_player,
+        )
+        await watcher.start()
+        self._trigger_watcher = watcher
+        logger.info(
+            "Bot triggers registered: %s", [b.keyword for b in bots]
+        )
+
     async def _start_discord_bot(self) -> None:
         """Start the Discord bot as a background task."""
         if not self.config.discord_bot_token:
@@ -286,6 +340,14 @@ class Application:
 
         # TTS player for the Web UI "Narrate in Discord" button
         self._discord_tts_player = DiscordTTSPlayer(bot=bot, event_bus=self.event_bus)
+
+        # Voice-trigger bots ("Alexa-style"): a TriggerWatcher subscribes to
+        # TranscriptionEvent, detects keywords, captures the multi-chunk
+        # command, calls bot.handle(), synthesizes the response, and plays
+        # it through the same DiscordTTSPlayer. The TTS provider/cache here
+        # is independent of the one the web router builds — but both point
+        # at the same cache_dir so they share entries on disk.
+        await self._start_trigger_watcher()
 
         async def _run_bot() -> None:
             try:
@@ -806,6 +868,12 @@ class Application:
         if self._summarizer is not None:
             try:
                 await self._summarizer.stop()  # type: ignore[union-attr]
+            except Exception:
+                pass
+
+        if self._trigger_watcher is not None:
+            try:
+                await self._trigger_watcher.stop()  # type: ignore[union-attr]
             except Exception:
                 pass
 

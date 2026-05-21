@@ -101,3 +101,22 @@ class SystemStatusEvent:
     status: str  # "running", "error", "idle"
     message: str
     timestamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class TriggerActivatedEvent:
+    """Emitted by TriggerWatcher when a bot keyword command is fully captured.
+
+    Published for observability (logging, future feed). The watcher does not
+    rely on it to invoke the bot — the call to ``bot.handle()`` happens
+    inline in the watcher.
+    """
+
+    session_id: str
+    speaker_id: str
+    speaker_name: str
+    bot_keyword: str
+    command: str
+    started_at: float
+    closed_at: float
+    close_reason: str  # "timeout" | "close_word"
