@@ -190,6 +190,10 @@ def create_app(
     app.include_router(status_router.router)
     app.include_router(audio_router.router)
 
+    from rpg_scribe.integrations.rag import mount_rag
+    rag_db = getattr(config, "rag_db_path", "data/rag.db")
+    mount_rag(app, rag_db)
+
     # Serve saved audio chunks as static files (data/audio/)
     audio_dir = Path.cwd() / "data" / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)

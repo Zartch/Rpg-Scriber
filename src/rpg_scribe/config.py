@@ -65,6 +65,7 @@ class AppConfig:
 
     # Database
     database_path: str = "rpg_scribe.db"
+    rag_db_path: str = "data/rag.db"
 
     # Discord summary channel
     discord_summary_channel_id: str = ""

@@ -1,0 +1,102 @@
+"""PdfParser implementation using pdfplumber."""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pdfplumber
+
+from rag_lib.errors import PdfParseError
+from rag_lib.parsing.base import PdfParser
+from rag_lib.types import ParsedPage, ProseBlock, TableBlock
+
+if TYPE_CHECKING:
+    import pdfplumber.page
+
+logger = logging.getLogger(__name__)
+
+_CAPTION_LOOKAHEAD_PT = 40.0
+
+
+class PdfplumberParser(PdfParser):
+    def parse(self, pdf_path: str | Path) -> list[ParsedPage]:
+        try:
+            pdf = pdfplumber.open(str(pdf_path))
+        except FileNotFoundError as exc:
+            raise PdfParseError(f"File not found: {pdf_path}") from exc
+        except Exception as exc:
+            raise PdfParseError(f"Cannot open PDF: {exc}") from exc
+
+        pages: list[ParsedPage] = []
+        try:
+            for page_obj in pdf.pages:
+                pages.append(self._parse_page(page_obj))
+        except PdfParseError:
+            raise
+        except Exception as exc:
+            raise PdfParseError(f"Error parsing PDF page: {exc}") from exc
+        finally:
+            pdf.close()
+
+        return pages
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _parse_page(self, page_obj: pdfplumber.page.Page) -> ParsedPage:
+        page_num: int = page_obj.page_number  # pdfplumber is 1-indexed
+        blocks: list[ProseBlock | TableBlock] = []
+
+        found_tables = page_obj.find_tables()
+        table_bboxes = [t.bbox for t in found_tables]
+
+        for ft in found_tables:
+            rows_raw = ft.extract() or []
+            rows = [[cell or "" for cell in row] for row in rows_raw]
+            caption = self._extract_caption(page_obj, ft.bbox)
+            blocks.append(TableBlock(rows=rows, page=page_num, caption=caption))
+
+        prose_text, fontsize_avg = self._extract_prose(page_obj, table_bboxes)
+        if prose_text.strip():
+            blocks.append(ProseBlock(text=prose_text, page=page_num, fontsize_avg=fontsize_avg))
+
+        return ParsedPage(page_num=page_num, blocks=blocks)
+
+    def _extract_caption(
+        self, page_obj: pdfplumber.page.Page, table_bbox: tuple
+    ) -> str | None:
+        x0, top, x1, _bottom = table_bbox
+        region = page_obj.crop((x0, max(0.0, top - _CAPTION_LOOKAHEAD_PT), x1, top))
+        text = region.extract_text()
+        return text.strip() if text and text.strip() else None
+
+    def _extract_prose(
+        self, page_obj: pdfplumber.page.Page, table_bboxes: list[tuple]
+    ) -> tuple[str, float]:
+        if table_bboxes:
+            # Keep only chars outside every table bbox
+            def outside_tables(obj: dict) -> bool:
+                if obj.get("object_type") != "char":
+                    return True
+                for tb in table_bboxes:
+                    if (
+                        obj.get("x0", 0) >= tb[0] - 1
+                        and obj.get("x1", 0) <= tb[2] + 1
+                        and obj.get("top", 0) >= tb[1] - 1
+                        and obj.get("bottom", 0) <= tb[3] + 1
+                    ):
+                        return False
+                return True
+
+            filtered = page_obj.filter(outside_tables)
+        else:
+            filtered = page_obj
+
+        text = filtered.extract_text() or ""
+        chars = filtered.chars
+        sizes = [float(c["size"]) for c in chars if c.get("size") and float(c["size"]) > 0]
+        fontsize_avg = sum(sizes) / len(sizes) if sizes else 11.0
+
+        return text, fontsize_avg

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG — Manuales</title>
+  <link rel="stylesheet" href="/static/css/rag.css">
+</head>
+<body>
+  <h1>RAG — Manuales</h1>
+  <div id="app">
+    <div id="manuals-panel">
+      <h2>Manuales</h2>
+      <ul id="manuals-list">
+        <li class="loading">Cargando…</li>
+      </ul>
+    </div>
+    <div id="chunks-panel">
+      <h2 id="chunks-title">Selecciona un manual</h2>
+      <table id="chunks-table" hidden>
+        <thead>
+          <tr>
+            <th>#</th><th>Pág.</th><th>Tipo</th><th>Sección</th><th>Texto</th>
+          </tr>
+        </thead>
+        <tbody id="chunks-body"></tbody>
+      </table>
+      <div id="chunk-detail" hidden>
+        <button id="close-detail">✕ Cerrar</button>
+        <pre id="chunk-text"></pre>
+      </div>
+      <button id="load-more" hidden>Cargar más ↓</button>
+    </div>
+  </div>
+  <script type="module" src="/static/js/rag.js"></script>
+</body>
+</html>
