@@ -30,7 +30,17 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
     UNIQUE (manual_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS rag_embeddings (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id   INTEGER NOT NULL UNIQUE REFERENCES rag_chunks(id) ON DELETE CASCADE,
+    vector     BLOB NOT NULL,
+    dim        INTEGER NOT NULL,
+    model      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_manual_page ON rag_chunks(manual_id, page);
 CREATE INDEX IF NOT EXISTS idx_chunks_type        ON rag_chunks(chunk_type);
 CREATE INDEX IF NOT EXISTS idx_chunks_hash        ON rag_chunks(text_hash);
+CREATE INDEX IF NOT EXISTS idx_embeddings_chunk   ON rag_embeddings(chunk_id);
 """

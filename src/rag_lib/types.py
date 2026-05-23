@@ -38,6 +38,14 @@ class IngestResult:
     was_already_ingested: bool
 
 
+@dataclass(frozen=True)
+class SearchResult:
+    chunk_id: int
+    manual_id: int
+    score: float      # cosine similarity [0.0, 1.0]
+    chunk: Chunk      # full chunk including text
+
+
 # --- Internal pipeline types (not part of public API) ---
 
 @dataclass(frozen=True)

@@ -1,14 +1,18 @@
-"""rag_lib exceptions."""
+"""rag_lib custom exceptions."""
 from __future__ import annotations
 
 
 class IngestError(Exception):
-    """Base class for rag_lib ingestion errors."""
+    """Base class for ingestion errors."""
 
 
 class PdfParseError(IngestError):
-    """pdfplumber failed to open or parse the PDF."""
+    """Raised when the PDF cannot be parsed."""
 
 
 class ManualNotFound(Exception):
-    """manual_id does not exist in the database."""
+    """Raised when a manual_id does not exist in the database."""
+
+
+class EmbeddingError(Exception):
+    """Raised when embedding generation fails (API error, network, quota)."""
