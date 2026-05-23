@@ -20,11 +20,11 @@ class Database:
         self._conn: aiosqlite.Connection | None = None
         self.manuals = ManualRepo(self)
         self.chunks = ChunkRepo(self)
+        self.embeddings = EmbeddingRepo(self)
 
     async def connect(self) -> None:
         self._conn = await aiosqlite.connect(self._db_path)
         self._conn.row_factory = aiosqlite.Row
-        # FK must be enabled per connection before executescript
         await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._conn.executescript(RAG_SCHEMA_SQL)
         await self._conn.commit()
@@ -89,15 +89,22 @@ class ChunkRepo:
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def insert_many(self, manual_id: int, chunks: list[dict[str, Any]]) -> None:
-        await self._db.conn.executemany(
-            """INSERT INTO rag_chunks
-               (manual_id, seq, chunk_type, page, page_end, section_path, text, text_hash, token_count)
-               VALUES (:manual_id, :seq, :chunk_type, :page, :page_end,
-                       :section_path, :text, :text_hash, :token_count)""",
-            [{"manual_id": manual_id, **c} for c in chunks],
-        )
+    async def insert_many(self, manual_id: int, chunks: list[dict[str, Any]]) -> list[int]:
+        """Insert chunks and return the list of new chunk ids in insertion order."""
+        ids: list[int] = []
+        for c in chunks:
+            cur = await self._db.conn.execute(
+                """INSERT INTO rag_chunks
+                   (manual_id, seq, chunk_type, page, page_end, section_path,
+                    text, text_hash, token_count)
+                   VALUES (:manual_id, :seq, :chunk_type, :page, :page_end,
+                           :section_path, :text, :text_hash, :token_count)""",
+                {"manual_id": manual_id, **c},
+            )
+            assert cur.lastrowid is not None
+            ids.append(cur.lastrowid)
         await self._db.conn.commit()
+        return ids
 
     async def list_by_manual(
         self, manual_id: int, *, offset: int = 0, limit: int = 50,
@@ -116,3 +123,47 @@ class ChunkRepo:
         )
         row = await cur.fetchone()
         return dict(row) if row else None
+
+    async def get_many_by_ids(self, ids: list[int]) -> list[dict[str, Any]]:
+        """Return chunks for the given ids, in the same order as ids."""
+        if not ids:
+            return []
+        placeholders = ",".join("?" * len(ids))
+        cur = await self._db.conn.execute(
+            f"SELECT * FROM rag_chunks WHERE id IN ({placeholders})",
+            ids,
+        )
+        rows = await cur.fetchall()
+        row_map = {r["id"]: dict(r) for r in rows}
+        return [row_map[i] for i in ids if i in row_map]
+
+
+class EmbeddingRepo:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def upsert_many(self, rows: list[dict[str, Any]]) -> None:
+        """Insert or replace embeddings. rows: [{chunk_id, vector_bytes, dim, model}]"""
+        mapped = [
+            {"chunk_id": r["chunk_id"], "vector": r["vector_bytes"], "dim": r["dim"], "model": r["model"]}
+            for r in rows
+        ]
+        await self._db.conn.executemany(
+            """INSERT OR REPLACE INTO rag_embeddings (chunk_id, vector, dim, model)
+               VALUES (:chunk_id, :vector, :dim, :model)""",
+            mapped,
+        )
+        await self._db.conn.commit()
+
+    async def load_all(self, min_id: int = 0) -> list[dict[str, Any]]:
+        """Load embeddings with id > min_id, joining manual_id from rag_chunks."""
+        cur = await self._db.conn.execute(
+            """SELECT e.id, e.chunk_id, c.manual_id, e.vector
+               FROM rag_embeddings e
+               JOIN rag_chunks c ON c.id = e.chunk_id
+               WHERE e.id > ?
+               ORDER BY e.id""",
+            (min_id,),
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]

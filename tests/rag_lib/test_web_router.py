@@ -12,10 +12,10 @@ from rag_lib.web import build_router
 
 
 @pytest.fixture
-async def client(tmp_path: Path, pdf_with_table: Path):
+async def client(tmp_path: Path, pdf_with_table: Path, fake_embedder):
     db = tmp_path / "rag.db"
     # Pre-ingest a manual so tests have data
-    await rag_lib.ingest_pdf(pdf_with_table, manual_name="Test Manual", db_path=db)
+    await rag_lib.ingest_pdf(pdf_with_table, manual_name="Test Manual", db_path=db, embedder=fake_embedder)
 
     app = FastAPI()
     app.include_router(build_router(db))

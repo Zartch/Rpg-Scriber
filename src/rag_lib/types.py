@@ -42,8 +42,8 @@ class IngestResult:
 class SearchResult:
     chunk_id: int
     manual_id: int
-    score: float      # cosine similarity [0.0, 1.0]
-    chunk: Chunk      # full chunk including text
+    score: float
+    chunk: Chunk
 
 
 # --- Internal pipeline types (not part of public API) ---

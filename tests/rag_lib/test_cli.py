@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from rag_lib.cli import _build_parser, _dispatch
+from tests.rag_lib.conftest import FakeEmbedder
 
 
 async def _run(args: list[str]) -> int:
@@ -15,6 +19,13 @@ async def _run(args: list[str]) -> int:
         return 0
     except SystemExit as e:
         return int(e.code) if e.code is not None else 0
+
+
+@pytest.fixture(autouse=True)
+def patch_openai_embedder():
+    """Replace OpenAIEmbedder with FakeEmbedder for all CLI tests."""
+    with patch("rag_lib.OpenAIEmbedder", FakeEmbedder):
+        yield
 
 
 async def test_ingest_creates_db(simple_pdf: Path, tmp_path: Path) -> None:

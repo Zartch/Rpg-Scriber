@@ -7,15 +7,22 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from rag_lib.chunking import run_chunker
+from rag_lib.embedding.base import Embedder
+from rag_lib.embedding.index import VectorIndex
+from rag_lib.embedding.openai import OpenAIEmbedder
+from rag_lib.errors import EmbeddingError as EmbeddingError
 from rag_lib.errors import PdfParseError as PdfParseError
 from rag_lib.parsing.pdfplumber_parser import PdfplumberParser
 from rag_lib.store import Database
-from rag_lib.types import Chunk, IngestResult, Manual
+from rag_lib.types import Chunk, IngestResult, Manual, SearchResult
 
 logger = logging.getLogger(__name__)
 
 _PARSER = PdfplumberParser()
+_VECTOR_CACHE: dict[str, VectorIndex] = {}
 
 
 async def ingest_pdf(
@@ -23,8 +30,13 @@ async def ingest_pdf(
     *,
     manual_name: str,
     db_path: str | Path,
+    embedder: Embedder | None = None,
 ) -> IngestResult:
-    """Ingest a PDF into rag_lib. Idempotent: same SHA256 → returns existing manual_id."""
+    """Ingest a PDF. Idempotent: same SHA256 → returns existing manual_id.
+
+    Generates and stores embeddings for all chunks using *embedder*
+    (default: OpenAIEmbedder from OPENAI_API_KEY env var).
+    """
     pdf_path = Path(pdf_path)
     file_bytes = pdf_path.read_bytes()
     source_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -35,13 +47,17 @@ async def ingest_pdf(
     try:
         existing = await db.manuals.find_by_hash(source_hash)
         if existing:
-            logger.info("rag_lib.ingest: %s already ingested as manual_id=%d", manual_name, existing["id"])
-            return IngestResult(manual_id=existing["id"], chunks_created=0, was_already_ingested=True)
+            logger.info(
+                "rag_lib.ingest: %s already ingested as manual_id=%d",
+                manual_name, existing["id"],
+            )
+            return IngestResult(
+                manual_id=existing["id"], chunks_created=0, was_already_ingested=True,
+            )
 
         logger.info("rag_lib.ingest: parsing %s", pdf_path.name)
         pages = await asyncio.to_thread(_PARSER.parse, pdf_path)
         page_count = len(pages)
-
         chunks = run_chunker(pages)
 
         manual_id = await db.manuals.insert(
@@ -52,11 +68,28 @@ async def ingest_pdf(
             file_size=file_size,
             parser="pdfplumber",
         )
-        if chunks:
-            await db.chunks.insert_many(manual_id, chunks)
 
-        logger.info("rag_lib.ingest: saved manual_id=%d with %d chunks", manual_id, len(chunks))
-        return IngestResult(manual_id=manual_id, chunks_created=len(chunks), was_already_ingested=False)
+        if chunks:
+            inserted_ids = await db.chunks.insert_many(manual_id, chunks)
+            _emb = embedder or OpenAIEmbedder()
+            vectors = await _emb.embed([c["text"] for c in chunks])
+            await db.embeddings.upsert_many([
+                {
+                    "chunk_id": cid,
+                    "vector_bytes": np.array(v, dtype=np.float32).tobytes(),
+                    "dim": _emb.dim,
+                    "model": _emb.model,
+                }
+                for cid, v in zip(inserted_ids, vectors)
+            ])
+            _VECTOR_CACHE.pop(str(db_path), None)
+
+        logger.info(
+            "rag_lib.ingest: saved manual_id=%d with %d chunks", manual_id, len(chunks),
+        )
+        return IngestResult(
+            manual_id=manual_id, chunks_created=len(chunks), was_already_ingested=False,
+        )
     finally:
         await db.close()
 
@@ -72,7 +105,7 @@ async def list_manuals(db_path: str | Path) -> list[Manual]:
 
 
 async def delete_manual(manual_id: int, db_path: str | Path) -> bool:
-    """Delete a manual and its chunks (cascade). Returns True if existed."""
+    """Delete a manual and its chunks + embeddings (cascade). Returns True if existed."""
     db = Database(db_path)
     await db.connect()
     try:
@@ -103,6 +136,52 @@ async def list_chunks(
     try:
         rows = await db.chunks.list_by_manual(manual_id, offset=offset, limit=limit)
         return [_row_to_chunk(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def search(
+    query: str,
+    db_path: str | Path,
+    *,
+    manual_ids: list[int] | None = None,
+    k: int = 10,
+    threshold: float | None = None,
+    embedder: Embedder | None = None,
+) -> list[SearchResult]:
+    """Search for chunks by semantic similarity.
+
+    Returns up to *k* results sorted by descending cosine score.
+    If *manual_ids* is given, only chunks from those manuals are considered.
+    """
+    _emb = embedder or OpenAIEmbedder()
+    [query_vec] = await _emb.embed([query])
+
+    key = str(db_path)
+    if key not in _VECTOR_CACHE:
+        _VECTOR_CACHE[key] = VectorIndex()
+
+    db = Database(db_path)
+    await db.connect()
+    try:
+        await _VECTOR_CACHE[key].ensure_loaded(db)
+        hits = _VECTOR_CACHE[key].search(
+            query_vec, k=k, threshold=threshold, manual_ids=manual_ids,
+        )
+        if not hits:
+            return []
+        rows = await db.chunks.get_many_by_ids([cid for cid, _ in hits])
+        row_map = {r["id"]: r for r in rows}
+        return [
+            SearchResult(
+                chunk_id=cid,
+                manual_id=row_map[cid]["manual_id"],
+                score=score,
+                chunk=_row_to_chunk(row_map[cid]),
+            )
+            for cid, score in hits
+            if cid in row_map
+        ]
     finally:
         await db.close()
 

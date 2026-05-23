@@ -7,8 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from reportlab.pdfgen import canvas
+
+from rag_lib.embedding.base import Embedder
 
 
 LOREM = (
@@ -164,3 +167,39 @@ def pdf_with_repeated_footer(tmp_path: Path) -> Path:
         c.showPage()
     c.save()
     return path
+
+
+class FakeEmbedder(Embedder):
+    """Deterministic test embedder. Does NOT call any external API."""
+
+    _MODEL = "fake-model"
+    _DIM = 4
+
+    def __init__(self, vectors: list[list[float]] | None = None) -> None:
+        self._vectors = vectors
+
+    @property
+    def model(self) -> str:
+        return self._MODEL
+
+    @property
+    def dim(self) -> int:
+        return self._DIM
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        if self._vectors is not None:
+            return self._vectors[: len(texts)]
+        return [
+            np.random.default_rng(abs(hash(t)) % (2**32)).random(self._DIM).tolist()
+            for t in texts
+        ]
+
+
+@pytest.fixture
+def fake_embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+def fake_embedder_factory():
+    return FakeEmbedder
