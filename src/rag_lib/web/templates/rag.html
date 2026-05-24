@@ -7,31 +7,77 @@
   <link rel="stylesheet" href="/static/css/rag.css">
 </head>
 <body>
-  <h1>RAG — Manuales</h1>
+  <div id="search-bar">
+    <span class="search-icon">🔍</span>
+    <input id="search-input" type="text" placeholder="Buscar en manuales… (FTS5 + semántico)">
+    <button id="search-clear" hidden title="Limpiar búsqueda">✕</button>
+  </div>
+
   <div id="app">
+    <!-- Panel izquierdo: manuales -->
     <div id="manuals-panel">
       <h2>Manuales</h2>
       <ul id="manuals-list">
         <li class="loading">Cargando…</li>
       </ul>
     </div>
-    <div id="chunks-panel">
-      <h2 id="chunks-title">Selecciona un manual</h2>
-      <table id="chunks-table" hidden>
-        <thead>
-          <tr>
-            <th>#</th><th>Pág.</th><th>Tipo</th><th>Sección</th><th>Texto</th>
-          </tr>
-        </thead>
-        <tbody id="chunks-body"></tbody>
-      </table>
-      <div id="chunk-detail" hidden>
-        <button id="close-detail">✕ Cerrar</button>
-        <pre id="chunk-text"></pre>
+
+    <!-- Panel central: chunks o resultados de búsqueda -->
+    <div id="center-panel">
+      <!-- Modo navegación (sin búsqueda) -->
+      <div id="chunks-area">
+        <h2 id="chunks-title">Selecciona un manual</h2>
+        <table id="chunks-table" hidden>
+          <thead>
+            <tr>
+              <th>#</th><th>Pág.</th><th>Tipo</th><th>Sección</th><th>Texto</th>
+            </tr>
+          </thead>
+          <tbody id="chunks-body"></tbody>
+        </table>
+        <button id="load-more" hidden>Cargar más ↓</button>
       </div>
-      <button id="load-more" hidden>Cargar más ↓</button>
+
+      <!-- Modo búsqueda: dos columnas -->
+      <div id="search-results" hidden>
+        <div id="search-columns">
+          <div class="search-col" id="fts-col">
+            <div class="col-header">
+              <span>Keywords</span>
+              <span class="badge badge-fts">FTS5</span>
+            </div>
+            <div id="fts-results" class="results-list"></div>
+          </div>
+          <div class="search-col" id="sem-col">
+            <div class="col-header">
+              <span>Semántico</span>
+              <span class="badge badge-sem">SEM</span>
+            </div>
+            <div id="sem-results" class="results-list"></div>
+          </div>
+        </div>
+        <!-- Estado 4: lista mezclada (cuando hay chunk abierto) -->
+        <div id="merged-results" hidden>
+          <div class="col-header"><span>Resultados</span></div>
+          <div id="merged-list" class="results-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel derecho: detalle del chunk + similares -->
+    <div id="detail-panel" hidden>
+      <div id="detail-header">
+        <span id="detail-title"></span>
+        <button id="detail-close" title="Cerrar detalle">✕</button>
+      </div>
+      <div id="detail-text"></div>
+      <div id="similar-section">
+        <div class="col-header"><span>Similares</span></div>
+        <div id="similar-list" class="results-list"></div>
+      </div>
     </div>
   </div>
+
   <script type="module" src="/static/js/rag.js"></script>
 </body>
 </html>

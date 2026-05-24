@@ -49,4 +49,31 @@ def build_router(db_path: str | Path) -> APIRouter:
         if not deleted:
             raise HTTPException(status_code=404, detail="Manual not found")
 
+    def _parse_manual_ids(raw: str) -> list[int] | None:
+        if not raw.strip():
+            return None
+        try:
+            return [int(x) for x in raw.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="manual_ids must be comma-separated integers")
+
+    @router.get("/api/rag/search/fts")
+    async def search_fts_endpoint(q: str = "", manual_ids: str = "", k: int = 10):
+        ids = _parse_manual_ids(manual_ids)
+        results = await rag_lib.search_fts(q, db_path=db, manual_ids=ids, k=k)
+        return [dataclasses.asdict(r) for r in results]
+
+    @router.get("/api/rag/search/semantic")
+    async def search_semantic_endpoint(q: str = "", manual_ids: str = "", k: int = 10):
+        if not q.strip():
+            return []
+        ids = _parse_manual_ids(manual_ids)
+        results = await rag_lib.search(q, db_path=db, manual_ids=ids, k=k)
+        return [dataclasses.asdict(r) for r in results]
+
+    @router.get("/api/rag/chunks/{chunk_id}/similar")
+    async def similar_chunks_endpoint(chunk_id: int, k: int = 5):
+        results = await rag_lib.search_similar(chunk_id, db_path=db, k=k)
+        return [dataclasses.asdict(r) for r in results]
+
     return router

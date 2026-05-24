@@ -39,8 +39,25 @@ CREATE TABLE IF NOT EXISTS rag_embeddings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(
+    text,
+    section_path,
+    content="rag_chunks",
+    content_rowid="id"
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_manual_page ON rag_chunks(manual_id, page);
 CREATE INDEX IF NOT EXISTS idx_chunks_type        ON rag_chunks(chunk_type);
 CREATE INDEX IF NOT EXISTS idx_chunks_hash        ON rag_chunks(text_hash);
 CREATE INDEX IF NOT EXISTS idx_embeddings_chunk   ON rag_embeddings(chunk_id);
+
+CREATE TRIGGER IF NOT EXISTS rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
+    INSERT INTO rag_chunks_fts(rowid, text, section_path)
+    VALUES (new.id, new.text, new.section_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
+    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, text, section_path)
+    VALUES ('delete', old.id, old.text, old.section_path);
+END;
 """

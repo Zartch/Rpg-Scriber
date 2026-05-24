@@ -186,6 +186,92 @@ async def search(
         await db.close()
 
 
+async def search_fts(
+    query: str,
+    db_path: str | Path,
+    *,
+    manual_ids: list[int] | None = None,
+    k: int = 10,
+) -> list[SearchResult]:
+    """Keyword search using SQLite FTS5. Supports FTS5 operators (AND, OR, NOT, prefix*).
+
+    Score is normalized to [0.0, 1.0] (1.0 = best match in the result set).
+    Empty or whitespace-only query returns [].
+    """
+    if not query.strip():
+        return []
+
+    if manual_ids is not None and len(manual_ids) == 0:
+        return []
+
+    db = Database(db_path)
+    await db.connect()
+    try:
+        if manual_ids is not None:
+            placeholders = ",".join("?" * len(manual_ids))
+            sql = f"""
+                SELECT c.*, (-bm25(rag_chunks_fts)) AS raw_score
+                FROM rag_chunks_fts
+                JOIN rag_chunks c ON c.rowid = rag_chunks_fts.rowid
+                WHERE rag_chunks_fts MATCH ?
+                  AND c.manual_id IN ({placeholders})
+                ORDER BY raw_score DESC
+                LIMIT ?
+            """
+            params: list = [query, *manual_ids, k]
+        else:
+            sql = """
+                SELECT c.*, (-bm25(rag_chunks_fts)) AS raw_score
+                FROM rag_chunks_fts
+                JOIN rag_chunks c ON c.rowid = rag_chunks_fts.rowid
+                WHERE rag_chunks_fts MATCH ?
+                ORDER BY raw_score DESC
+                LIMIT ?
+            """
+            params = [query, k]
+
+        cur = await db.conn.execute(sql, params)
+        rows = await cur.fetchall()
+        if not rows:
+            return []
+
+        dicts = [dict(r) for r in rows]
+        raw_scores = [d["raw_score"] for d in dicts]
+        max_score = max(raw_scores)
+        if max_score <= 0:
+            return []
+
+        return [
+            SearchResult(
+                chunk_id=d["id"],
+                manual_id=d["manual_id"],
+                score=d["raw_score"] / max_score,
+                chunk=_row_to_chunk(d),
+            )
+            for d in dicts
+        ]
+    finally:
+        await db.close()
+
+
+async def search_similar(
+    chunk_id: int,
+    db_path: str | Path,
+    *,
+    k: int = 5,
+    embedder: Embedder | None = None,
+) -> list[SearchResult]:
+    """Return top-k chunks semantically similar to chunk_id (self excluded).
+
+    Returns [] if chunk_id does not exist.
+    """
+    chunk = await get_chunk(chunk_id, db_path)
+    if chunk is None:
+        return []
+    results = await search(chunk.text, db_path, k=k + 1, embedder=embedder)
+    return [r for r in results if r.chunk_id != chunk_id][:k]
+
+
 # ---------------------------------------------------------------------------
 # Row → dataclass helpers
 # ---------------------------------------------------------------------------

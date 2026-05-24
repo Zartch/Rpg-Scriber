@@ -1,19 +1,139 @@
-// rag.js — ES module for /rag page
+// rag.js — ES module for /rag page (A3: hybrid search + detail panel)
 const API = "/api/rag";
-let activeManualId = null;
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let activeManualId = null;       // selected manual for navigation mode
 let currentOffset = 0;
 const LIMIT = 50;
+let openChunkId = null;          // chunk open in right panel
+let checkedManualIds = new Set(); // checked manuals for search filter (empty = all)
+let searchQuery = "";             // current query ("" = no search)
+let searchDebounce = null;        // debounce timer
+let ftsResults = [];              // latest FTS results
+let semResults = [];              // latest semantic results
+let searchInFlight = false;       // true while either search fetch is pending
 
+// ---------------------------------------------------------------------------
+// DOM refs (cached after DOMContentLoaded)
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+
+// ---------------------------------------------------------------------------
+// Derived state
+// ---------------------------------------------------------------------------
+const isSearchMode = () => searchQuery.trim() !== "";
+const isDetailOpen = () => openChunkId !== null;
+const isState4 = () => isSearchMode() && isDetailOpen();
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 async function fetchJSON(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
 
-// --- Manuals panel ---
+function buildSearchParams(extra = {}) {
+  const params = new URLSearchParams(extra);
+  if (checkedManualIds.size > 0) {
+    params.set("manual_ids", [...checkedManualIds].join(","));
+  }
+  return params;
+}
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ---------------------------------------------------------------------------
+// Render helpers
+// ---------------------------------------------------------------------------
+function makeResultItem(r, badgeClass, badgeLabel) {
+  const div = document.createElement("div");
+  div.className = "result-item" + (r.chunk_id === openChunkId ? " active" : "");
+  div.dataset.chunkId = r.chunk_id;
+  const meta = `#${r.chunk_id} · ${r.chunk.page ? `p.${r.chunk.page}` : ""} · <span class="badge ${badgeClass}">${badgeLabel}</span>`;
+  const preview = escapeHtml((r.chunk.text || "").replace(/\n/g, " ").slice(0, 90));
+  const score = `<span class="result-score">${r.score.toFixed(2)}</span>`;
+  div.innerHTML = `
+    <div class="result-meta">${meta}${score}</div>
+    <div class="result-preview">${preview}</div>
+  `;
+  div.addEventListener("click", () => openDetail(r.chunk_id));
+  return div;
+}
+
+function renderFtsResults(results) {
+  const container = $("fts-results");
+  container.innerHTML = "";
+  if (!results.length) {
+    container.innerHTML = '<div class="loading">Sin resultados</div>';
+    return;
+  }
+  results.forEach(r => container.appendChild(makeResultItem(r, "badge-fts", "FTS")));
+}
+
+function renderSemResults(results) {
+  const container = $("sem-results");
+  container.innerHTML = "";
+  if (!results.length) {
+    container.innerHTML = '<div class="loading">Sin resultados</div>';
+    return;
+  }
+  results.forEach(r => container.appendChild(makeResultItem(r, "badge-sem", "SEM")));
+}
+
+function renderMergedResults() {
+  const container = $("merged-list");
+  container.innerHTML = "";
+  // Merge: FTS first, then SEM; deduplicate by chunk_id (FTS wins)
+  const seen = new Set();
+  const merged = [];
+  for (const r of ftsResults) {
+    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-fts", label: "FTS" }); }
+  }
+  for (const r of semResults) {
+    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-sem", label: "SEM" }); }
+  }
+  if (!merged.length) {
+    container.innerHTML = '<div class="loading">Sin resultados</div>';
+    return;
+  }
+  merged.forEach(({ r, badge, label }) => container.appendChild(makeResultItem(r, badge, label)));
+}
+
+// ---------------------------------------------------------------------------
+// Panel visibility
+// ---------------------------------------------------------------------------
+function applyLayout() {
+  if (isSearchMode()) {
+    $("chunks-area").hidden = true;
+    $("search-results").hidden = false;
+    if (isState4()) {
+      $("search-columns").hidden = true;
+      $("merged-results").hidden = false;
+      renderMergedResults();
+    } else {
+      $("search-columns").hidden = false;
+      $("merged-results").hidden = true;
+    }
+  } else {
+    $("chunks-area").hidden = false;
+    $("search-results").hidden = true;
+  }
+  $("detail-panel").hidden = !isDetailOpen();
+}
+
+// ---------------------------------------------------------------------------
+// Manuals panel
+// ---------------------------------------------------------------------------
 async function loadManuals() {
-  const list = document.getElementById("manuals-list");
+  const list = $("manuals-list");
   list.innerHTML = '<li class="loading">Cargando…</li>';
   const manuals = await fetchJSON(`${API}/manuals`);
   list.innerHTML = "";
@@ -24,84 +144,225 @@ async function loadManuals() {
   for (const m of manuals) {
     const li = document.createElement("li");
     li.dataset.id = m.id;
+    const checked = checkedManualIds.has(m.id) ? "checked" : "";
     li.innerHTML = `
-      <div>
-        <div>${m.name}</div>
+      <input type="checkbox" class="manual-check" data-id="${m.id}" ${checked}>
+      <div style="flex:1;min-width:0;cursor:pointer" class="manual-label">
+        <div class="manual-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</div>
         <div class="meta">${m.page_count} pp · ${m.chunk_count} chunks</div>
       </div>
       <button class="delete-btn" title="Eliminar manual" data-id="${m.id}">✕</button>
     `;
-    li.querySelector(".delete-btn").addEventListener("click", async (e) => {
+    li.querySelector(".manual-check").addEventListener("change", e => {
+      const id = +e.target.dataset.id;
+      if (e.target.checked) checkedManualIds.add(id);
+      else checkedManualIds.delete(id);
+      if (isSearchMode()) executeSearch(searchQuery);
+    });
+    li.querySelector(".manual-label").addEventListener("click", () => {
+      clearSearch();
+      selectManual(m.id, m.name);
+    });
+    li.querySelector(".delete-btn").addEventListener("click", async e => {
       e.stopPropagation();
       if (!confirm(`¿Eliminar "${m.name}" y todos sus chunks?`)) return;
       await fetch(`${API}/manuals/${m.id}`, { method: "DELETE" });
+      checkedManualIds.delete(m.id);
       if (activeManualId === m.id) clearChunks();
+      if (openChunkId !== null) closeDetail();
       loadManuals();
     });
-    li.addEventListener("click", () => selectManual(m.id, m.name));
+    if (!isSearchMode() && activeManualId === m.id) li.classList.add("active");
     list.appendChild(li);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Chunks panel (navigation mode)
+// ---------------------------------------------------------------------------
 function clearChunks() {
   activeManualId = null;
-  document.getElementById("chunks-title").textContent = "Selecciona un manual";
-  document.getElementById("chunks-table").hidden = true;
-  document.getElementById("chunks-body").innerHTML = "";
-  document.getElementById("load-more").hidden = true;
-  hideDetail();
+  $("chunks-title").textContent = "Selecciona un manual";
+  $("chunks-table").hidden = true;
+  $("chunks-body").innerHTML = "";
+  $("load-more").hidden = true;
 }
 
 async function selectManual(id, name) {
   activeManualId = id;
   currentOffset = 0;
-  document.querySelectorAll("#manuals-list li").forEach(li => li.classList.toggle("active", +li.dataset.id === id));
-  document.getElementById("chunks-title").textContent = name;
-  document.getElementById("chunks-body").innerHTML = "";
-  document.getElementById("chunks-table").hidden = false;
-  hideDetail();
+  document.querySelectorAll("#manuals-list li").forEach(li =>
+    li.classList.toggle("active", +li.dataset.id === id)
+  );
+  $("chunks-title").textContent = name;
+  $("chunks-body").innerHTML = "";
+  $("chunks-table").hidden = false;
+  applyLayout();
   await loadChunks(true);
 }
 
-// --- Chunks panel ---
-
 async function loadChunks(replace = false) {
   const rows = await fetchJSON(`${API}/manuals/${activeManualId}/chunks?offset=${currentOffset}&limit=${LIMIT}`);
-  const tbody = document.getElementById("chunks-body");
+  const tbody = $("chunks-body");
   if (replace) tbody.innerHTML = "";
   for (const c of rows) {
     const tr = document.createElement("tr");
     tr.dataset.id = c.id;
-    const sp = c.section_path ? `<small>${c.section_path}</small>` : "—";
-    const preview = (c.text || "").replace(/\n/g, " ").slice(0, 80);
+    if (c.id === openChunkId) tr.classList.add("active");
+    const sp = c.section_path
+      ? `<small title="${escapeHtml(c.section_path)}">${escapeHtml(c.section_path.slice(0, 30))}${c.section_path.length > 30 ? "…" : ""}</small>`
+      : "—";
+    const preview = escapeHtml((c.text || "").replace(/\n/g, " ").slice(0, 80));
     tr.innerHTML = `
       <td>${c.seq}</td>
       <td>${c.page}${c.page_end ? `–${c.page_end}` : ""}</td>
       <td><span class="badge badge-${c.chunk_type}">${c.chunk_type}</span></td>
-      <td>${sp}</td>
+      <td title="${c.section_path || ""}">${sp}</td>
       <td title="${preview}">${preview}</td>
     `;
-    tr.addEventListener("click", () => showDetail(c.id));
+    tr.addEventListener("click", () => openDetail(c.id));
     tbody.appendChild(tr);
   }
   currentOffset += rows.length;
-  document.getElementById("load-more").hidden = rows.length < LIMIT;
+  $("load-more").hidden = rows.length < LIMIT;
 }
 
-// --- Chunk detail ---
-
-async function showDetail(chunkId) {
-  const c = await fetchJSON(`${API}/chunks/${chunkId}`);
-  document.getElementById("chunk-text").textContent = c.text;
-  document.getElementById("chunk-detail").hidden = false;
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+function clearSearch() {
+  searchQuery = "";
+  $("search-input").value = "";
+  $("search-clear").hidden = true;
+  ftsResults = [];
+  semResults = [];
+  searchInFlight = false;
+  applyLayout();
 }
 
-function hideDetail() {
-  document.getElementById("chunk-detail").hidden = true;
+async function executeSearch(q) {
+  searchQuery = q;
+  ftsResults = [];
+  semResults = [];
+  searchInFlight = true;
+
+  // Show loading states immediately
+  $("fts-results").innerHTML = '<div class="loading">Buscando…</div>';
+  $("sem-results").innerHTML = '<div class="loading">Buscando… ◌</div>';
+  applyLayout();
+
+  const params = buildSearchParams({ q, k: 20 });
+
+  // Fire both requests in parallel — FTS renders first, semantic when ready
+  const ftsFetch = fetchJSON(`${API}/search/fts?${params}`)
+    .then(results => {
+      if (searchQuery !== q) return; // stale — a newer query superseded this one
+      ftsResults = results;
+      if (!isState4()) renderFtsResults(results);
+      else renderMergedResults();
+    })
+    .catch(() => {
+      if (searchQuery !== q) return;
+      $("fts-results").innerHTML = '<div class="loading">Error en búsqueda FTS</div>';
+    });
+
+  const semFetch = fetchJSON(`${API}/search/semantic?${params}`)
+    .then(results => {
+      if (searchQuery !== q) return; // stale
+      semResults = results;
+      if (!isState4()) renderSemResults(results);
+      else renderMergedResults();
+    })
+    .catch(() => {
+      if (searchQuery !== q) return;
+      $("sem-results").innerHTML = '<div class="loading">Error en búsqueda semántica</div>';
+    });
+
+  await Promise.allSettled([ftsFetch, semFetch]);
+  if (searchQuery === q) searchInFlight = false;
 }
 
-// --- Init ---
+// ---------------------------------------------------------------------------
+// Detail panel
+// ---------------------------------------------------------------------------
+async function openDetail(chunkId) {
+  openChunkId = chunkId;
+  $("detail-title").textContent = `Cargando #${chunkId}…`;
+  $("detail-text").textContent = "";
+  $("similar-list").innerHTML = '<div class="similar-loading">Cargando similares…</div>';
+  applyLayout();
 
-document.getElementById("load-more").addEventListener("click", () => loadChunks(false));
-document.getElementById("close-detail").addEventListener("click", hideDetail);
+  // Mark active in current results
+  document.querySelectorAll(".result-item").forEach(el =>
+    el.classList.toggle("active", +el.dataset.chunkId === chunkId)
+  );
+  document.querySelectorAll("#chunks-body tr").forEach(tr =>
+    tr.classList.toggle("active", +tr.dataset.id === chunkId)
+  );
+
+  // Load chunk detail
+  const chunk = await fetchJSON(`${API}/chunks/${chunkId}`);
+  const sp = chunk.section_path || "";
+  $("detail-title").textContent = `#${chunk.id} · p.${chunk.page} · ${chunk.chunk_type}${sp ? " · " + sp : ""}`;
+  $("detail-text").textContent = chunk.text;
+
+  // Load similar
+  const similar = await fetchJSON(`${API}/chunks/${chunkId}/similar?k=5`);
+  const simList = $("similar-list");
+  simList.innerHTML = "";
+  if (!similar.length) {
+    simList.innerHTML = '<div class="similar-loading">Sin similares</div>';
+    return;
+  }
+  similar.forEach(r => {
+    const div = makeResultItem(r, "badge-sem", "SEM");
+    simList.appendChild(div);
+  });
+}
+
+function closeDetail() {
+  openChunkId = null;
+  document.querySelectorAll(".result-item, #chunks-body tr").forEach(el =>
+    el.classList.remove("active")
+  );
+  applyLayout();
+  if (isSearchMode()) {
+    if (searchInFlight) {
+      // Fetches still pending — restore loading indicators instead of "Sin resultados"
+      $("fts-results").innerHTML = '<div class="loading">Buscando…</div>';
+      $("sem-results").innerHTML = '<div class="loading">Buscando… ◌</div>';
+    } else {
+      renderFtsResults(ftsResults);
+      renderSemResults(semResults);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+$("load-more").addEventListener("click", () => loadChunks(false));
+
+$("detail-close").addEventListener("click", closeDetail);
+
+$("search-clear").addEventListener("click", () => {
+  clearSearch();
+  if (activeManualId) {
+    currentOffset = 0;
+    $("chunks-body").innerHTML = "";
+    loadChunks(true);
+  }
+});
+
+$("search-input").addEventListener("input", e => {
+  const q = e.target.value;
+  $("search-clear").hidden = !q;
+  clearTimeout(searchDebounce);
+  if (!q.trim()) {
+    clearSearch();
+    return;
+  }
+  searchDebounce = setTimeout(() => executeSearch(q), 320);
+});
+
 loadManuals();
