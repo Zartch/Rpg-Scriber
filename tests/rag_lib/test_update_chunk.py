@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
+import rag_lib
 import pytest
 
 from rag_lib.store import Database
+from rag_lib.types import Chunk
 
 
 @pytest.fixture
@@ -88,3 +91,83 @@ async def test_update_no_fields_returns_current_row(db: Database, chunk_id: int)
     row = await db.chunks.update(chunk_id)
     assert row is not None
     assert row["text"] == "texto original"
+
+
+# ── update_chunk() public API tests ────────────────────────────────────────
+
+
+@pytest.fixture
+async def ingested_chunk(simple_pdf: Path, tmp_path: Path, fake_embedder):
+    """Ingest a real PDF and return (db_path, chunk_id) of the first chunk."""
+    db_path = tmp_path / "rag.db"
+    result = await rag_lib.ingest_pdf(
+        simple_pdf, manual_name="Test", db_path=db_path, embedder=fake_embedder,
+    )
+    chunks = await rag_lib.list_chunks(result.manual_id, db_path)
+    return db_path, chunks[0].id
+
+
+async def test_update_chunk_text_persisted(ingested_chunk, fake_embedder) -> None:
+    db_path, chunk_id = ingested_chunk
+    updated = await rag_lib.update_chunk(chunk_id, db_path, text="nuevo texto aquí", embedder=fake_embedder)
+    assert isinstance(updated, Chunk)
+    assert updated.text == "nuevo texto aquí"
+
+
+async def test_update_chunk_recalculates_token_count(ingested_chunk, fake_embedder) -> None:
+    db_path, chunk_id = ingested_chunk
+    updated = await rag_lib.update_chunk(chunk_id, db_path, text="uno dos tres", embedder=fake_embedder)
+    assert updated.token_count > 0
+
+
+async def test_update_chunk_recalculates_text_hash(ingested_chunk, fake_embedder) -> None:
+    db_path, chunk_id = ingested_chunk
+    nuevo = "texto completamente diferente"
+    updated = await rag_lib.update_chunk(chunk_id, db_path, text=nuevo, embedder=fake_embedder)
+    import hashlib as hl
+    expected_hash = hl.sha256(nuevo.encode()).hexdigest()
+    assert updated.text_hash == expected_hash
+
+
+async def test_update_chunk_section_path_persisted(ingested_chunk) -> None:
+    db_path, chunk_id = ingested_chunk
+    updated = await rag_lib.update_chunk(chunk_id, db_path, section_path="A/B/C")
+    assert updated.section_path == "A/B/C"
+
+
+async def test_update_chunk_chunk_type_persisted(ingested_chunk) -> None:
+    db_path, chunk_id = ingested_chunk
+    updated = await rag_lib.update_chunk(chunk_id, db_path, chunk_type="table")
+    assert updated.chunk_type == "table"
+
+
+async def test_update_chunk_nonexistent_returns_none(ingested_chunk) -> None:
+    db_path, _ = ingested_chunk
+    result = await rag_lib.update_chunk(99999, db_path, text="whatever")
+    assert result is None
+
+
+async def test_update_chunk_regenerates_embedding(ingested_chunk, fake_embedder) -> None:
+    db_path, chunk_id = ingested_chunk
+    database = Database(db_path)
+    await database.connect()
+    rows_before = await database.embeddings.load_all()
+    await database.close()
+
+    await rag_lib.update_chunk(chunk_id, db_path, text="texto muy diferente", embedder=fake_embedder)
+
+    database = Database(db_path)
+    await database.connect()
+    rows_after = await database.embeddings.load_all()
+    await database.close()
+    assert len(rows_after) == len(rows_before)
+    chunk_emb = next(r for r in rows_after if r["chunk_id"] == chunk_id)
+    assert chunk_emb is not None
+
+
+async def test_update_chunk_fts5_updated(ingested_chunk, fake_embedder) -> None:
+    db_path, chunk_id = ingested_chunk
+    nuevo_texto = "xtextouniquexyz frase especial"
+    await rag_lib.update_chunk(chunk_id, db_path, text=nuevo_texto, embedder=fake_embedder)
+    results = await rag_lib.search_fts("xtextouniquexyz", db_path)
+    assert any(r.chunk_id == chunk_id for r in results)

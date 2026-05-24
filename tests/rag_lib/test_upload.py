@@ -83,3 +83,95 @@ async def test_job_set_error(db: Database) -> None:
 async def test_job_get_nonexistent_returns_none(db: Database) -> None:
     row = await db.jobs.get("no-existe")
     assert row is None
+
+
+# ── upload_pdf() + get_job() integration tests ─────────────────────────────
+
+async def test_upload_pdf_returns_job_immediately(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        simple_pdf.read_bytes(), manual_name="Test", db_path=db_path, embedder=fake_embedder,
+    )
+    assert isinstance(job, IngestJob)
+    assert job.status == "pending"
+    assert job.manual_id is None
+    assert job.id != ""
+
+
+async def test_upload_pdf_job_created_in_db(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        simple_pdf.read_bytes(), manual_name="Test", db_path=db_path, embedder=fake_embedder,
+    )
+    found = await rag_lib.get_job(job.id, db_path)
+    assert found is not None
+    assert found.id == job.id
+
+
+async def test_upload_pdf_job_reaches_done(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        simple_pdf.read_bytes(), manual_name="Book", db_path=db_path, embedder=fake_embedder,
+    )
+    done = await _wait_done(job.id, db_path)
+    assert done.status == "done"
+    assert done.manual_id is not None
+    assert done.was_duplicate is False
+
+
+async def test_upload_pdf_creates_manual(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        simple_pdf.read_bytes(), manual_name="Book", db_path=db_path, embedder=fake_embedder,
+    )
+    await _wait_done(job.id, db_path)
+    manuals = await rag_lib.list_manuals(db_path)
+    assert any(m.name == "Book" for m in manuals)
+
+
+async def test_upload_pdf_duplicate_sets_was_duplicate(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    pdf_bytes = simple_pdf.read_bytes()
+    job1 = await rag_lib.upload_pdf(pdf_bytes, manual_name="Book", db_path=db_path, embedder=fake_embedder)
+    await _wait_done(job1.id, db_path)
+
+    job2 = await rag_lib.upload_pdf(pdf_bytes, manual_name="Book", db_path=db_path, embedder=fake_embedder)
+    done2 = await _wait_done(job2.id, db_path)
+    assert done2.status == "done"
+    assert done2.was_duplicate is True
+    assert done2.manual_id is not None
+
+    manuals = await rag_lib.list_manuals(db_path)
+    assert len(manuals) == 1
+
+
+async def test_upload_pdf_invalid_bytes_sets_error(tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        b"esto no es un PDF", manual_name="Bad", db_path=db_path, embedder=fake_embedder,
+    )
+    done = await _wait_done(job.id, db_path)
+    assert done.status == "error"
+    assert done.error is not None
+
+
+async def test_get_job_nonexistent_returns_none(tmp_path: Path) -> None:
+    db_path = tmp_path / "rag.db"
+    result = await rag_lib.get_job("no-existe", db_path)
+    assert result is None
+
+
+async def test_upload_pdf_embeddings_created(simple_pdf: Path, tmp_path: Path, fake_embedder) -> None:
+    db_path = tmp_path / "rag.db"
+    job = await rag_lib.upload_pdf(
+        simple_pdf.read_bytes(), manual_name="Book", db_path=db_path, embedder=fake_embedder,
+    )
+    done = await _wait_done(job.id, db_path)
+    assert done.status == "done"
+    database = Database(db_path)
+    await database.connect()
+    try:
+        rows = await database.embeddings.load_all()
+        assert len(rows) > 0
+    finally:
+        await database.close()
