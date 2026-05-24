@@ -185,12 +185,15 @@ class JobRepo:
 
     async def set_processing(self, job_id: str) -> None:
         await self._db.conn.execute(
-            "UPDATE rag_jobs SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE rag_jobs SET status='processing',"
+            " updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (job_id,),
         )
         await self._db.conn.commit()
 
-    async def set_done(self, job_id: str, manual_id: int, *, was_duplicate: bool = False) -> None:
+    async def set_done(
+        self, job_id: str, manual_id: int, *, was_duplicate: bool = False
+    ) -> None:
         await self._db.conn.execute(
             """UPDATE rag_jobs
                SET status='done', manual_id=?, was_duplicate=?, updated_at=CURRENT_TIMESTAMP
