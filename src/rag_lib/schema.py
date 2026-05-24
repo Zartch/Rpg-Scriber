@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS rag_embeddings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS rag_jobs (
+    id           TEXT PRIMARY KEY,
+    status       TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending', 'processing', 'done', 'error')),
+    manual_name  TEXT NOT NULL,
+    manual_id    INTEGER,
+    was_duplicate INTEGER NOT NULL DEFAULT 0,
+    error        TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(
     text,
     section_path,
@@ -50,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_manual_page ON rag_chunks(manual_id, page)
 CREATE INDEX IF NOT EXISTS idx_chunks_type        ON rag_chunks(chunk_type);
 CREATE INDEX IF NOT EXISTS idx_chunks_hash        ON rag_chunks(text_hash);
 CREATE INDEX IF NOT EXISTS idx_embeddings_chunk   ON rag_embeddings(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status        ON rag_jobs(status);
 
 CREATE TRIGGER IF NOT EXISTS rag_chunks_ai AFTER INSERT ON rag_chunks BEGIN
     INSERT INTO rag_chunks_fts(rowid, text, section_path)
@@ -59,5 +72,12 @@ END;
 CREATE TRIGGER IF NOT EXISTS rag_chunks_ad AFTER DELETE ON rag_chunks BEGIN
     INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, text, section_path)
     VALUES ('delete', old.id, old.text, old.section_path);
+END;
+
+CREATE TRIGGER IF NOT EXISTS rag_chunks_au AFTER UPDATE ON rag_chunks BEGIN
+    INSERT INTO rag_chunks_fts(rag_chunks_fts, rowid, text, section_path)
+    VALUES ('delete', old.id, old.text, old.section_path);
+    INSERT INTO rag_chunks_fts(rowid, text, section_path)
+    VALUES (new.id, new.text, new.section_path);
 END;
 """

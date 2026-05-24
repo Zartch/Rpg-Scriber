@@ -46,6 +46,16 @@ class SearchResult:
     chunk: Chunk
 
 
+@dataclass(frozen=True)
+class IngestJob:
+    id: str
+    status: str           # 'pending' | 'processing' | 'done' | 'error'
+    manual_name: str
+    manual_id: int | None
+    was_duplicate: bool
+    error: str | None
+
+
 # --- Internal pipeline types (not part of public API) ---
 
 @dataclass(frozen=True)
