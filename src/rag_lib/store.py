@@ -11,6 +11,8 @@ from rag_lib.schema import RAG_SCHEMA_SQL
 
 logger = logging.getLogger(__name__)
 
+_UNSET = object()  # sentinel para distinguir "no cambiar" de None
+
 
 class Database:
     """Async SQLite wrapper for rag_lib."""
@@ -21,6 +23,7 @@ class Database:
         self.manuals = ManualRepo(self)
         self.chunks = ChunkRepo(self)
         self.embeddings = EmbeddingRepo(self)
+        self.jobs = JobRepo(self)
 
     async def connect(self) -> None:
         self._conn = await aiosqlite.connect(self._db_path)
@@ -167,3 +170,47 @@ class EmbeddingRepo:
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+
+class JobRepo:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def create(self, job_id: str, manual_name: str) -> None:
+        await self._db.conn.execute(
+            "INSERT INTO rag_jobs (id, manual_name) VALUES (?, ?)",
+            (job_id, manual_name),
+        )
+        await self._db.conn.commit()
+
+    async def set_processing(self, job_id: str) -> None:
+        await self._db.conn.execute(
+            "UPDATE rag_jobs SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (job_id,),
+        )
+        await self._db.conn.commit()
+
+    async def set_done(self, job_id: str, manual_id: int, *, was_duplicate: bool = False) -> None:
+        await self._db.conn.execute(
+            """UPDATE rag_jobs
+               SET status='done', manual_id=?, was_duplicate=?, updated_at=CURRENT_TIMESTAMP
+               WHERE id=?""",
+            (manual_id, 1 if was_duplicate else 0, job_id),
+        )
+        await self._db.conn.commit()
+
+    async def set_error(self, job_id: str, error: str) -> None:
+        await self._db.conn.execute(
+            """UPDATE rag_jobs
+               SET status='error', error=?, updated_at=CURRENT_TIMESTAMP
+               WHERE id=?""",
+            (error, job_id),
+        )
+        await self._db.conn.commit()
+
+    async def get(self, job_id: str) -> dict[str, Any] | None:
+        cur = await self._db.conn.execute(
+            "SELECT * FROM rag_jobs WHERE id=?", (job_id,)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
