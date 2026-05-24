@@ -140,6 +140,46 @@ class ChunkRepo:
         row_map = {r["id"]: dict(r) for r in rows}
         return [row_map[i] for i in ids if i in row_map]
 
+    async def update(
+        self,
+        chunk_id: int,
+        *,
+        text: str | None = None,
+        section_path: object = _UNSET,
+        chunk_type: str | None = None,
+        text_hash: str | None = None,
+        token_count: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Update specified fields. Returns updated row dict or None if chunk not found."""
+        sets: list[str] = []
+        params: list = []
+        if text is not None:
+            sets.append("text = ?")
+            params.append(text)
+        if section_path is not _UNSET:
+            sets.append("section_path = ?")
+            params.append(section_path)
+        if chunk_type is not None:
+            sets.append("chunk_type = ?")
+            params.append(chunk_type)
+        if text_hash is not None:
+            sets.append("text_hash = ?")
+            params.append(text_hash)
+        if token_count is not None:
+            sets.append("token_count = ?")
+            params.append(token_count)
+
+        if not sets:
+            return await self.get_by_id(chunk_id)
+
+        params.append(chunk_id)
+        sql = f"UPDATE rag_chunks SET {', '.join(sets)} WHERE id = ?"
+        cur = await self._db.conn.execute(sql, params)
+        await self._db.conn.commit()
+        if cur.rowcount == 0:
+            return None
+        return await self.get_by_id(chunk_id)
+
 
 class EmbeddingRepo:
     def __init__(self, db: Database) -> None:
