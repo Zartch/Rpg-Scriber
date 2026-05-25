@@ -15,6 +15,14 @@ let ftsResults = [];              // latest FTS results
 let semResults = [];              // latest semantic results
 let searchInFlight = false;       // true while either search fetch is pending
 
+// Upload state (A4)
+let uploadFile = null;           // File object selected/dropped
+let uploadJobId = null;          // active job id being polled
+let uploadPollTimer = null;      // setInterval id for polling
+
+// Edit state (A4)
+let editOriginalChunk = null;   // snapshot of chunk before editing
+
 // ---------------------------------------------------------------------------
 // DOM refs (cached after DOMContentLoaded)
 // ---------------------------------------------------------------------------
@@ -339,6 +347,166 @@ function closeDetail() {
 }
 
 // ---------------------------------------------------------------------------
+// Upload (A4)
+// ---------------------------------------------------------------------------
+function setUploadStatus(html, hidden = false) {
+  const el = $("upload-status");
+  el.hidden = hidden;
+  el.innerHTML = html;
+}
+
+function resetUploadZone() {
+  uploadFile = null;
+  $("upload-file-input").value = "";
+  $("upload-name-input").value = "";
+  $("upload-name-input").disabled = true;
+  $("upload-submit-btn").disabled = true;
+  $("upload-drop-area").classList.remove("dragging");
+  setUploadStatus("", true);
+}
+
+function onFileSelected(file) {
+  if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+    setUploadStatus('<span class="upload-error">⚠ Solo se admiten archivos PDF.</span>');
+    return;
+  }
+  uploadFile = file;
+  $("upload-name-input").value = file.name.replace(/\.pdf$/i, "");
+  $("upload-name-input").disabled = false;
+  $("upload-submit-btn").disabled = false;
+  setUploadStatus("", true);
+}
+
+async function startUpload() {
+  if (!uploadFile) return;
+  const manualName = $("upload-name-input").value.trim();
+  if (!manualName) {
+    setUploadStatus('<span class="upload-error">⚠ Introduce un nombre para el manual.</span>');
+    return;
+  }
+
+  $("upload-submit-btn").disabled = true;
+  $("upload-name-input").disabled = true;
+  setUploadStatus(`<span class="upload-loading">⏳ Subiendo ${escapeHtml(manualName)}…</span>`);
+
+  const formData = new FormData();
+  formData.append("file", uploadFile, uploadFile.name);
+  formData.append("manual_name", manualName);
+
+  let jobId;
+  try {
+    const resp = await fetch(`${API}/manuals/upload`, { method: "POST", body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const job = await resp.json();
+    jobId = job.id;
+    uploadJobId = jobId;
+  } catch (e) {
+    setUploadStatus(`<span class="upload-error">⚠ Error al subir: ${escapeHtml(e.message)}</span>`);
+    $("upload-submit-btn").disabled = false;
+    $("upload-name-input").disabled = false;
+    return;
+  }
+
+  setUploadStatus(`<span class="upload-loading">⏳ Procesando ${escapeHtml(manualName)}… (esto puede tardar 1-2 min)</span>`);
+  pollUploadJob(jobId, manualName);
+}
+
+function pollUploadJob(jobId, manualName) {
+  if (uploadPollTimer) clearInterval(uploadPollTimer);
+  uploadPollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`${API}/jobs/${jobId}`);
+      if (!resp.ok) return;
+      const job = await resp.json();
+      if (job.status === "done") {
+        clearInterval(uploadPollTimer);
+        uploadPollTimer = null;
+        if (job.was_duplicate) {
+          setUploadStatus(
+            `<span class="upload-dup">ℹ ${escapeHtml(manualName)} ya está importado. Para reimportarlo, elimínalo primero.</span>`
+          );
+        } else {
+          setUploadStatus(`<span class="upload-ok">✓ ${escapeHtml(manualName)} importado.</span>`);
+          setTimeout(() => { setUploadStatus("", true); resetUploadZone(); }, 3000);
+        }
+        loadManuals();
+      } else if (job.status === "error") {
+        clearInterval(uploadPollTimer);
+        uploadPollTimer = null;
+        setUploadStatus(`<span class="upload-error">⚠ Error: ${escapeHtml(job.error || "desconocido")}</span>`);
+        $("upload-submit-btn").disabled = false;
+        $("upload-name-input").disabled = false;
+      }
+    } catch (_) { /* network error, retry next tick */ }
+  }, 2000);
+}
+
+// ---------------------------------------------------------------------------
+// Chunk editing (A4)
+// ---------------------------------------------------------------------------
+function enterEditMode(chunk) {
+  editOriginalChunk = chunk;
+  $("edit-chunk-type").value = chunk.chunk_type;
+  $("edit-section-path").value = chunk.section_path || "";
+  $("edit-text").value = chunk.text;
+  $("detail-view").hidden = true;
+  $("detail-edit").hidden = false;
+  $("detail-edit-btn").hidden = true;
+}
+
+function exitEditMode() {
+  editOriginalChunk = null;
+  $("detail-view").hidden = false;
+  $("detail-edit").hidden = true;
+  $("detail-edit-btn").hidden = false;
+}
+
+async function saveChunkEdit() {
+  if (!editOriginalChunk || !openChunkId) return;
+
+  const body = {};
+  const newText = $("edit-text").value;
+  const newSection = $("edit-section-path").value.trim() || null;
+  const newType = $("edit-chunk-type").value;
+
+  if (newText !== editOriginalChunk.text) body.text = newText;
+  if (newSection !== (editOriginalChunk.section_path || null)) body.section_path = newSection;
+  if (newType !== editOriginalChunk.chunk_type) body.chunk_type = newType;
+
+  if (!Object.keys(body).length) { exitEditMode(); return; }
+
+  $("edit-save-btn").disabled = true;
+  $("edit-save-btn").textContent = "Guardando…";
+
+  try {
+    const resp = await fetch(`${API}/chunks/${openChunkId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const updated = await resp.json();
+    exitEditMode();
+    const sp = updated.section_path || "";
+    $("detail-title").textContent =
+      `#${updated.id} · p.${updated.page} · ${updated.chunk_type}${sp ? " · " + sp : ""}`;
+    $("detail-text").textContent = updated.text;
+    editOriginalChunk = updated;
+  } catch (e) {
+    alert(`Error al guardar: ${e.message}`);
+  } finally {
+    $("edit-save-btn").disabled = false;
+    $("edit-save-btn").textContent = "Guardar";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 $("load-more").addEventListener("click", () => loadChunks(false));
@@ -364,5 +532,28 @@ $("search-input").addEventListener("input", e => {
   }
   searchDebounce = setTimeout(() => executeSearch(q), 320);
 });
+
+// Upload listeners (A4)
+const dropArea = $("upload-drop-area");
+dropArea.addEventListener("dragover", e => { e.preventDefault(); dropArea.classList.add("dragging"); });
+dropArea.addEventListener("dragleave", () => dropArea.classList.remove("dragging"));
+dropArea.addEventListener("drop", e => {
+  e.preventDefault();
+  dropArea.classList.remove("dragging");
+  const file = e.dataTransfer.files[0];
+  if (file) onFileSelected(file);
+});
+$("upload-file-input").addEventListener("change", e => {
+  if (e.target.files[0]) onFileSelected(e.target.files[0]);
+});
+$("upload-submit-btn").addEventListener("click", startUpload);
+
+// Edit listeners (A4)
+$("detail-edit-btn").addEventListener("click", () => {
+  if (!openChunkId) return;
+  fetchJSON(`${API}/chunks/${openChunkId}`).then(chunk => enterEditMode(chunk));
+});
+$("edit-cancel-btn").addEventListener("click", exitEditMode);
+$("edit-save-btn").addEventListener("click", saveChunkEdit);
 
 loadManuals();

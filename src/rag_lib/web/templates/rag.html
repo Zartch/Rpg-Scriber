@@ -17,6 +17,23 @@
     <!-- Panel izquierdo: manuales -->
     <div id="manuals-panel">
       <h2>Manuales</h2>
+
+      <!-- Zona upload A4 -->
+      <div id="upload-zone">
+        <div id="upload-drop-area">
+          <div class="upload-icon">📄</div>
+          <p class="upload-hint">Arrastra un PDF aquí</p>
+          <p class="upload-or">o</p>
+          <label class="btn-file">
+            Seleccionar archivo
+            <input type="file" id="upload-file-input" accept=".pdf" hidden>
+          </label>
+          <input type="text" id="upload-name-input" placeholder="Nombre del manual" class="upload-name-input" disabled>
+          <button id="upload-submit-btn" class="btn-primary" disabled>↑ Subir PDF</button>
+        </div>
+        <div id="upload-status" hidden></div>
+      </div>
+
       <ul id="manuals-list">
         <li class="loading">Cargando…</li>
       </ul>
@@ -64,16 +81,47 @@
       </div>
     </div>
 
-    <!-- Panel derecho: detalle del chunk + similares -->
+    <!-- Panel derecho: detalle del chunk + similares (A3 + edición A4) -->
     <div id="detail-panel" hidden>
       <div id="detail-header">
         <span id="detail-title"></span>
-        <button id="detail-close" title="Cerrar detalle">✕</button>
+        <div class="detail-header-actions">
+          <button id="detail-edit-btn" class="btn-secondary btn-sm">✎ Editar</button>
+          <button id="detail-close" title="Cerrar detalle">✕</button>
+        </div>
       </div>
-      <div id="detail-text"></div>
-      <div id="similar-section">
-        <div class="col-header"><span>Similares</span></div>
-        <div id="similar-list" class="results-list"></div>
+
+      <!-- Vista normal (A3) -->
+      <div id="detail-view">
+        <div id="detail-text"></div>
+        <div id="similar-section">
+          <div class="col-header"><span>Similares</span></div>
+          <div id="similar-list" class="results-list"></div>
+        </div>
+      </div>
+
+      <!-- Modo edición (A4) -->
+      <div id="detail-edit" hidden>
+        <div class="edit-field">
+          <label class="edit-label">Tipo</label>
+          <select id="edit-chunk-type" class="edit-select">
+            <option value="prose">prose</option>
+            <option value="table">table</option>
+          </select>
+        </div>
+        <div class="edit-field">
+          <label class="edit-label">Sección</label>
+          <input type="text" id="edit-section-path" class="edit-input" placeholder="(sin sección)">
+        </div>
+        <div class="edit-field edit-field-grow">
+          <label class="edit-label">Texto</label>
+          <textarea id="edit-text" class="edit-textarea" rows="10"></textarea>
+        </div>
+        <p class="edit-warning">⚠ Guardar regenera los embeddings (~1s)</p>
+        <div class="edit-actions">
+          <button id="edit-save-btn" class="btn-primary btn-sm">Guardar</button>
+          <button id="edit-cancel-btn" class="btn-secondary btn-sm">Cancelar</button>
+        </div>
       </div>
     </div>
   </div>
