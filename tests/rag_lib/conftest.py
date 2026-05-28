@@ -203,3 +203,63 @@ def fake_embedder() -> FakeEmbedder:
 @pytest.fixture
 def fake_embedder_factory():
     return FakeEmbedder
+
+
+@pytest.fixture
+def pdf_with_toc(tmp_path: Path) -> Path:
+    """3-page PDF with a digital outline/TOC (bookmarks).
+
+    Structure:
+      level 1 "Capítulo 1: Combate"  → page 1
+      level 2 "Iniciativa"           → page 1  (same page, different y)
+      level 1 "Capítulo 2: Magia"    → page 2
+      level 2 "Hechizos"             → page 3
+    """
+    path = tmp_path / "toc.pdf"
+    c = canvas.Canvas(str(path))
+
+    # Page 1
+    c.bookmarkPage("cap1")
+    c.addOutlineEntry("Capítulo 1: Combate", "cap1", level=0, closed=False)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, 780, "Capítulo 1: Combate")
+    c.bookmarkPage("iniciativa")
+    c.addOutlineEntry("Iniciativa", "iniciativa", level=1, closed=False)
+    c.setFont("Helvetica", 11)
+    y = 750
+    for line in _wrap_text(LOREM * 2):
+        c.drawString(50, y, line)
+        y -= 15
+        if y < 50:
+            break
+    c.showPage()
+
+    # Page 2
+    c.bookmarkPage("cap2")
+    c.addOutlineEntry("Capítulo 2: Magia", "cap2", level=0, closed=False)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, 780, "Capítulo 2: Magia")
+    c.setFont("Helvetica", 11)
+    y = 750
+    for line in _wrap_text(LOREM * 2):
+        c.drawString(50, y, line)
+        y -= 15
+        if y < 50:
+            break
+    c.showPage()
+
+    # Page 3
+    c.bookmarkPage("hechizos")
+    c.addOutlineEntry("Hechizos", "hechizos", level=1, closed=False)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, 780, "Hechizos")
+    c.setFont("Helvetica", 11)
+    y = 750
+    for line in _wrap_text(LOREM * 2):
+        c.drawString(50, y, line)
+        y -= 15
+        if y < 50:
+            break
+    c.showPage()
+    c.save()
+    return path
