@@ -175,6 +175,7 @@ PNJS CONOCIDOS:
 RELACIONES CONOCIDAS:
 {relationships_block}
 
+{previous_session_block}\
 INSTRUCCIONES:
 1. Escribe en orden cronológico estricto, cubriendo TODAS las localizaciones \
 visitadas y escenas principales.
@@ -201,6 +202,12 @@ de reglas que afecta a lo que ocurre), puedes incorporar ese contexto en la \
 narración. Pero NUNCA cites una línea [META] como diálogo de un personaje \
 ni la incluyas como acción in-game.
 7. Escribe con fluidez narrativa, no como una lista de puntos.
+8. Si la transcripción contiene un repaso verbal de la sesión anterior \
+(el Master o los jugadores recuerdan lo que pasó), NO incluyas esos eventos \
+como parte de la nueva sesión. Son referencias al pasado, no eventos nuevos.
+9. Si el Master corrige o contradice algo de la cronología anterior, incluye \
+al principio del texto una sección "## Discrepancias con la sesión anterior" \
+listando cada corrección detectada, antes de comenzar la cronología nueva.
 """
 
 CHRONOLOGY_USER = """\

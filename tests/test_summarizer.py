@@ -1288,3 +1288,176 @@ def _collect(target: list):
         target.append(event)
 
     return handler
+
+
+class TestChronologyPreviousSession:
+    """generate_chronology injects previous session chronology when available."""
+
+    @pytest.fixture
+    def bus(self):
+        return EventBus()
+
+    @pytest.fixture
+    def config(self):
+        return _make_config()
+
+    @pytest.fixture
+    def campaign(self):
+        return _make_campaign()
+
+    @pytest.fixture
+    def mock_client(self):
+        client = MagicMock()
+        client.messages = MagicMock()
+        client.messages.create = AsyncMock(
+            return_value=_mock_anthropic_response("Cronología de la nueva sesión.")
+        )
+        return client
+
+    def test_build_chronology_system_prompt_includes_previous_block(
+        self, bus, config, campaign, mock_client
+    ):
+        """When previous_session_chronology is non-empty the block appears in the prompt."""
+        summarizer = ClaudeSummarizer(bus, config, campaign, client=mock_client)
+        prompt = summarizer._build_chronology_system_prompt(
+            previous_session_chronology="Escena 1: Los héroes entraron al castillo."
+        )
+        assert "CRONOLOGÍA DE LA SESIÓN ANTERIOR:" in prompt
+        assert "Escena 1: Los héroes entraron al castillo." in prompt
+
+    def test_build_chronology_system_prompt_empty_when_no_previous(
+        self, bus, config, campaign, mock_client
+    ):
+        """When previous_session_chronology is empty no previous block is added."""
+        summarizer = ClaudeSummarizer(bus, config, campaign, client=mock_client)
+        prompt = summarizer._build_chronology_system_prompt()
+        assert "CRONOLOGÍA DE LA SESIÓN ANTERIOR:" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_fetches_and_injects_previous(
+        self, bus, config, campaign, mock_client
+    ):
+        """generate_chronology queries DB for the previous chronology and includes it."""
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(
+            return_value="Escena previa: el grupo llegó a la ciudad."
+        )
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+        await summarizer.start("session-42")
+
+        entries = [TranscriptionEntry("u1", "Aelar", "Buscamos al mercader.", time.time())]
+        await summarizer.generate_chronology(entries)
+
+        db.sessions.get_previous_session_chronology.assert_awaited_once_with(
+            "test-campaign", "session-42"
+        )
+        system_used = mock_client.messages.create.call_args.kwargs["system"]
+        assert "Escena previa: el grupo llegó a la ciudad." in system_used
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_no_previous_when_db_returns_empty(
+        self, bus, config, campaign, mock_client
+    ):
+        """When DB returns empty string no previous-session block appears in the prompt."""
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(return_value="")
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+        await summarizer.start("session-1")
+
+        entries = [TranscriptionEntry("u1", "Aelar", "Texto.", time.time())]
+        await summarizer.generate_chronology(entries)
+
+        system_used = mock_client.messages.create.call_args.kwargs["system"]
+        assert "CRONOLOGÍA DE LA SESIÓN ANTERIOR:" not in system_used
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_include_previous_false_skips_db(
+        self, bus, config, campaign, mock_client
+    ):
+        """With include_previous=False the DB is not queried."""
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(return_value="Algo.")
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+        await summarizer.start("session-1")
+
+        entries = [TranscriptionEntry("u1", "Aelar", "Texto.", time.time())]
+        await summarizer.generate_chronology(entries, include_previous=False)
+
+        db.sessions.get_previous_session_chronology.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_generic_campaign_skips_db(
+        self, bus, config, mock_client
+    ):
+        """Generic campaign (no campaign_id) does not query the DB."""
+        generic_campaign = CampaignContext.create_generic(language="es")
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(return_value="Algo.")
+
+        summarizer = ClaudeSummarizer(
+            bus, config, generic_campaign, client=mock_client, database=db
+        )
+        await summarizer.start("session-1")
+
+        entries = [TranscriptionEntry("u1", "Alice", "Texto.", time.time())]
+        await summarizer.generate_chronology(entries)
+
+        db.sessions.get_previous_session_chronology.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_from_transcriptions_skips_db(
+        self, bus, config, campaign, mock_client
+    ):
+        """Without session_id, generate_chronology_from_transcriptions does not query DB."""
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(return_value="Algo.")
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+        await summarizer.start("session-1")
+
+        rows = [{"speaker_id": "u1", "speaker_name": "Aelar", "text": "Texto.", "timestamp": time.time(), "is_ingame": True}]
+        await summarizer.generate_chronology_from_transcriptions(rows)
+
+        db.sessions.get_previous_session_chronology.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generate_chronology_from_transcriptions_with_session_id_fetches_previous(
+        self, bus, config, campaign, mock_client
+    ):
+        """With session_id, fetches the preceding session's chronology and injects it."""
+        db = AsyncMock(spec=Database)
+        db.sessions = MagicMock()
+        db.sessions.get_previous_session_chronology = AsyncMock(
+            return_value="Escena anterior: los héroes llegaron a la aldea."
+        )
+
+        summarizer = ClaudeSummarizer(
+            bus, config, campaign, client=mock_client, database=db
+        )
+        # self._session_id intentionally different to confirm session_id param is used
+        await summarizer.start("current-live-session")
+
+        rows = [{"speaker_id": "u1", "speaker_name": "Aelar", "text": "Texto.", "timestamp": time.time(), "is_ingame": True}]
+        await summarizer.generate_chronology_from_transcriptions(rows, session_id="session-hist-3")
+
+        db.sessions.get_previous_session_chronology.assert_awaited_once_with(
+            "test-campaign", "session-hist-3"
+        )
+        system_used = mock_client.messages.create.call_args.kwargs["system"]
+        assert "Escena anterior: los héroes llegaron a la aldea." in system_used

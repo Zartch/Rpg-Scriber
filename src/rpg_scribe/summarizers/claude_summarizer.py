@@ -748,13 +748,21 @@ class ClaudeSummarizer(BaseSummarizer):
     # Chronology generation
     # ------------------------------------------------------------------
 
-    def _build_chronology_system_prompt(self) -> str:
+    def _build_chronology_system_prompt(
+        self, previous_session_chronology: str = ""
+    ) -> str:
         """Build the system prompt for chronological timeline generation.
 
-        Includes game_system, description, players, locations, NPCs, and
-        relationships. Does not include entities or campaign summary.
+        Includes previous session chronology block when *previous_session_chronology*
+        is non-empty, so the LLM can distinguish recap from new events.
         """
         c = self.campaign
+        previous_session_block = (
+            f"CRONOLOGÍA DE LA SESIÓN ANTERIOR:\n{previous_session_chronology}\n\n"
+            if previous_session_chronology
+            else ""
+        )
+
         if c.is_generic:
             return CHRONOLOGY_SYSTEM_PROMPT.format(
                 game_system="(genérico)",
@@ -764,6 +772,7 @@ class ClaudeSummarizer(BaseSummarizer):
                 locations_block="(ninguna conocida)",
                 npcs_block="(ninguno conocido)",
                 relationships_block="(ninguna registrada)",
+                previous_session_block=previous_session_block,
             )
 
         return CHRONOLOGY_SYSTEM_PROMPT.format(
@@ -774,22 +783,44 @@ class ClaudeSummarizer(BaseSummarizer):
             locations_block=self._build_locations_block(),
             npcs_block=self._build_npcs_block(),
             relationships_block=self._build_relationships_block(),
+            previous_session_block=previous_session_block,
         )
 
     async def generate_chronology(
         self,
         entries: list[TranscriptionEntry],
+        *,
+        include_previous: bool = True,
+        previous_chronology: str = "",
     ) -> str:
         """Generate a chronological timeline using progressive batching.
 
         If all transcriptions fit in a single API call, generates in one shot.
         Otherwise, splits into batches and builds the chronology progressively,
         extending it with each new batch of transcriptions.
+
+        *previous_chronology* is an explicit override: when non-empty it is
+        used directly and the DB lookup is skipped regardless of
+        *include_previous*.  When empty and *include_previous* is True the
+        previous session's chronology is fetched from the database using
+        ``self._session_id``.
         """
         if not entries:
             return ""
 
-        system = self._build_chronology_system_prompt()
+        if not previous_chronology and (
+            include_previous
+            and self._database is not None
+            and not self.campaign.is_generic
+            and self._session_id
+        ):
+            previous_chronology = (
+                await self._database.sessions.get_previous_session_chronology(
+                    self.campaign.campaign_id, self._session_id
+                )
+            )
+
+        system = self._build_chronology_system_prompt(previous_chronology)
         template_overhead = len(CHRONOLOGY_USER) + 200
         max_chars = max(self.config.max_input_chars - template_overhead, 1000)
 
@@ -858,11 +889,17 @@ class ClaudeSummarizer(BaseSummarizer):
         return blocks[-1] if blocks else chronology
 
     async def generate_chronology_from_transcriptions(
-        self, transcription_rows: list[dict], session_summary: str = ""
+        self, transcription_rows: list[dict], *, session_id: str = ""
     ) -> str:
         """Generate a chronology from DB transcription rows (post-hoc).
 
         Stateless: does not modify instance state.
+
+        When *session_id* is provided, the chronology of the session
+        immediately before *session_id* is fetched from the database and
+        injected as context.  This ensures historical regeneration uses the
+        correct preceding session rather than any value stored in
+        ``self._session_id``.
         """
         entries = [
             TranscriptionEntry(
@@ -880,7 +917,19 @@ class ClaudeSummarizer(BaseSummarizer):
         if not entries:
             return ""
 
-        return await self.generate_chronology(entries=entries)
+        previous_chronology = ""
+        if session_id and self._database is not None and not self.campaign.is_generic:
+            previous_chronology = (
+                await self._database.sessions.get_previous_session_chronology(
+                    self.campaign.campaign_id, session_id
+                )
+            )
+
+        return await self.generate_chronology(
+            entries=entries,
+            include_previous=False,
+            previous_chronology=previous_chronology,
+        )
 
     # ------------------------------------------------------------------
     # Campaign summary generation

@@ -448,7 +448,7 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
     )
 
     chronology = await summarizer.generate_chronology_from_transcriptions(
-        [dict(r) for r in rows], session_summary
+        [dict(r) for r in rows], session_id=session_id
     )
     await db.sessions.update_session_chronology(session_id, chronology)
 
