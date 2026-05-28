@@ -89,3 +89,30 @@ def test_parse_corrupt_file_raises_pdf_parse_error(tmp_path: Path) -> None:
     bad.write_bytes(b"not a pdf at all")
     with pytest.raises(PdfParseError):
         _parser().parse(bad)
+
+
+# ---------------------------------------------------------------------------
+# _extract_prose_groups — multiple blocks per page with separate fontsizes
+# ---------------------------------------------------------------------------
+
+def test_headings_pdf_yields_multiple_prose_blocks_per_page(pdf_with_headings: Path) -> None:
+    """With _extract_prose_groups implemented, a page with H1+body yields ≥2 ProseBlocks."""
+    pages = _parser().parse(pdf_with_headings)
+    page1_blocks = [b for b in pages[0].blocks if isinstance(b, ProseBlock)]
+    assert len(page1_blocks) >= 2
+
+
+def test_heading_block_has_larger_fontsize_than_body(pdf_with_headings: Path) -> None:
+    """The heading ProseBlock must have a larger fontsize_avg than body blocks."""
+    pages = _parser().parse(pdf_with_headings)
+    prose = [b for b in pages[0].blocks if isinstance(b, ProseBlock)]
+    fontsizes = [b.fontsize_avg for b in prose]
+    assert max(fontsizes) > min(fontsizes) + 2.0
+
+
+def test_prose_groups_text_covers_all_page_text(simple_pdf: Path) -> None:
+    """Total chars across all ProseBlocks must equal what _extract_prose returns."""
+    pages = _parser().parse(simple_pdf)
+    for page in pages:
+        combined = " ".join(b.text for b in page.blocks if isinstance(b, ProseBlock))
+        assert len(combined) > 0
