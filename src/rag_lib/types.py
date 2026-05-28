@@ -76,3 +76,10 @@ class TableBlock:
 class ParsedPage:
     page_num: int
     blocks: list[ProseBlock | TableBlock] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    level: int    # 1 = capítulo, 2 = sección, 3 = subsección
+    title: str
+    page: int     # página donde empieza (1-based)
