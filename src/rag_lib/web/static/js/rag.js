@@ -8,6 +8,7 @@ let activeManualId = null;       // selected manual for navigation mode
 let currentOffset = 0;
 const LIMIT = 50;
 let openChunkId = null;          // chunk open in right panel
+let openChunk = null;            // loaded chunk data for the open detail panel
 let checkedManualIds = new Set(); // checked manuals for search filter (empty = all)
 let searchQuery = "";             // current query ("" = no search)
 let searchDebounce = null;        // debounce timer
@@ -15,12 +16,12 @@ let ftsResults = [];              // latest FTS results
 let semResults = [];              // latest semantic results
 let searchInFlight = false;       // true while either search fetch is pending
 
-// Upload state (A4)
+// Upload state
 let uploadFile = null;           // File object selected/dropped
 let uploadJobId = null;          // active job id being polled
 let uploadPollTimer = null;      // setInterval id for polling
 
-// Edit state (A4)
+// Edit state
 let editOriginalChunk = null;   // snapshot of chunk before editing
 
 // ---------------------------------------------------------------------------
@@ -309,7 +310,8 @@ async function openDetail(chunkId) {
   );
 
   // Load chunk detail
-  const chunk = await fetchJSON(`${API}/chunks/${chunkId}`);
+  openChunk = await fetchJSON(`${API}/chunks/${chunkId}`);
+  const chunk = openChunk;
   const sp = chunk.section_path || "";
   $("detail-title").textContent = `#${chunk.id} · p.${chunk.page} · ${chunk.chunk_type}${sp ? " · " + sp : ""}`;
   $("detail-text").textContent = chunk.text;
@@ -330,6 +332,7 @@ async function openDetail(chunkId) {
 
 function closeDetail() {
   openChunkId = null;
+  openChunk = null;
   document.querySelectorAll(".result-item, #chunks-body tr").forEach(el =>
     el.classList.remove("active")
   );
@@ -347,7 +350,7 @@ function closeDetail() {
 }
 
 // ---------------------------------------------------------------------------
-// Upload (A4)
+// Upload
 // ---------------------------------------------------------------------------
 function setUploadStatus(html, hidden = false) {
   const el = $("upload-status");
@@ -445,7 +448,7 @@ function pollUploadJob(jobId, manualName) {
 }
 
 // ---------------------------------------------------------------------------
-// Chunk editing (A4)
+// Chunk editing
 // ---------------------------------------------------------------------------
 function enterEditMode(chunk) {
   editOriginalChunk = chunk;
@@ -533,7 +536,7 @@ $("search-input").addEventListener("input", e => {
   searchDebounce = setTimeout(() => executeSearch(q), 320);
 });
 
-// Upload listeners (A4)
+// Upload listeners
 const dropArea = $("upload-drop-area");
 dropArea.addEventListener("dragover", e => { e.preventDefault(); dropArea.classList.add("dragging"); });
 dropArea.addEventListener("dragleave", () => dropArea.classList.remove("dragging"));
@@ -548,10 +551,9 @@ $("upload-file-input").addEventListener("change", e => {
 });
 $("upload-submit-btn").addEventListener("click", startUpload);
 
-// Edit listeners (A4)
+// Edit listeners
 $("detail-edit-btn").addEventListener("click", () => {
-  if (!openChunkId) return;
-  fetchJSON(`${API}/chunks/${openChunkId}`).then(chunk => enterEditMode(chunk));
+  if (openChunk) enterEditMode(openChunk);
 });
 $("edit-cancel-btn").addEventListener("click", exitEditMode);
 $("edit-save-btn").addEventListener("click", saveChunkEdit);

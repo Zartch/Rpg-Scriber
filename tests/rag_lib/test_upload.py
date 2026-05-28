@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -20,8 +21,6 @@ async def db(tmp_path):
 
 
 async def _wait_done(job_id: str, db_path: Path, *, timeout: float = 5.0) -> IngestJob:
-    """Poll until job reaches a terminal status."""
-    import time
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         j = await rag_lib.get_job(job_id, db_path)

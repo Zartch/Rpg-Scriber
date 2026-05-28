@@ -124,8 +124,7 @@ async def test_update_chunk_recalculates_text_hash(ingested_chunk, fake_embedder
     db_path, chunk_id = ingested_chunk
     nuevo = "texto completamente diferente"
     updated = await rag_lib.update_chunk(chunk_id, db_path, text=nuevo, embedder=fake_embedder)
-    import hashlib as hl
-    expected_hash = hl.sha256(nuevo.encode()).hexdigest()
+    expected_hash = hashlib.sha256(nuevo.encode()).hexdigest()
     assert updated.text_hash == expected_hash
 
 

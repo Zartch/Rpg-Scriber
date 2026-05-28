@@ -30,7 +30,7 @@ async def test_embed_returns_one_vector_per_text() -> None:
 
 
 async def test_embed_batches_large_input() -> None:
-    """Inputs exceeding _BATCH_SIZE trigger multiple API calls."""
+    """Inputs exceeding the per-batch item cap trigger multiple API calls."""
     batch_size = 3  # override for test
     total = 7
     texts = [f"text {i}" for i in range(total)]
@@ -50,7 +50,7 @@ async def test_embed_batches_large_input() -> None:
         mock_cls.return_value = instance
         instance.embeddings.create = fake_create
         embedder = OpenAIEmbedder(api_key="fake-key")
-        embedder._BATCH_SIZE = batch_size
+        embedder._MAX_ITEMS_PER_BATCH = batch_size
         result = await embedder.embed(texts)
 
     assert len(result) == total

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,6 @@ async def app(tmp_path, fake_embedder):
 
 
 async def _poll_job(client: AsyncClient, job_id: str, *, timeout: float = 5.0) -> dict:
-    import time
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         resp = await client.get(f"/api/rag/jobs/{job_id}")

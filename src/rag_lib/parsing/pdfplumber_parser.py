@@ -31,11 +31,14 @@ class PdfplumberParser(PdfParser):
         pages: list[ParsedPage] = []
         try:
             for page_obj in pdf.pages:
-                pages.append(self._parse_page(page_obj))
-        except PdfParseError:
-            raise
-        except Exception as exc:
-            raise PdfParseError(f"Error parsing PDF page: {exc}") from exc
+                try:
+                    pages.append(self._parse_page(page_obj))
+                except Exception as exc:
+                    logger.warning(
+                        "rag_lib: page %d parse failed (%s); falling back to empty",
+                        page_obj.page_number, exc,
+                    )
+                    pages.append(ParsedPage(page_num=page_obj.page_number, blocks=[]))
         finally:
             pdf.close()
 
@@ -49,14 +52,25 @@ class PdfplumberParser(PdfParser):
         page_num: int = page_obj.page_number  # pdfplumber is 1-indexed
         blocks: list[ProseBlock | TableBlock] = []
 
-        found_tables = page_obj.find_tables()
-        table_bboxes = [t.bbox for t in found_tables]
+        # find_tables() internally crops to detected table bboxes with strict=True;
+        # some PDFs have objects with coords slightly outside the page (e.g. x0 < 0)
+        # which makes that crop raise ValueError. Catch and skip affected tables.
+        try:
+            found_tables = page_obj.find_tables()
+        except ValueError:
+            found_tables = []
 
+        table_bboxes = []
         for ft in found_tables:
-            rows_raw = ft.extract() or []
+            try:
+                rows_raw = ft.extract() or []
+            except ValueError:
+                logger.debug("rag_lib: page %d — skipping table with out-of-bounds bbox", page_num)
+                continue
             rows = [[cell or "" for cell in row] for row in rows_raw]
             caption = self._extract_caption(page_obj, ft.bbox)
             blocks.append(TableBlock(rows=rows, page=page_num, caption=caption))
+            table_bboxes.append(ft.bbox)
 
         prose_text, fontsize_avg = self._extract_prose(page_obj, table_bboxes)
         if prose_text.strip():
@@ -68,8 +82,19 @@ class PdfplumberParser(PdfParser):
         self, page_obj: pdfplumber.page.Page, table_bbox: tuple
     ) -> str | None:
         x0, top, x1, _bottom = table_bbox
-        region = page_obj.crop((x0, max(0.0, top - _CAPTION_LOOKAHEAD_PT), x1, top))
-        text = region.extract_text()
+        # Clamp to page bounds — table bboxes can extend slightly outside
+        x0 = max(0.0, x0)
+        x1 = min(float(page_obj.width), x1)
+        top_clamped = max(0.0, top)
+        if x1 <= x0 or top_clamped <= 0.0:
+            return None
+        try:
+            region = page_obj.crop(
+                (x0, max(0.0, top_clamped - _CAPTION_LOOKAHEAD_PT), x1, top_clamped)
+            )
+            text = region.extract_text()
+        except ValueError:
+            return None
         return text.strip() if text and text.strip() else None
 
     def _extract_prose(

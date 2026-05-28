@@ -82,8 +82,6 @@ def build_router(db_path: str | Path, embedder: Embedder | None = None) -> APIRo
         results = await rag_lib.search_similar(chunk_id, db_path=db, k=k)
         return [dataclasses.asdict(r) for r in results]
 
-    # ── A4 endpoints ──────────────────────────────────────────────────────────
-
     @router.post("/api/rag/manuals/upload", status_code=202)
     async def upload_manual_endpoint(
         file: UploadFile,

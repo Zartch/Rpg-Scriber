@@ -25,6 +25,7 @@ dependencies = [
 
     # Web UI
     "fastapi>=0.100",
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.23",
     "websockets>=12.0",
 
