@@ -1,6 +1,10 @@
 // rag.js — ES module for /rag page (A3: hybrid search + detail panel)
 const API = "/api/rag";
 
+// User-facing labels for chunk_type (prose/table are backend values)
+const CHUNK_TYPE_LABEL = { prose: "Texto", table: "Tabla" };
+const chunkTypeLabel = t => CHUNK_TYPE_LABEL[t] || t;
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -23,6 +27,10 @@ let uploadPollTimer = null;      // setInterval id for polling
 
 // Edit state
 let editOriginalChunk = null;   // snapshot of chunk before editing
+
+// Chunk list pagination state
+let chunksLoading = false;
+let chunksExhausted = false;
 
 // ---------------------------------------------------------------------------
 // DOM refs (cached after DOMContentLoaded)
@@ -66,7 +74,7 @@ function makeResultItem(r, badgeClass, badgeLabel) {
   const div = document.createElement("div");
   div.className = "result-item" + (r.chunk_id === openChunkId ? " active" : "");
   div.dataset.chunkId = r.chunk_id;
-  const meta = `#${r.chunk_id} · ${r.chunk.page ? `p.${r.chunk.page}` : ""} · <span class="badge ${badgeClass}">${badgeLabel}</span>`;
+  const meta = `${r.chunk.page ? `Pág. ${r.chunk.page}` : ""} · <span class="badge ${badgeClass}">${badgeLabel}</span>`;
   const preview = escapeHtml((r.chunk.text || "").replace(/\n/g, " ").slice(0, 90));
   const score = `<span class="result-score">${r.score.toFixed(2)}</span>`;
   div.innerHTML = `
@@ -84,7 +92,7 @@ function renderFtsResults(results) {
     container.innerHTML = '<div class="loading">Sin resultados</div>';
     return;
   }
-  results.forEach(r => container.appendChild(makeResultItem(r, "badge-fts", "FTS")));
+  results.forEach(r => container.appendChild(makeResultItem(r, "badge-fts", "Texto")));
 }
 
 function renderSemResults(results) {
@@ -94,7 +102,7 @@ function renderSemResults(results) {
     container.innerHTML = '<div class="loading">Sin resultados</div>';
     return;
   }
-  results.forEach(r => container.appendChild(makeResultItem(r, "badge-sem", "SEM")));
+  results.forEach(r => container.appendChild(makeResultItem(r, "badge-sem", "Tema")));
 }
 
 function renderMergedResults() {
@@ -104,10 +112,10 @@ function renderMergedResults() {
   const seen = new Set();
   const merged = [];
   for (const r of ftsResults) {
-    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-fts", label: "FTS" }); }
+    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-fts", label: "Texto" }); }
   }
   for (const r of semResults) {
-    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-sem", label: "SEM" }); }
+    if (!seen.has(r.chunk_id)) { seen.add(r.chunk_id); merged.push({ r, badge: "badge-sem", label: "Tema" }); }
   }
   if (!merged.length) {
     container.innerHTML = '<div class="loading">Sin resultados</div>';
@@ -158,7 +166,7 @@ async function loadManuals() {
       <input type="checkbox" class="manual-check" data-id="${m.id}" ${checked}>
       <div style="flex:1;min-width:0;cursor:pointer" class="manual-label">
         <div class="manual-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</div>
-        <div class="meta">${m.page_count} pp · ${m.chunk_count} chunks</div>
+        <div class="meta">${m.page_count} pp · ${m.chunk_count} fragmentos</div>
       </div>
       <button class="delete-btn" title="Eliminar manual" data-id="${m.id}">✕</button>
     `;
@@ -191,7 +199,9 @@ async function loadManuals() {
 // ---------------------------------------------------------------------------
 function clearChunks() {
   activeManualId = null;
-  $("chunks-title").textContent = "Selecciona un manual";
+  chunksExhausted = false;
+  currentOffset = 0;
+  $("chunks-title").textContent = "Selecciona un manual de la izquierda";
   $("chunks-table").hidden = true;
   $("chunks-body").innerHTML = "";
   $("load-more").hidden = true;
@@ -211,29 +221,38 @@ async function selectManual(id, name) {
 }
 
 async function loadChunks(replace = false) {
-  const rows = await fetchJSON(`${API}/manuals/${activeManualId}/chunks?offset=${currentOffset}&limit=${LIMIT}`);
-  const tbody = $("chunks-body");
-  if (replace) tbody.innerHTML = "";
-  for (const c of rows) {
-    const tr = document.createElement("tr");
-    tr.dataset.id = c.id;
-    if (c.id === openChunkId) tr.classList.add("active");
-    const sp = c.section_path
-      ? `<small title="${escapeHtml(c.section_path)}">${escapeHtml(c.section_path.slice(0, 30))}${c.section_path.length > 30 ? "…" : ""}</small>`
-      : "—";
-    const preview = escapeHtml((c.text || "").replace(/\n/g, " ").slice(0, 80));
-    tr.innerHTML = `
-      <td>${c.seq}</td>
-      <td>${c.page}${c.page_end ? `–${c.page_end}` : ""}</td>
-      <td><span class="badge badge-${c.chunk_type}">${c.chunk_type}</span></td>
-      <td title="${c.section_path || ""}">${sp}</td>
-      <td title="${preview}">${preview}</td>
-    `;
-    tr.addEventListener("click", () => openDetail(c.id));
-    tbody.appendChild(tr);
+  if (chunksLoading) return;
+  if (!replace && chunksExhausted) return;
+  chunksLoading = true;
+  if (replace) { chunksExhausted = false; currentOffset = 0; }
+  try {
+    const rows = await fetchJSON(`${API}/manuals/${activeManualId}/chunks?offset=${currentOffset}&limit=${LIMIT}`);
+    const tbody = $("chunks-body");
+    if (replace) tbody.innerHTML = "";
+    for (const c of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.id = c.id;
+      if (c.id === openChunkId) tr.classList.add("active");
+      const sp = c.section_path
+        ? `<small title="${escapeHtml(c.section_path)}">${escapeHtml(c.section_path.slice(0, 30))}${c.section_path.length > 30 ? "…" : ""}</small>`
+        : "—";
+      const preview = escapeHtml((c.text || "").replace(/\n/g, " ").slice(0, 80));
+      tr.innerHTML = `
+        <td>${c.seq + 1}</td>
+        <td>${c.page}${c.page_end ? `–${c.page_end}` : ""}</td>
+        <td><span class="badge badge-${c.chunk_type}">${chunkTypeLabel(c.chunk_type)}</span></td>
+        <td title="${c.section_path || ""}">${sp}</td>
+        <td title="${preview}">${preview}</td>
+      `;
+      tr.addEventListener("click", () => openDetail(c.id));
+      tbody.appendChild(tr);
+    }
+    currentOffset += rows.length;
+    if (rows.length < LIMIT) chunksExhausted = true;
+    $("load-more").hidden = chunksExhausted;
+  } finally {
+    chunksLoading = false;
   }
-  currentOffset += rows.length;
-  $("load-more").hidden = rows.length < LIMIT;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +315,7 @@ async function executeSearch(q) {
 // ---------------------------------------------------------------------------
 async function openDetail(chunkId) {
   openChunkId = chunkId;
-  $("detail-title").textContent = `Cargando #${chunkId}…`;
+  $("detail-title").textContent = "Cargando…";
   $("detail-text").textContent = "";
   $("similar-list").innerHTML = '<div class="similar-loading">Cargando similares…</div>';
   applyLayout();
@@ -313,7 +332,7 @@ async function openDetail(chunkId) {
   openChunk = await fetchJSON(`${API}/chunks/${chunkId}`);
   const chunk = openChunk;
   const sp = chunk.section_path || "";
-  $("detail-title").textContent = `#${chunk.id} · p.${chunk.page} · ${chunk.chunk_type}${sp ? " · " + sp : ""}`;
+  $("detail-title").textContent = `Página ${chunk.page} · ${chunkTypeLabel(chunk.chunk_type)}${sp ? " · " + sp : ""}`;
   $("detail-text").textContent = chunk.text;
 
   // Load similar
@@ -498,7 +517,7 @@ async function saveChunkEdit() {
     exitEditMode();
     const sp = updated.section_path || "";
     $("detail-title").textContent =
-      `#${updated.id} · p.${updated.page} · ${updated.chunk_type}${sp ? " · " + sp : ""}`;
+      `Página ${updated.page} · ${chunkTypeLabel(updated.chunk_type)}${sp ? " · " + sp : ""}`;
     $("detail-text").textContent = updated.text;
     editOriginalChunk = updated;
   } catch (e) {
@@ -513,6 +532,15 @@ async function saveChunkEdit() {
 // Init
 // ---------------------------------------------------------------------------
 $("load-more").addEventListener("click", () => loadChunks(false));
+
+// Infinite scroll on the chunks panel
+$("chunks-scroll").addEventListener("scroll", e => {
+  if (!activeManualId || chunksLoading || chunksExhausted) return;
+  const el = e.currentTarget;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+    loadChunks(false);
+  }
+});
 
 $("detail-close").addEventListener("click", closeDetail);
 

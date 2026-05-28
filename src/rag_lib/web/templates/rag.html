@@ -9,7 +9,7 @@
 <body>
   <div id="search-bar">
     <span class="search-icon">🔍</span>
-    <input id="search-input" type="text" placeholder="Buscar en manuales… (FTS5 + semántico)">
+    <input id="search-input" type="text" placeholder="Buscar en los manuales — por palabras o por significado">
     <button id="search-clear" hidden title="Limpiar búsqueda">✕</button>
   </div>
 
@@ -18,7 +18,18 @@
     <div id="manuals-panel">
       <h2>Manuales</h2>
 
-      <!-- Zona upload A4 -->
+      <details id="help-box">
+        <summary>¿Cómo funciona?</summary>
+        <p>Cada manual se divide automáticamente en <b>fragmentos</b> (párrafos y tablas) para poder buscar dentro.</p>
+        <p>La búsqueda lanza dos modos a la vez:</p>
+        <ul>
+          <li><b>Por palabras</b>: coincidencias literales, como Ctrl+F.</li>
+          <li><b>Por significado</b>: entiende lo que pides aunque no uses las mismas palabras.</li>
+        </ul>
+        <p>Si la extracción del PDF salió mal, puedes editar cualquier fragmento haciendo clic en él.</p>
+      </details>
+
+      <!-- Zona upload -->
       <div id="upload-zone">
         <div id="upload-drop-area">
           <div class="upload-icon">📄</div>
@@ -43,32 +54,38 @@
     <div id="center-panel">
       <!-- Modo navegación (sin búsqueda) -->
       <div id="chunks-area">
-        <h2 id="chunks-title">Selecciona un manual</h2>
-        <table id="chunks-table" hidden>
-          <thead>
-            <tr>
-              <th>#</th><th>Pág.</th><th>Tipo</th><th>Sección</th><th>Texto</th>
-            </tr>
-          </thead>
-          <tbody id="chunks-body"></tbody>
-        </table>
-        <button id="load-more" hidden>Cargar más ↓</button>
+        <h2 id="chunks-title">Selecciona un manual de la izquierda</h2>
+        <div id="chunks-scroll">
+          <table id="chunks-table" hidden>
+            <thead>
+              <tr>
+                <th title="Orden dentro del manual">Nº</th>
+                <th>Página</th>
+                <th title="Párrafo de texto o tabla">Tipo</th>
+                <th title="Capítulo / sección del manual">Sección</th>
+                <th>Vista previa</th>
+              </tr>
+            </thead>
+            <tbody id="chunks-body"></tbody>
+          </table>
+          <button id="load-more" hidden>Cargar más ↓</button>
+        </div>
       </div>
 
       <!-- Modo búsqueda: dos columnas -->
       <div id="search-results" hidden>
         <div id="search-columns">
           <div class="search-col" id="fts-col">
-            <div class="col-header">
-              <span>Keywords</span>
-              <span class="badge badge-fts">FTS5</span>
+            <div class="col-header" title="Coincidencias literales con las palabras buscadas">
+              <span>Por palabras</span>
+              <span class="badge badge-fts">Texto</span>
             </div>
             <div id="fts-results" class="results-list"></div>
           </div>
           <div class="search-col" id="sem-col">
-            <div class="col-header">
-              <span>Semántico</span>
-              <span class="badge badge-sem">SEM</span>
+            <div class="col-header" title="Fragmentos que tratan del mismo tema aunque no coincidan las palabras">
+              <span>Por significado</span>
+              <span class="badge badge-sem">Tema</span>
             </div>
             <div id="sem-results" class="results-list"></div>
           </div>
@@ -100,24 +117,24 @@
         </div>
       </div>
 
-      <!-- Modo edición (A4) -->
+      <!-- Modo edición -->
       <div id="detail-edit" hidden>
         <div class="edit-field">
-          <label class="edit-label">Tipo</label>
+          <label class="edit-label">Tipo de contenido</label>
           <select id="edit-chunk-type" class="edit-select">
-            <option value="prose">prose</option>
-            <option value="table">table</option>
+            <option value="prose">Párrafo de texto</option>
+            <option value="table">Tabla</option>
           </select>
         </div>
         <div class="edit-field">
-          <label class="edit-label">Sección</label>
-          <input type="text" id="edit-section-path" class="edit-input" placeholder="(sin sección)">
+          <label class="edit-label">Sección del manual</label>
+          <input type="text" id="edit-section-path" class="edit-input" placeholder="Ej: Capítulo 3 / Combate">
         </div>
         <div class="edit-field edit-field-grow">
           <label class="edit-label">Texto</label>
           <textarea id="edit-text" class="edit-textarea" rows="10"></textarea>
         </div>
-        <p class="edit-warning">⚠ Guardar regenera los embeddings (~1s)</p>
+        <p class="edit-warning">⚠ Al guardar se reindexa este fragmento para la búsqueda (~1s)</p>
         <div class="edit-actions">
           <button id="edit-save-btn" class="btn-primary btn-sm">Guardar</button>
           <button id="edit-cancel-btn" class="btn-secondary btn-sm">Cancelar</button>
