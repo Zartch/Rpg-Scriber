@@ -127,7 +127,7 @@ class PdfplumberParser(PdfParser):
 
         chars = [
             c for c in filtered.chars
-            if c.get("size") and float(c["size"]) > 0 and c.get("text", "").strip()
+            if c.get("size") and float(c["size"]) > 0 and c.get("text", "")
         ]
         if not chars:
             return []
@@ -136,13 +136,10 @@ class PdfplumberParser(PdfParser):
         chars_sorted = sorted(chars, key=lambda c: (round(float(c["top"]) / 2) * 2, float(c["x0"])))
         lines: list[list[dict]] = []
         for ch in chars_sorted:
-            placed = False
-            for line in lines:
-                if abs(float(ch["top"]) - float(line[0]["top"])) <= 2.0:
-                    line.append(ch)
-                    placed = True
-                    break
-            if not placed:
+            top_key = round(float(ch["top"]) / 2) * 2
+            if lines and abs(float(lines[-1][0]["top"]) - float(ch["top"])) <= 2.0:
+                lines[-1].append(ch)
+            else:
                 lines.append([ch])
 
         # Step 3: group adjacent lines with similar fontsize (±1pt) into blocks
@@ -160,9 +157,9 @@ class PdfplumberParser(PdfParser):
         for line in sorted(lines, key=lambda ln: float(ln[0]["top"])):
             fs = _line_fontsize(line)
             if current_fs is None or abs(fs - current_fs) <= 1.0:
+                if current_fs is None:
+                    current_fs = fs
                 current_lines.append(line)
-                sizes_all = [float(c["size"]) for ln in current_lines for c in ln if c.get("size")]
-                current_fs = sum(sizes_all) / len(sizes_all) if sizes_all else fs
             else:
                 # Flush current block
                 text = " ".join(_line_text(ln) for ln in current_lines).strip()
@@ -173,39 +170,9 @@ class PdfplumberParser(PdfParser):
 
         # Flush last block
         if current_lines:
-            sizes_all = [float(c["size"]) for ln in current_lines for c in ln if c.get("size")]
-            fs_final = sum(sizes_all) / len(sizes_all) if sizes_all else 11.0
             text = " ".join(_line_text(ln) for ln in current_lines).strip()
             if text:
-                blocks.append((text, fs_final))
+                blocks.append((text, current_fs or 11.0))
 
         return blocks
 
-    def _extract_prose(
-        self, page_obj: pdfplumber.page.Page, table_bboxes: list[tuple]
-    ) -> tuple[str, float]:
-        if table_bboxes:
-            # Keep only chars outside every table bbox
-            def outside_tables(obj: dict) -> bool:
-                if obj.get("object_type") != "char":
-                    return True
-                for tb in table_bboxes:
-                    if (
-                        obj.get("x0", 0) >= tb[0] - 1
-                        and obj.get("x1", 0) <= tb[2] + 1
-                        and obj.get("top", 0) >= tb[1] - 1
-                        and obj.get("bottom", 0) <= tb[3] + 1
-                    ):
-                        return False
-                return True
-
-            filtered = page_obj.filter(outside_tables)
-        else:
-            filtered = page_obj
-
-        text = filtered.extract_text() or ""
-        chars = filtered.chars
-        sizes = [float(c["size"]) for c in chars if c.get("size") and float(c["size"]) > 0]
-        fontsize_avg = sum(sizes) / len(sizes) if sizes else 11.0
-
-        return text, fontsize_avg
