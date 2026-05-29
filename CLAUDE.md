@@ -51,6 +51,7 @@ Ver detalles completos: [`docs/architecture.md`](docs/architecture.md)
 - Campaign summaries: [`docs/campaign-summaries.md`](docs/campaign-summaries.md)
 - TTS narración: [`docs/tts-narration.md`](docs/tts-narration.md)
 - Grafo canónico de entidades/relaciones: [`docs/canonical-graph-model.md`](docs/canonical-graph-model.md)
+- Módulo RAG de manuales: [`docs/rag-lib.md`](docs/rag-lib.md)
 
 ## Convenciones de Código
 

@@ -416,7 +416,6 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session_summary = session.get("session_summary", "") or ""
     rows = await db.transcriptions.get_transcriptions(session_id)
     if not rows:
         raise HTTPException(
@@ -448,7 +447,7 @@ async def generate_session_chronology(session_id: str) -> dict[str, Any]:
     )
 
     chronology = await summarizer.generate_chronology_from_transcriptions(
-        [dict(r) for r in rows], session_summary
+        [dict(r) for r in rows], session_id=session_id
     )
     await db.sessions.update_session_chronology(session_id, chronology)
 

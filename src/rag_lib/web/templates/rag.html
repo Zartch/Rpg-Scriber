@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG — Manuales</title>
+  <link rel="stylesheet" href="/rag-static/css/rag.css">
+</head>
+<body>
+  <div id="search-bar">
+    <span class="search-icon">🔍</span>
+    <input id="search-input" type="text" placeholder="Buscar en los manuales — por palabras o por significado">
+    <button id="search-clear" hidden title="Limpiar búsqueda">✕</button>
+  </div>
+
+  <div id="app">
+    <!-- Panel izquierdo: manuales -->
+    <div id="manuals-panel">
+      <h2>Manuales</h2>
+
+      <details id="help-box">
+        <summary>¿Cómo funciona?</summary>
+        <p>Cada manual se divide automáticamente en <b>fragmentos</b> (párrafos y tablas) para poder buscar dentro.</p>
+        <p>La búsqueda lanza dos modos a la vez:</p>
+        <ul>
+          <li><b>Por palabras</b>: coincidencias literales, como Ctrl+F.</li>
+          <li><b>Por significado</b>: entiende lo que pides aunque no uses las mismas palabras.</li>
+        </ul>
+        <p>Si la extracción del PDF salió mal, puedes editar cualquier fragmento haciendo clic en él.</p>
+      </details>
+
+      <!-- Zona upload -->
+      <div id="upload-zone">
+        <div id="upload-drop-area">
+          <div class="upload-icon">📄</div>
+          <p class="upload-hint">Arrastra un PDF aquí</p>
+          <p class="upload-or">o</p>
+          <label class="btn-file">
+            Seleccionar archivo
+            <input type="file" id="upload-file-input" accept=".pdf" hidden>
+          </label>
+          <input type="text" id="upload-name-input" placeholder="Nombre del manual" class="upload-name-input" disabled>
+          <button id="upload-submit-btn" class="btn-primary" disabled>↑ Subir PDF</button>
+        </div>
+        <div id="upload-status" hidden></div>
+      </div>
+
+      <ul id="manuals-list">
+        <li class="loading">Cargando…</li>
+      </ul>
+    </div>
+
+    <!-- Panel central: chunks o resultados de búsqueda -->
+    <div id="center-panel">
+      <!-- Modo navegación (sin búsqueda) -->
+      <div id="chunks-area">
+        <h2 id="chunks-title">Selecciona un manual de la izquierda</h2>
+        <div id="chunks-scroll">
+          <table id="chunks-table" hidden>
+            <thead>
+              <tr>
+                <th title="Orden dentro del manual">Nº</th>
+                <th>Página</th>
+                <th title="Párrafo de texto o tabla">Tipo</th>
+                <th title="Capítulo / sección del manual">Sección</th>
+                <th>Vista previa</th>
+              </tr>
+              <tr class="filter-row">
+                <th></th>
+                <th>
+                  <div class="filter-range">
+                    <input type="number" id="filter-page-min" placeholder="—" min="1" class="filter-input filter-num">
+                    <span class="range-sep">→</span>
+                    <input type="number" id="filter-page-max" placeholder="—" min="1" class="filter-input filter-num">
+                  </div>
+                </th>
+                <th>
+                  <select id="filter-type" class="filter-input">
+                    <option value="">Todos</option>
+                    <option value="prose">Texto</option>
+                    <option value="table">Tabla</option>
+                  </select>
+                </th>
+                <th>
+                  <input type="text" id="filter-section" placeholder="contiene…" class="filter-input">
+                </th>
+                <th>
+                  <button id="filter-clear" class="filter-clear" title="Limpiar filtros" hidden>✕</button>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="chunks-body"></tbody>
+          </table>
+          <button id="load-more" hidden>Cargar más ↓</button>
+        </div>
+      </div>
+
+      <!-- Modo búsqueda: dos columnas -->
+      <div id="search-results" hidden>
+        <div id="search-columns">
+          <div class="search-col" id="fts-col">
+            <div class="col-header" title="Coincidencias literales con las palabras buscadas">
+              <span>Por palabras</span>
+              <span class="badge badge-fts">Texto</span>
+            </div>
+            <div id="fts-results" class="results-list"></div>
+          </div>
+          <div class="search-col" id="sem-col">
+            <div class="col-header" title="Fragmentos que tratan del mismo tema aunque no coincidan las palabras">
+              <span>Por significado</span>
+              <span class="badge badge-sem">Tema</span>
+            </div>
+            <div id="sem-results" class="results-list"></div>
+          </div>
+        </div>
+        <!-- Estado 4: lista mezclada (cuando hay chunk abierto) -->
+        <div id="merged-results" hidden>
+          <div class="col-header"><span>Resultados</span></div>
+          <div id="merged-list" class="results-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize handle for the detail panel -->
+    <div id="detail-resizer" hidden></div>
+
+    <!-- Panel derecho: detalle del chunk + similares (A3 + edición A4) -->
+    <div id="detail-panel" hidden>
+      <div id="detail-header">
+        <span id="detail-title"></span>
+        <div class="detail-header-actions">
+          <button id="detail-edit-btn" class="btn-secondary btn-sm">✎ Editar</button>
+          <button id="detail-close" title="Cerrar detalle">✕</button>
+        </div>
+      </div>
+
+      <!-- Vista normal (A3) -->
+      <div id="detail-view">
+        <div id="detail-text"></div>
+        <div id="similar-section">
+          <div class="col-header"><span>Similares</span></div>
+          <div id="similar-list" class="results-list"></div>
+        </div>
+      </div>
+
+      <!-- Modo edición -->
+      <div id="detail-edit" hidden>
+        <div class="edit-field">
+          <label class="edit-label">Tipo de contenido</label>
+          <select id="edit-chunk-type" class="edit-select">
+            <option value="prose">Párrafo de texto</option>
+            <option value="table">Tabla</option>
+          </select>
+        </div>
+        <div class="edit-field">
+          <label class="edit-label">Sección del manual</label>
+          <input type="text" id="edit-section-path" class="edit-input" placeholder="Ej: Capítulo 3 / Combate">
+        </div>
+        <div class="edit-field edit-field-grow">
+          <label class="edit-label">Texto</label>
+          <textarea id="edit-text" class="edit-textarea" rows="10"></textarea>
+        </div>
+        <p class="edit-warning">⚠ Al guardar se reindexa este fragmento para la búsqueda (~1s)</p>
+        <div class="edit-actions">
+          <button id="edit-save-btn" class="btn-primary btn-sm">Guardar</button>
+          <button id="edit-cancel-btn" class="btn-secondary btn-sm">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/rag-static/js/rag.js"></script>
+</body>
+</html>

@@ -351,7 +351,7 @@ class TestDatabaseMerges:
         await db.entities.merge_locations("c1", "Ciudad Nocturna", "Night City")
 
         locations = await db.entities.get_locations("c1")
-        assert [l["name"] for l in locations] == ["Night City"]
+        assert [loc["name"] for loc in locations] == ["Night City"]
         relationships = await db.entities.get_character_relationships("c1")
         assert relationships == []
 
@@ -628,3 +628,90 @@ class TestDatabaseConnection:
         assert database._conn is not None
         await database.close()
         assert database._conn is None
+
+
+class TestGetPreviousSessionChronology:
+    async def test_returns_chronology_of_most_recent_completed_session(
+        self, db: Database
+    ) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1", chronology="Cronología sesión 1.")
+        await db.sessions.create_session("s2", "c1")
+        await db.sessions.end_session("s2", summary="S2", chronology="Cronología sesión 2.")
+        await db.sessions.create_session("s3", "c1")  # active, this is the "current"
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s3")
+        assert result == "Cronología sesión 2."
+
+    async def test_excludes_current_session(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1", chronology="Cronología sesión 1.")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s1")
+        assert result == ""
+
+    async def test_returns_empty_when_no_previous_session(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s1")
+        assert result == ""
+
+    async def test_returns_empty_when_previous_has_no_chronology(
+        self, db: Database
+    ) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1")  # no chronology arg
+        await db.sessions.create_session("s2", "c1")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s2")
+        assert result == ""
+
+    async def test_ignores_active_sessions(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1", chronology="Antigua.")
+        await db.sessions.create_session("s2", "c1")  # active, not ended
+        await db.sessions.create_session("s3", "c1")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s3")
+        assert result == "Antigua."
+
+    async def test_returns_directly_preceding_session_not_most_recent(
+        self, db: Database
+    ) -> None:
+        """Historical regeneration of s2 gets s1's chronology, not s3 or s4."""
+        import asyncio
+
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1", chronology="Cronología sesión 1.")
+        await asyncio.sleep(0.01)
+        await db.sessions.create_session("s2", "c1")
+        await db.sessions.end_session("s2", summary="S2", chronology="Cronología sesión 2.")
+        await asyncio.sleep(0.01)
+        await db.sessions.create_session("s3", "c1")
+        await db.sessions.end_session("s3", summary="S3", chronology="Cronología sesión 3.")
+        await asyncio.sleep(0.01)
+        await db.sessions.create_session("s4", "c1")
+        await db.sessions.end_session("s4", summary="S4", chronology="Cronología sesión 4.")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s2")
+        assert result == "Cronología sesión 1."
+
+    async def test_excludes_merged_sessions(self, db: Database) -> None:
+        await db.campaigns.upsert_campaign(campaign_id="c1", name="Test")
+        await db.sessions.create_session("s1", "c1")
+        await db.sessions.end_session("s1", summary="S1", chronology="Merged session chronology.")
+        await db.sessions.create_session("s2", "c1")
+        await db.sessions.end_session("s2", summary="S2", chronology="Valid session chronology.")
+        await db.sessions.create_session("s3", "c1")  # active, this is the "current"
+
+        await db.sessions.merge_sessions("s1", "s2")
+
+        result = await db.sessions.get_previous_session_chronology("c1", "s3")
+        # s1 is merged into s2, so s1 is excluded. s2 is the previous session with the merged chronology.
+        assert result == "Valid session chronology.\nMerged session chronology."

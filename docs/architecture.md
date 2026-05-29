@@ -168,3 +168,32 @@ Discord opus → voice_recv decrypt → opus decode → stereo PCM (3840 bytes/2
 
 ### Modo genérico
 Sin `--campaign`, `Application` crea `CampaignContext.create_generic()` con `GENERIC_SYSTEM_PROMPT`. El summarizer funciona igual.
+
+## Módulo rag_lib
+
+Standalone — sin dependencias de `rpg_scribe`. Se monta en FastAPI vía `build_router`.
+
+```
+src/rag_lib/
+├── __init__.py              # API pública: ingest_pdf, upload_pdf, search, update_chunk…
+├── types.py                 # Dataclasses: Manual, Chunk, SearchResult, IngestJob, IngestResult
+├── schema.py                # RAG_SCHEMA_SQL — 5 tablas + triggers FTS5
+├── store.py                 # Database + repositorios (ManualRepo, ChunkRepo, EmbeddingRepo, JobRepo)
+├── chunking.py              # run_chunker — divide ParsedPages en Chunks
+├── errors.py                # PdfParseError, EmbeddingError
+├── parsing/
+│   └── pdfplumber_parser.py # PdfplumberParser → list[ParsedPage]
+├── embedding/
+│   ├── base.py              # Embedder ABC (embed, dim, model)
+│   ├── openai.py            # OpenAIEmbedder (text-embedding-3-small, dim=1536)
+│   └── index.py             # VectorIndex — índice numpy in-memory, cosine search
+└── web/
+    ├── __init__.py          # build_router(db_path, embedder) → APIRouter
+    ├── router.py            # Endpoints /rag + /api/rag/*
+    ├── templates/rag.html   # SPA tres paneles
+    └── static/
+        ├── js/rag.js        # ES module — estado, búsqueda, upload, edición
+        └── css/rag.css      # Estilos del panel RAG
+```
+
+Ver API pública, tipos y flujo de ingesta en [`rag-lib.md`](rag-lib.md).

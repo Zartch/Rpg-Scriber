@@ -37,3 +37,23 @@
 | WS | `/ws/live` | WebSocket para eventos en tiempo real |
 
 Detalles del flujo TTS (caché compartida entre navegador y Discord, controles de transporte, drivers frontend) en [`tts-narration.md`](tts-narration.md).
+
+## RAG — Manuales (`rag_lib`)
+
+Montados por `build_router(db_path)`. La página web es `/rag`.
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/rag` | SPA de manuales (HTML) |
+| GET | `/api/rag/manuals` | Listar manuales |
+| DELETE | `/api/rag/manuals/{id}` | Eliminar manual (204) |
+| GET | `/api/rag/manuals/{id}/chunks` | Chunks de un manual (`offset`, `limit`) |
+| GET | `/api/rag/chunks/{id}` | Chunk por ID |
+| PATCH | `/api/rag/chunks/{id}` | Editar chunk (`text`, `section_path`, `chunk_type`) — regenera embedding si cambia `text` |
+| GET | `/api/rag/chunks/{id}/similar` | Top-k chunks similares (`k=5`) |
+| GET | `/api/rag/search/fts` | Búsqueda FTS5 (`q`, `manual_ids`, `k=10`) |
+| GET | `/api/rag/search/semantic` | Búsqueda semántica (`q`, `manual_ids`, `k=10`) |
+| POST | `/api/rag/manuals/upload` | Subir PDF en background — 202 con `{id, status}` (multipart: `file` + `manual_name`) |
+| GET | `/api/rag/jobs/{job_id}` | Estado de un job de ingesta |
+
+Ver detalles de arquitectura, tipos y búsqueda híbrida en [`rag-lib.md`](rag-lib.md).

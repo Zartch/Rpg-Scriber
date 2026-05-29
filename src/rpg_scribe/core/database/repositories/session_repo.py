@@ -219,6 +219,39 @@ class SessionRepository:
         await self.conn.commit()
         return cursor.rowcount > 0
 
+    async def get_previous_session_chronology(
+        self, campaign_id: str, current_session_id: str
+    ) -> str:
+        """Return the chronology of the most recently completed session that ended
+        before *current_session_id* within *campaign_id*.
+
+        When *current_session_id* has no ``ended_at`` (still active), the filter
+        is skipped and the most recently completed session is returned instead.
+
+        Returns "" if no qualifying session exists or its chronology is empty.
+        """
+        cursor = await self.conn.execute(
+            """
+            SELECT session_chronology FROM sessions
+            WHERE campaign_id = ?
+              AND id != ?
+              AND status = 'completed'
+              AND (merged_into IS NULL OR merged_into = '')
+              AND ended_at IS NOT NULL
+              AND (
+                  (SELECT ended_at FROM sessions WHERE id = ?) IS NULL
+                  OR ended_at < (SELECT ended_at FROM sessions WHERE id = ?)
+              )
+            ORDER BY ended_at DESC
+            LIMIT 1
+            """,
+            (campaign_id, current_session_id, current_session_id, current_session_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return ""
+        return row["session_chronology"] or ""
+
     @staticmethod
     def _merge_text_fields(primary: str, secondary: str) -> str:
         """Merge two description-like fields without losing unique text."""
