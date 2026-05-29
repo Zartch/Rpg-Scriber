@@ -7,7 +7,7 @@ from typing import Any
 
 import tiktoken
 
-from rag_lib.types import ParsedPage, ProseBlock, TableBlock
+from rag_lib.types import ParsedPage, ProseBlock, TableBlock, TocEntry
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +64,30 @@ def should_merge_across_pages(last_text: str, next_text: str) -> bool:
     return last_char not in TERMINATORS and not next_first.isupper()
 
 
+def _toc_path_at(page: int, toc: list[TocEntry]) -> str | None:
+    """Return the active hierarchical TOC path for a given page number.
+
+    Scans the TOC in order. Entries with page > given page stop the scan.
+    When a new entry appears at level N, all levels deeper than N are cleared.
+    """
+    active: dict[int, str] = {}
+    for entry in toc:
+        if entry.page > page:
+            break
+        active[entry.level] = entry.title
+        for deeper in [lvl for lvl in active if lvl > entry.level]:
+            del active[deeper]
+    if not active:
+        return None
+    return " / ".join(active[lvl] for lvl in sorted(active))
+
+
 def run_chunker(
     pages: list[ParsedPage],
     *,
     token_target: int = 500,
     overlap: int = 75,
+    toc: list[TocEntry] | None = None,
 ) -> list[dict[str, Any]]:
     """Process ParsedPages into chunk dicts ready for DB insertion.
 
@@ -99,8 +118,13 @@ def run_chunker(
     # Helpers (closures over state above)
     # ------------------------------------------------------------------
 
-    def current_section_path() -> str | None:
-        return " / ".join(text for _, text in section_stack) if section_stack else None
+    def current_section_path(page: int | None = None) -> str | None:
+        actual_page = page or buffer_page_start or 1
+        toc_base = _toc_path_at(actual_page, toc) if toc else None
+        fontsize_part = " / ".join(text for _, text in section_stack) if section_stack else None
+        if toc_base and fontsize_part:
+            return toc_base + " / " + fontsize_part
+        return toc_base or fontsize_part
 
     def _make_hash(text: str) -> str:
         return hashlib.sha256(text.encode()).hexdigest()
@@ -180,7 +204,7 @@ def run_chunker(
                 _split_oversized_buffer()
                 _flush_buffer()
                 # Build table chunk text
-                sp = current_section_path()
+                sp = current_section_path(block.page)
                 parts = []
                 if sp:
                     parts.append(f"[{sp}]")

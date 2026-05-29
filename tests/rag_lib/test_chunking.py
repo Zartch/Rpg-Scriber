@@ -176,3 +176,97 @@ def test_heading_block_propagates_to_subsequent_prose_chunks() -> None:
     body_chunks = [c for c in chunks if c["chunk_type"] == "prose" and c["section_path"]]
     assert len(body_chunks) >= 1
     assert "Combate" in body_chunks[0]["section_path"]
+
+
+from rag_lib.types import TocEntry
+
+
+# ---------------------------------------------------------------------------
+# _toc_path_at helper
+# ---------------------------------------------------------------------------
+
+def test_toc_path_at_returns_none_for_empty_toc() -> None:
+    from rag_lib.chunking import _toc_path_at
+    assert _toc_path_at(1, []) is None
+
+
+def test_toc_path_at_returns_chapter_title() -> None:
+    from rag_lib.chunking import _toc_path_at
+    toc = [TocEntry(1, "Capítulo 1", 1), TocEntry(1, "Capítulo 2", 5)]
+    assert _toc_path_at(1, toc) == "Capítulo 1"
+    assert _toc_path_at(4, toc) == "Capítulo 1"
+    assert _toc_path_at(5, toc) == "Capítulo 2"
+
+
+def test_toc_path_at_combines_hierarchy() -> None:
+    from rag_lib.chunking import _toc_path_at
+    toc = [
+        TocEntry(1, "Capítulo 1", 1),
+        TocEntry(2, "Iniciativa", 1),
+        TocEntry(1, "Capítulo 2", 5),
+    ]
+    assert _toc_path_at(2, toc) == "Capítulo 1 / Iniciativa"
+
+
+def test_toc_path_at_clears_deeper_levels_on_new_parent() -> None:
+    from rag_lib.chunking import _toc_path_at
+    toc = [
+        TocEntry(1, "Cap 1", 1),
+        TocEntry(2, "Sección A", 2),
+        TocEntry(1, "Cap 2", 5),
+    ]
+    assert _toc_path_at(6, toc) == "Cap 2"
+
+
+def test_toc_path_at_returns_none_before_first_entry() -> None:
+    from rag_lib.chunking import _toc_path_at
+    toc = [TocEntry(1, "Capítulo 1", 3)]
+    assert _toc_path_at(1, toc) is None
+    assert _toc_path_at(2, toc) is None
+    assert _toc_path_at(3, toc) == "Capítulo 1"
+
+
+# ---------------------------------------------------------------------------
+# run_chunker with toc
+# ---------------------------------------------------------------------------
+
+def test_run_chunker_with_toc_assigns_section_path_from_toc() -> None:
+    toc = [TocEntry(1, "Combate", 1)]
+    page = ParsedPage(
+        page_num=1,
+        blocks=[ProseBlock(text="El combate usa dados. " * 10, page=1, fontsize_avg=11.0)],
+    )
+    chunks = run_chunker([page], toc=toc)
+    assert all(c["section_path"] and "Combate" in c["section_path"] for c in chunks)
+
+
+def test_run_chunker_with_toc_stacks_fontsize_subheadings() -> None:
+    """TOC provides top-level path; fontsize headings stack on top."""
+    toc = [TocEntry(1, "Combate", 1)]
+    h2_block = ProseBlock(text="Iniciativa", page=1, fontsize_avg=14.0)
+    body_blocks = [
+        ProseBlock(text=f"El turno empieza. " * 10, page=1, fontsize_avg=11.0)
+        for _ in range(5)
+    ]
+    extra_body = [
+        ProseBlock(text=f"Texto adicional cuerpo {i}. " * 5, page=1, fontsize_avg=11.0)
+        for i in range(20)
+    ]
+    page = ParsedPage(page_num=1, blocks=[h2_block] + body_blocks + extra_body)
+    chunks = run_chunker([page], toc=toc)
+    subheading_chunks = [c for c in chunks if c["section_path"] and "Iniciativa" in c["section_path"]]
+    assert len(subheading_chunks) >= 1
+    assert all("Combate" in c["section_path"] for c in subheading_chunks)
+
+
+def test_run_chunker_without_toc_unchanged_behavior() -> None:
+    """Passing toc=None must not change existing behavior."""
+    h1_block = ProseBlock(text="Capítulo 1: Combate", page=1, fontsize_avg=18.0)
+    body_blocks = [
+        ProseBlock(text=f"El combate se resuelve con dados. Turno {i}. " * 5, page=1, fontsize_avg=11.0)
+        for i in range(20)
+    ]
+    page = ParsedPage(page_num=1, blocks=[h1_block] + body_blocks)
+    chunks_no_toc = run_chunker([page], toc=None)
+    chunks_existing = run_chunker([page])
+    assert [c["section_path"] for c in chunks_no_toc] == [c["section_path"] for c in chunks_existing]
