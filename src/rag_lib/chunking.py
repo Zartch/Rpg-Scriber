@@ -39,28 +39,20 @@ def gfm_table(rows: list[list[str]]) -> str:
 
 
 def should_merge_across_pages(last_text: str, next_text: str) -> bool:
-    """Return True if the prose in next_text appears to continue last_text across a page boundary.
+    """Return True if next_text continues last_text across a page boundary.
 
-    Decision criteria (your domain knowledge matters here):
-    - If last_text is empty or next_text is empty → False (nothing to merge)
-    - If last_text ends with a sentence terminator → False (idea is complete)
-    - If next_text starts with an uppercase letter → False (new sentence/paragraph)
-    - Otherwise → True (paragraph likely continues)
+    False when:
+    - Either input is empty.
+    - last_text ends with a sentence terminator: . ! ? … : ) ] »
+    - next_text starts with an uppercase letter (new sentence or heading).
 
-    Sentence terminators to consider for RPG manuals (Spanish + English):
-      ., !, ?, …  and their Spanish variants ¡ ¿ do NOT terminate — they open sentences.
-      Consider also: ), ], », :, ; — are these terminators for your domain?
-
-    TODO: Implement this function (5-10 lines).
-    The implementation below is a placeholder that always returns False.
-    Replace it with your decision logic.
+    Note: Spanish opening punctuation (¡ ¿) does NOT terminate — it opens a sentence.
     """
     if not last_text or not next_text:
         return False
     last_char = last_text.rstrip()[-1]
     next_first = next_text.lstrip()[0]
-    # ':' included — RPG lists often start "Ataque: ..." with the list on the next page
-    TERMINATORS = {'.', '!', '?', '…', ':'}
+    TERMINATORS = {'.', '!', '?', '…', ':', ')', ']', '»'}
     return last_char not in TERMINATORS and not next_first.isupper()
 
 

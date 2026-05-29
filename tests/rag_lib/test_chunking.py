@@ -78,6 +78,18 @@ def test_merge_returns_false_for_empty_inputs() -> None:
     assert not should_merge_across_pages("algo", "")
 
 
+def test_no_merge_when_last_ends_with_closing_paren() -> None:
+    assert not should_merge_across_pages("(ver apéndice A)", "el siguiente párrafo")
+
+
+def test_no_merge_when_last_ends_with_closing_guillemet() -> None:
+    assert not should_merge_across_pages("dijo el maestro»", "continuó la historia")
+
+
+def test_no_merge_when_last_ends_with_closing_bracket() -> None:
+    assert not should_merge_across_pages("consultar [tabla 3]", "para más detalles")
+
+
 # ---------------------------------------------------------------------------
 # run_chunker — prose splitting
 # ---------------------------------------------------------------------------
