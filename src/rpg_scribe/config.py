@@ -5,13 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import sys
-
-from dotenv import load_dotenv
-
-load_dotenv()
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -31,6 +29,8 @@ from rpg_scribe.core.models import (
     TranscriberConfig,
     TTSConfig,
 )
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

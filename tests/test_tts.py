@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
 
 from rpg_scribe.core.models import TTSConfig
 from rpg_scribe.tts.cache import TTSCache
@@ -128,8 +129,6 @@ class TestOpenAITTSProvider:
             response_format="mp3",
         )
 
-from fastapi.testclient import TestClient
-
 
 def _make_test_app(tts_provider=None, tts_cache=None, tts_config=None):
     """Create a minimal FastAPI app with TTS routes for testing."""
@@ -183,7 +182,7 @@ class TestTTSNarrateEndpoint:
         assert resp.status_code == 200
         assert "application/x-ndjson" in resp.headers["content-type"]
 
-        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        lines = [json.loads(ln) for ln in resp.text.strip().split("\n") if ln.strip()]
         assert len(lines) == 2
         assert lines[0]["index"] == 0
         assert lines[0]["total"] == 2
@@ -208,7 +207,7 @@ class TestTTSNarrateEndpoint:
 
         resp = client.post("/api/tts/narrate", json={"text": "Cached text."})
         assert resp.status_code == 200
-        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        lines = [json.loads(ln) for ln in resp.text.strip().split("\n") if ln.strip()]
         assert lines[0]["cached"] is True
         mock_provider.synthesize.assert_not_called()
 
@@ -274,17 +273,17 @@ class TestTTSIntegration:
         resp1 = client.post("/api/tts/narrate", json={"text": text})
         assert resp1.status_code == 200
         assert call_count == 3
-        lines1 = [json.loads(l) for l in resp1.text.strip().split("\n") if l.strip()]
-        assert all(l["cached"] is False for l in lines1)
+        lines1 = [json.loads(ln) for ln in resp1.text.strip().split("\n") if ln.strip()]
+        assert all(ln["cached"] is False for ln in lines1)
 
         # Second narration — 0 API calls (all cached)
         call_count = 0
         resp2 = client.post("/api/tts/narrate", json={"text": text})
         assert resp2.status_code == 200
         assert call_count == 0
-        lines2 = [json.loads(l) for l in resp2.text.strip().split("\n") if l.strip()]
-        assert all(l["cached"] is True for l in lines2)
-        assert [l["audio_url"] for l in lines1] == [l["audio_url"] for l in lines2]
+        lines2 = [json.loads(ln) for ln in resp2.text.strip().split("\n") if ln.strip()]
+        assert all(ln["cached"] is True for ln in lines2)
+        assert [ln["audio_url"] for ln in lines1] == [ln["audio_url"] for ln in lines2]
 
     def test_narrate_handles_provider_error_gracefully(self, tmp_path) -> None:
         """If one paragraph fails, endpoint yields an error and continues."""
@@ -311,7 +310,7 @@ class TestTTSIntegration:
         text = "Good paragraph.\n\nThis will fail.\n\nAnother good one."
         resp = client.post("/api/tts/narrate", json={"text": text})
         assert resp.status_code == 200
-        lines = [json.loads(l) for l in resp.text.strip().split("\n") if l.strip()]
+        lines = [json.loads(ln) for ln in resp.text.strip().split("\n") if ln.strip()]
         assert len(lines) == 3
         assert "audio_url" in lines[0]
         assert "error" in lines[1]

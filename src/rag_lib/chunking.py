@@ -95,7 +95,9 @@ def run_chunker(
     Each returned dict has keys: seq, chunk_type, page, page_end, section_path,
     text, text_hash, token_count.
     """
-    # Pass 1: collect all ProseBlock fontsizes to compute p90 for heading detection
+    # Pass 1: collect all ProseBlock fontsizes to compute p90.
+    # This threshold is always computed.  What changes with TOC presence is what
+    # we DO with large-font blocks (see main loop below).
     all_fontsizes = [
         b.fontsize_avg
         for p in pages
@@ -104,6 +106,10 @@ def run_chunker(
     ]
     heading_threshold = _compute_p90(all_fontsizes)
     logger.debug("Heading threshold (p90 fontsize): %.1f", heading_threshold)
+    # When a TOC is available it covers the full hierarchy.  Large-font blocks
+    # are decorative elements (chapter art, background titles) that must be
+    # discarded rather than used for section_path or body text.
+    use_fontsize_headings = not toc
 
     # State
     chunks: list[dict[str, Any]] = []
@@ -216,22 +222,33 @@ def run_chunker(
                 _emit("\n".join(parts), "table", block.page, None, sp)
 
             elif isinstance(block, ProseBlock):
-                is_heading = heading_threshold > 0 and block.fontsize_avg > heading_threshold
+                # Non-TOC: strictly greater than p90 to avoid flagging body text when all
+                # fontsizes are uniform (p90 == body fontsize).
+                # TOC mode: >= catches decorative blocks sitting exactly at the p90 boundary
+                # (e.g. 19pt art titles when threshold == 19.0).
+                if use_fontsize_headings:
+                    is_large_font = heading_threshold > 0 and block.fontsize_avg > heading_threshold
+                else:
+                    is_large_font = heading_threshold > 0 and block.fontsize_avg >= heading_threshold
 
-                if is_heading:
+                if is_large_font and use_fontsize_headings:
+                    # No TOC: treat as structural heading → update section_stack
                     _split_oversized_buffer()
                     _flush_buffer()
-                    # Pop headings with fontsize <= this one (they were lower-level)
                     while section_stack and section_stack[-1][0] <= block.fontsize_avg:
                         section_stack.pop()
                     section_stack.append((block.fontsize_avg, block.text.strip()))
+                elif is_large_font:
+                    # TOC mode: large-font block is decorative art → discard entirely
+                    _split_oversized_buffer()
+                    _flush_buffer()
                 else:
-                    # Handle page boundary
+                    # Body text
                     if last_page is not None and block.page != last_page and prose_buffer:
                         try:
                             merge = should_merge_across_pages(last_prose_text, block.text)
                         except NotImplementedError:
-                            merge = False  # safe default while function is not implemented
+                            merge = False
                         if not merge:
                             _split_oversized_buffer()
                             _flush_buffer()

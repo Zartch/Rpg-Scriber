@@ -73,8 +73,9 @@ class PdfplumberParser(PdfParser):
                 return []
 
             entries: list[TocEntry] = []
-            for level, title, dest, _action, _se in raw_outlines:
-                page_num = self._resolve_dest_page(dest, pageid_map, doc)
+            for level, title, dest, action, _se in raw_outlines:
+                # Some PDFs use GoTo actions instead of direct destinations
+                page_num = self._resolve_dest_page(dest if dest is not None else action, pageid_map, doc)
                 if page_num is None:
                     continue
                 entries.append(TocEntry(level=level, title=str(title), page=page_num))
@@ -86,8 +87,20 @@ class PdfplumberParser(PdfParser):
     def _resolve_dest_page(
         self, dest: object, pageid_map: dict[int, int], doc: object
     ) -> int | None:
-        """Resolve a pdfminer destination object to a 1-based page number."""
+        """Resolve a pdfminer destination object to a 1-based page number.
+
+        Handles direct destinations (list/named), GoTo action dicts, and
+        PDFObjRef indirections (e.g. PDFs created with InDesign/iLovePDF).
+        """
         try:
+            if isinstance(dest, PDFObjRef):
+                resolved = dest.resolve()
+                if isinstance(resolved, dict):
+                    # GoTo action: {'S': /GoTo, 'D': destination}
+                    d = resolved.get(b"D") or resolved.get("D")
+                    if d is not None:
+                        return self._resolve_dest_page(d, pageid_map, doc)
+                return self._resolve_dest_page(resolved, pageid_map, doc)
             if isinstance(dest, list) and dest:
                 ref = dest[0]
                 if isinstance(ref, PDFObjRef):
@@ -195,6 +208,22 @@ class PdfplumberParser(PdfParser):
                 lines[-1].append(ch)
             else:
                 lines.append([ch])
+
+        # Step 2.5: strip decorative overlay chars from mixed-fontsize lines.
+        # RPG PDFs often render large artistic text (chapter art, background titles)
+        # whose chars share coordinates with body text. We keep chars whose size is
+        # within 1.5× the line's 10th-percentile size (resistant to stray tiny glyphs).
+        cleaned: list[list[dict]] = []
+        for line in lines:
+            sizes = sorted(float(c["size"]) for c in line if c.get("size") and float(c["size"]) > 0)
+            if not sizes:
+                cleaned.append(line)
+                continue
+            p10 = sizes[max(0, int(len(sizes) * 0.1))]
+            limit = max(p10, 6.0) * 1.5
+            kept = [c for c in line if float(c.get("size", p10)) <= limit]
+            cleaned.append(kept if kept else line)
+        lines = cleaned
 
         # Step 3: group adjacent lines with similar fontsize (±1pt) into blocks
         def _line_fontsize(line: list[dict]) -> float:

@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
     UNIQUE (manual_id, seq)
 );
 
-CREATE TABLE IF NOT EXISTS rag_embeddings (
+CREATE TABLE IF NOT EXISTS rag_embeddisi
+ngs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     chunk_id   INTEGER NOT NULL UNIQUE REFERENCES rag_chunks(id) ON DELETE CASCADE,
     vector     BLOB NOT NULL,

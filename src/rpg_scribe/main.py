@@ -435,11 +435,11 @@ class Application:
                 if db_locations:
                     c.locations = [
                         LocationInfo(
-                            name=l.get("name", ""),
-                            description=l.get("description", ""),
+                            name=loc_data.get("name", ""),
+                            description=loc_data.get("description", ""),
                         )
-                        for l in db_locations
-                        if l.get("name")
+                        for loc_data in db_locations
+                        if loc_data.get("name")
                     ]
 
                 db_entities = await self.db.entities.get_entities(c.campaign_id)

@@ -65,6 +65,29 @@
                 <th title="Capítulo / sección del manual">Sección</th>
                 <th>Vista previa</th>
               </tr>
+              <tr class="filter-row">
+                <th></th>
+                <th>
+                  <div class="filter-range">
+                    <input type="number" id="filter-page-min" placeholder="—" min="1" class="filter-input filter-num">
+                    <span class="range-sep">→</span>
+                    <input type="number" id="filter-page-max" placeholder="—" min="1" class="filter-input filter-num">
+                  </div>
+                </th>
+                <th>
+                  <select id="filter-type" class="filter-input">
+                    <option value="">Todos</option>
+                    <option value="prose">Texto</option>
+                    <option value="table">Tabla</option>
+                  </select>
+                </th>
+                <th>
+                  <input type="text" id="filter-section" placeholder="contiene…" class="filter-input">
+                </th>
+                <th>
+                  <button id="filter-clear" class="filter-clear" title="Limpiar filtros" hidden>✕</button>
+                </th>
+              </tr>
             </thead>
             <tbody id="chunks-body"></tbody>
           </table>
@@ -97,6 +120,9 @@
         </div>
       </div>
     </div>
+
+    <!-- Resize handle for the detail panel -->
+    <div id="detail-resizer" hidden></div>
 
     <!-- Panel derecho: detalle del chunk + similares (A3 + edición A4) -->
     <div id="detail-panel" hidden>

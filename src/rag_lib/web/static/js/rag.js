@@ -31,6 +31,7 @@ let editOriginalChunk = null;   // snapshot of chunk before editing
 // Chunk list pagination state
 let chunksLoading = false;
 let chunksExhausted = false;
+let chunksAbort = null;          // AbortController for in-flight chunk fetch
 
 // ---------------------------------------------------------------------------
 // DOM refs (cached after DOMContentLoaded)
@@ -77,8 +78,12 @@ function makeResultItem(r, badgeClass, badgeLabel) {
   const meta = `${r.chunk.page ? `Pág. ${r.chunk.page}` : ""} · <span class="badge ${badgeClass}">${badgeLabel}</span>`;
   const preview = escapeHtml((r.chunk.text || "").replace(/\n/g, " ").slice(0, 90));
   const score = `<span class="result-score">${r.score.toFixed(2)}</span>`;
+  const sectionHtml = r.chunk.section_path
+    ? `<div class="result-section" title="${escapeHtml(r.chunk.section_path)}">${escapeHtml(r.chunk.section_path)}</div>`
+    : "";
   div.innerHTML = `
     <div class="result-meta">${meta}${score}</div>
+    ${sectionHtml}
     <div class="result-preview">${preview}</div>
   `;
   div.addEventListener("click", () => openDetail(r.chunk_id));
@@ -144,6 +149,7 @@ function applyLayout() {
     $("search-results").hidden = true;
   }
   $("detail-panel").hidden = !isDetailOpen();
+  $("detail-resizer").hidden = !isDetailOpen();
 }
 
 // ---------------------------------------------------------------------------
@@ -220,13 +226,36 @@ async function selectManual(id, name) {
   await loadChunks(true);
 }
 
+function buildChunksUrl() {
+  const params = new URLSearchParams({ offset: currentOffset, limit: LIMIT });
+  const type = $("filter-type").value;
+  const pmin = $("filter-page-min").value;
+  const pmax = $("filter-page-max").value;
+  const section = $("filter-section").value.trim();
+  if (type) params.set("chunk_type", type);
+  if (pmin) params.set("page_min", pmin);
+  if (pmax) params.set("page_max", pmax);
+  if (section) params.set("section", section);
+  return `${API}/manuals/${activeManualId}/chunks?${params}`;
+}
+
 async function loadChunks(replace = false) {
-  if (chunksLoading) return;
-  if (!replace && chunksExhausted) return;
+  // Non-replace (scroll) bails out if a fetch is running or list is exhausted.
+  // Replace (filter / manual change) always proceeds and cancels any in-flight fetch.
+  if (!replace && (chunksLoading || chunksExhausted)) return;
+  if (replace && chunksAbort) chunksAbort.abort();
+
+  const controller = new AbortController();
+  chunksAbort = controller;
   chunksLoading = true;
   if (replace) { chunksExhausted = false; currentOffset = 0; }
+
   try {
-    const rows = await fetchJSON(`${API}/manuals/${activeManualId}/chunks?offset=${currentOffset}&limit=${LIMIT}`);
+    const r = await fetch(buildChunksUrl(), { signal: controller.signal });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    const rows = await r.json();
+    if (controller.signal.aborted) return;
+
     const tbody = $("chunks-body");
     if (replace) tbody.innerHTML = "";
     for (const c of rows) {
@@ -250,8 +279,14 @@ async function loadChunks(replace = false) {
     currentOffset += rows.length;
     if (rows.length < LIMIT) chunksExhausted = true;
     $("load-more").hidden = chunksExhausted;
+  } catch (e) {
+    if (e.name === "AbortError") return;  // superseded by a newer load
+    throw e;
   } finally {
-    chunksLoading = false;
+    if (chunksAbort === controller) {
+      chunksAbort = null;
+      chunksLoading = false;
+    }
   }
 }
 
@@ -540,6 +575,67 @@ $("chunks-scroll").addEventListener("scroll", e => {
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
     loadChunks(false);
   }
+});
+
+// Column filters — reload on change (debounce for text/number inputs)
+let filterDebounce = null;
+function anyFilterActive() {
+  return Boolean(
+    $("filter-type").value ||
+    $("filter-page-min").value ||
+    $("filter-page-max").value ||
+    $("filter-section").value.trim()
+  );
+}
+function onFilterChanged(immediate = false) {
+  $("filter-clear").hidden = !anyFilterActive();
+  if (!activeManualId) return;
+  clearTimeout(filterDebounce);
+  const fire = () => loadChunks(true);
+  if (immediate) fire();
+  else filterDebounce = setTimeout(fire, 280);
+}
+$("filter-type").addEventListener("change", () => onFilterChanged(true));
+$("filter-page-min").addEventListener("input", () => onFilterChanged());
+$("filter-page-max").addEventListener("input", () => onFilterChanged());
+$("filter-section").addEventListener("input", () => onFilterChanged());
+$("filter-clear").addEventListener("click", () => {
+  $("filter-type").value = "";
+  $("filter-page-min").value = "";
+  $("filter-page-max").value = "";
+  $("filter-section").value = "";
+  onFilterChanged(true);
+});
+
+// Resizable detail panel — width persisted in localStorage
+const DETAIL_WIDTH_KEY = "rag.detailPanelWidth";
+const savedDetailWidth = parseInt(localStorage.getItem(DETAIL_WIDTH_KEY) || "", 10);
+if (Number.isFinite(savedDetailWidth) && savedDetailWidth >= 280) {
+  $("detail-panel").style.width = `${savedDetailWidth}px`;
+}
+$("detail-resizer").addEventListener("mousedown", e => {
+  e.preventDefault();
+  const panel = $("detail-panel");
+  const startX = e.clientX;
+  const startWidth = panel.getBoundingClientRect().width;
+  const resizer = e.currentTarget;
+  resizer.classList.add("dragging");
+  document.body.classList.add("resizing-detail");
+  const onMove = ev => {
+    const delta = startX - ev.clientX;
+    const next = Math.max(280, Math.min(window.innerWidth * 0.8, startWidth + delta));
+    panel.style.width = `${next}px`;
+  };
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    resizer.classList.remove("dragging");
+    document.body.classList.remove("resizing-detail");
+    const finalW = Math.round(panel.getBoundingClientRect().width);
+    localStorage.setItem(DETAIL_WIDTH_KEY, String(finalW));
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 });
 
 $("detail-close").addEventListener("click", closeDetail);

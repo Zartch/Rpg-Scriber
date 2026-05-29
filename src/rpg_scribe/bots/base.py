@@ -16,6 +16,28 @@ class BaseBot(ABC):
     ``keyword`` as a class attribute; ``TriggerWatcher`` matches that
     keyword against ``TranscriptionEvent.text`` and routes the captured
     command to :meth:`handle`.
+
+    Adding a new bot
+    ----------------
+    1. Create ``src/rpg_scribe/bots/<name>_bot.py``. Any module dropped in
+       this package is auto-imported at startup — no registration step.
+    2. Subclass ``BaseBot`` and set at least ``keyword`` (lowercase, must
+       be unique). Optional: ``name`` (label), ``voice`` (TTS voice id;
+       ``None`` → default), ``close_word`` (immediate-finalize trigger,
+       stripped from the command), ``timeout_s`` (silence-to-close,
+       default 2.5 s).
+    3. Implement ``async def handle(self, command, *, session_id,
+       speaker_id, speaker_name) -> str``. Return the text to be spoken;
+       an empty string skips TTS. Raising is fine — the watcher logs and
+       falls back to a generic apology.
+    4. For external dependencies (LLM client, RAG index, HTTP session),
+       initialise them in ``__init__`` lazily — bots are instantiated
+       once at startup; avoid blocking work there.
+    5. Add ``tests/test_<name>_bot.py``. Instantiate the bot directly and
+       call ``handle`` with synthetic kwargs; the watcher is covered
+       separately in ``tests/test_trigger_watcher.py``.
+
+    See ``echo_bot.py`` for a minimal reference implementation.
     """
 
     keyword: ClassVar[str] = ""

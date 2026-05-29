@@ -110,12 +110,35 @@ class ChunkRepo:
         return ids
 
     async def list_by_manual(
-        self, manual_id: int, *, offset: int = 0, limit: int = 50,
+        self,
+        manual_id: int,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        chunk_type: str | None = None,
+        page_min: int | None = None,
+        page_max: int | None = None,
+        section: str | None = None,
     ) -> list[dict[str, Any]]:
+        conditions = ["manual_id = ?"]
+        params: list[Any] = [manual_id]
+        if chunk_type:
+            conditions.append("chunk_type = ?")
+            params.append(chunk_type)
+        if page_min is not None:
+            conditions.append("page >= ?")
+            params.append(page_min)
+        if page_max is not None:
+            conditions.append("page <= ?")
+            params.append(page_max)
+        if section:
+            conditions.append("section_path LIKE ?")
+            params.append(f"%{section}%")
+        where = " AND ".join(conditions)
+        params.extend([limit, offset])
         cur = await self._db.conn.execute(
-            """SELECT * FROM rag_chunks WHERE manual_id = ?
-               ORDER BY seq LIMIT ? OFFSET ?""",
-            (manual_id, limit, offset),
+            f"SELECT * FROM rag_chunks WHERE {where} ORDER BY seq LIMIT ? OFFSET ?",
+            params,
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]

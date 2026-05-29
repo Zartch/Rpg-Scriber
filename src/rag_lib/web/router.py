@@ -36,8 +36,17 @@ def build_router(db_path: str | Path, embedder: Embedder | None = None) -> APIRo
         return [dataclasses.asdict(m) for m in manuals]
 
     @router.get("/api/rag/manuals/{manual_id}/chunks")
-    async def list_chunks_endpoint(manual_id: int, offset: int = 0, limit: int = 50):
-        chunks = await rag_lib.list_chunks(manual_id, db_path=db, offset=offset, limit=limit)
+    async def list_chunks_endpoint(
+        manual_id: int,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        chunks = await rag_lib.list_chunks(
+            manual_id,
+            db_path=db,
+            offset=offset,
+            limit=limit,
+        )
         return [dataclasses.asdict(c) for c in chunks]
 
     @router.get("/api/rag/chunks/{chunk_id}")

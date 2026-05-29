@@ -621,9 +621,6 @@ class TestClaudeSummarizer:
     @pytest.mark.asyncio
     async def test_error_in_process_publishes_error_status(self, bus, config, campaign):
         """If process_transcription raises, an error status is published."""
-        # Use a summarizer whose process_transcription always fails
-        client = AsyncMock()
-
         class FailingSummarizer(BaseSummarizer):
             async def process_transcription(self, event):
                 raise ValueError("oops")

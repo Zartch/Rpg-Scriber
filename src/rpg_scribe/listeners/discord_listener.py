@@ -6,7 +6,7 @@ import asyncio
 import logging
 import struct
 import time
-from typing import Any
+from typing import Any, Optional
 
 import discord
 

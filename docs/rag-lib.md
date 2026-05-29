@@ -5,16 +5,51 @@ Módulo standalone para ingestar, indexar y buscar en PDFs de manuales de rol. *
 ## Arquitectura
 
 ```
-PDF  →  PdfplumberParser  →  Chunker  →  Database (SQLite)
-                                               ↓
-                                        OpenAIEmbedder  →  rag_embeddings
-                                               ↓
-                                          VectorIndex (in-memory cache)
+PDF  →  PdfplumberParser  →  extract_toc()  ──┐
+             │                                 │
+             ↓                                 ↓
+        parse()  ──→  run_chunker(pages, toc=toc)  →  Database (SQLite)
+                                                            ↓
+                                                     OpenAIEmbedder  →  rag_embeddings
+                                                            ↓
+                                                       VectorIndex (in-memory cache)
 ```
 
+- **`PdfplumberParser`** (`parsing/pdfplumber_parser.py`) — extrae páginas como bloques tipados (`ProseBlock`, `TableBlock`) y TOC/bookmarks del PDF.
+- **`run_chunker`** (`chunking.py`) — convierte `ParsedPage`s en chunks con `section_path` derivado de TOC o fontsizes.
 - **`Database`** (`store.py`) — wrapper aiosqlite con repositorios: `ManualRepo`, `ChunkRepo`, `EmbeddingRepo`, `JobRepo`.
 - **`VectorIndex`** (`embedding/index.py`) — índice numpy en memoria, cacheado por `db_path`. Se invalida al ingestar o editar chunks.
 - **`Embedder`** (`embedding/base.py`) — ABC. Implementación por defecto: `OpenAIEmbedder` (`text-embedding-3-small`, dim=1536). Inyectable para tests.
+
+## Parsing y generación de `section_path`
+
+El campo `section_path` de cada chunk representa la posición jerárquica en el manual (e.g. `"Combate / Iniciativa / Orden de turno"`). Hay dos modos de generación según si el PDF tiene índice digital (TOC/bookmarks):
+
+### Modo TOC (recomendado)
+
+Si el PDF tiene marcadores digitales (`extract_toc()` devuelve entradas), `run_chunker` recibe `toc=[...]` y:
+
+- `section_path` se construye exclusivamente a partir de la jerarquía TOC (nivel 1 / nivel 2 / …).
+- Los bloques de texto con fontsize en el percentil 90 o superior se **descartan** (son títulos artísticos o decorativos, no texto útil).
+- El índice se extrae con `pdfminer` a través de `pdfplumber`. Soporta PDFs de Adobe InDesign / iLovePDF que usan acciones GoTo (`PDFObjRef → dict GoTo → destino nombrado`) en lugar de destinos directos.
+
+### Modo fontsize (fallback)
+
+Si no hay TOC, el chunker detecta encabezados por tamaño de fuente:
+
+- Umbral = percentil 90 de todos los fontsizes del documento.
+- Bloques con fontsize **estrictamente superior** al umbral → encabezado estructural (actualiza `section_path`).
+- Bloques en o por debajo del umbral → texto de cuerpo.
+- Se usa `>` estricto (no `>=`) para evitar que texto de cuerpo con fontsize uniforme se marque como encabezado.
+
+### Limpieza de caracteres decorativos
+
+Los PDFs de juegos de rol a menudo renderizan texto artístico de gran tamaño (títulos de capítulo, fondos) con glyphs superpuestos en las mismas coordenadas que el texto de cuerpo. El parser filtra estas superposiciones en cada línea usando la referencia del **percentil 10 de fontsizes** de esa línea:
+
+- Glyphs con `size > max(p10, 6pt) × 1.5` se eliminan de la línea (son arte decorativo).
+- Si tras el filtro la línea queda vacía se conserva la original (sin datos mejor que nada).
+
+Esto evita que chunks contengan cadenas tipo `NNuunnccaa ssee ddeessttrrooyyaa` (caracteres duplicados de texto artístico).
 
 ## Schema SQLite
 
@@ -138,6 +173,8 @@ La página `/rag` es una SPA de tres paneles:
 ### Búsqueda híbrida
 
 La barra de búsqueda lanza FTS5 y semántica en paralelo (debounce 320 ms). Resultados en dos columnas hasta que se abre un chunk; en ese estado (State 4) los resultados se colapsan en una lista mezclada.
+
+Cada resultado muestra el `section_path` del chunk (si existe) en violeta bajo la metadata, para orientar al usuario dentro de la jerarquía del manual.
 
 ### Upload con polling
 

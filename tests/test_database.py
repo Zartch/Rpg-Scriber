@@ -351,7 +351,7 @@ class TestDatabaseMerges:
         await db.entities.merge_locations("c1", "Ciudad Nocturna", "Night City")
 
         locations = await db.entities.get_locations("c1")
-        assert [l["name"] for l in locations] == ["Night City"]
+        assert [loc["name"] for loc in locations] == ["Night City"]
         relationships = await db.entities.get_character_relationships("c1")
         assert relationships == []
 

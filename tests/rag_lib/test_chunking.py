@@ -233,23 +233,26 @@ def test_run_chunker_with_toc_assigns_section_path_from_toc() -> None:
     assert all(c["section_path"] and "Combate" in c["section_path"] for c in chunks)
 
 
-def test_run_chunker_with_toc_stacks_fontsize_subheadings() -> None:
-    """TOC provides top-level path; fontsize headings stack on top."""
+def test_run_chunker_with_toc_disables_fontsize_headings() -> None:
+    """When TOC is provided, fontsize-based heading detection is disabled.
+
+    Decorative large-font elements in PDFs (chapter art, background text)
+    corrupt section paths when stacked on top of the TOC hierarchy.
+    With a TOC present, only TOC-derived paths are used.
+    """
     toc = [TocEntry(1, "Combate", 1)]
+    # A large-font block that would normally be detected as a heading
     h2_block = ProseBlock(text="Iniciativa", page=1, fontsize_avg=14.0)
     body_blocks = [
         ProseBlock(text="El turno empieza. " * 10, page=1, fontsize_avg=11.0)
         for _ in range(5)
     ]
-    extra_body = [
-        ProseBlock(text=f"Texto adicional cuerpo {i}. " * 5, page=1, fontsize_avg=11.0)
-        for i in range(20)
-    ]
-    page = ParsedPage(page_num=1, blocks=[h2_block] + body_blocks + extra_body)
+    page = ParsedPage(page_num=1, blocks=[h2_block] + body_blocks)
     chunks = run_chunker([page], toc=toc)
-    subheading_chunks = [c for c in chunks if c["section_path"] and "Iniciativa" in c["section_path"]]
-    assert len(subheading_chunks) >= 1
-    assert all("Combate" in c["section_path"] for c in subheading_chunks)
+    # "Iniciativa" must NOT appear in any section_path — it's not a heading when TOC is active
+    assert all("Iniciativa" not in (c["section_path"] or "") for c in chunks)
+    # All chunks must still have the TOC-derived path
+    assert all(c["section_path"] and "Combate" in c["section_path"] for c in chunks)
 
 
 def test_run_chunker_without_toc_unchanged_behavior() -> None:

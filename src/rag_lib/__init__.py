@@ -137,23 +137,11 @@ async def list_chunks(
     *,
     offset: int = 0,
     limit: int = 50,
-    chunk_type: str | None = None,
-    page_min: int | None = None,
-    page_max: int | None = None,
-    section: str | None = None,
 ) -> list[Chunk]:
     db = Database(db_path)
     await db.connect()
     try:
-        rows = await db.chunks.list_by_manual(
-            manual_id,
-            offset=offset,
-            limit=limit,
-            chunk_type=chunk_type,
-            page_min=page_min,
-            page_max=page_max,
-            section=section,
-        )
+        rows = await db.chunks.list_by_manual(manual_id, offset=offset, limit=limit)
         return [_row_to_chunk(r) for r in rows]
     finally:
         await db.close()
