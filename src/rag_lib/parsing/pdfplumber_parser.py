@@ -200,6 +200,16 @@ class PdfplumberParser(PdfParser):
         if not chars:
             return []
 
+        # Step 1.5: dedup chars at same position (PDF decorative double-render)
+        seen_pos: set[tuple] = set()
+        deduped: list[dict] = []
+        for c in chars:
+            pos = (round(float(c["x0"]), 1), round(float(c["top"]), 1))
+            if pos not in seen_pos:
+                seen_pos.add(pos)
+                deduped.append(c)
+        chars = deduped
+
         # Step 2: group chars into lines by top coordinate (±2pt tolerance)
         chars_sorted = sorted(chars, key=lambda c: (round(float(c["top"]) / 2) * 2, float(c["x0"])))
         lines: list[list[dict]] = []

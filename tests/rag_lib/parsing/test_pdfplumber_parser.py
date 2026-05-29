@@ -160,3 +160,47 @@ def test_extract_toc_chapter2_on_page_2(pdf_with_toc: Path) -> None:
     cap2 = next((e for e in entries if e.title == "Capítulo 2: Magia"), None)
     assert cap2 is not None
     assert cap2.page == 2
+
+
+# ---------------------------------------------------------------------------
+# _extract_prose_groups — dedup de chars en misma posición
+# ---------------------------------------------------------------------------
+
+class _FakePage:
+    """Duck-type mínimo de pdfplumber.page.Page para tests sin PDF real.
+
+    Solo funciona cuando table_bboxes=[] — no implementa filter().
+    """
+    def __init__(self, chars: list[dict]) -> None:
+        self.chars = chars
+        self.width = 595.0
+        self.height = 842.0
+
+
+def test_extract_prose_groups_deduplicates_same_position_chars() -> None:
+    """PDF decorativo renderiza texto dos veces en la misma (x0, top) — el output debe ser limpio."""
+    parser = _parser()
+    char_h      = {"text": "H", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"}
+    char_h_dup  = {"text": "H", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"}
+    char_i      = {"text": "i", "x0": 16.0, "top": 100.0, "size": 11.0, "object_type": "char"}
+
+    result = parser._extract_prose_groups(_FakePage([char_h, char_h_dup, char_i]), [])
+
+    assert len(result) == 1
+    text, _ = result[0]
+    assert text == "Hi"
+
+
+def test_extract_prose_groups_preserves_distinct_position_chars() -> None:
+    """Chars en posiciones distintas se conservan todos."""
+    parser = _parser()
+    chars = [
+        {"text": "A", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"},
+        {"text": "B", "x0": 20.0, "top": 100.0, "size": 11.0, "object_type": "char"},
+        {"text": "C", "x0": 30.0, "top": 100.0, "size": 11.0, "object_type": "char"},
+    ]
+    result = parser._extract_prose_groups(_FakePage(chars), [])
+
+    assert len(result) == 1
+    text, _ = result[0]
+    assert text == "ABC"
