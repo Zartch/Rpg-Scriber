@@ -7,7 +7,7 @@ import pytest
 
 from rag_lib.errors import PdfParseError
 from rag_lib.parsing.pdfplumber_parser import PdfplumberParser
-from rag_lib.types import ProseBlock, TableBlock
+from rag_lib.types import ProseBlock, TableBlock, TocEntry
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +117,6 @@ def test_prose_groups_text_covers_all_page_text(simple_pdf: Path) -> None:
         combined = " ".join(b.text for b in page.blocks if isinstance(b, ProseBlock))
         assert len(combined) > 0
 
-
-from rag_lib.types import TocEntry
 
 
 # ---------------------------------------------------------------------------

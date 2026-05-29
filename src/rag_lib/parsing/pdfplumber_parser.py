@@ -191,7 +191,6 @@ class PdfplumberParser(PdfParser):
         chars_sorted = sorted(chars, key=lambda c: (round(float(c["top"]) / 2) * 2, float(c["x0"])))
         lines: list[list[dict]] = []
         for ch in chars_sorted:
-            top_key = round(float(ch["top"]) / 2) * 2
             if lines and abs(float(lines[-1][0]["top"]) - float(ch["top"])) <= 2.0:
                 lines[-1].append(ch)
             else:
