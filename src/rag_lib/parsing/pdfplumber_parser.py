@@ -200,8 +200,9 @@ class PdfplumberParser(PdfParser):
         if not chars:
             return []
 
-        # Step 1.5: dedup chars at same position (PDF decorative double-render)
-        seen_pos: set[tuple] = set()
+        # Step 1.5: dedup chars at same position (PDF decorative double-render).
+        # Keeps the first occurrence; assumes duplicate renders carry identical text/size.
+        seen_pos: set[tuple[float, float]] = set()
         deduped: list[dict] = []
         for c in chars:
             pos = (round(float(c["x0"]), 1), round(float(c["top"]), 1))
