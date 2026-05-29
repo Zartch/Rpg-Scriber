@@ -116,3 +116,49 @@ def test_prose_groups_text_covers_all_page_text(simple_pdf: Path) -> None:
     for page in pages:
         combined = " ".join(b.text for b in page.blocks if isinstance(b, ProseBlock))
         assert len(combined) > 0
+
+
+from rag_lib.types import TocEntry
+
+
+# ---------------------------------------------------------------------------
+# extract_toc
+# ---------------------------------------------------------------------------
+
+def test_extract_toc_returns_empty_for_pdf_without_outline(simple_pdf: Path) -> None:
+    entries = _parser().extract_toc(simple_pdf)
+    assert entries == []
+
+
+def test_extract_toc_returns_toc_entries(pdf_with_toc: Path) -> None:
+    entries = _parser().extract_toc(pdf_with_toc)
+    assert len(entries) >= 1
+    assert all(isinstance(e, TocEntry) for e in entries)
+
+
+def test_extract_toc_entries_have_correct_titles(pdf_with_toc: Path) -> None:
+    entries = _parser().extract_toc(pdf_with_toc)
+    titles = [e.title for e in entries]
+    assert "Capítulo 1: Combate" in titles
+    assert "Capítulo 2: Magia" in titles
+
+
+def test_extract_toc_entries_sorted_by_page(pdf_with_toc: Path) -> None:
+    entries = _parser().extract_toc(pdf_with_toc)
+    pages = [e.page for e in entries]
+    assert pages == sorted(pages)
+
+
+def test_extract_toc_entries_have_correct_levels(pdf_with_toc: Path) -> None:
+    entries = _parser().extract_toc(pdf_with_toc)
+    level1 = [e for e in entries if e.level == 1]
+    level2 = [e for e in entries if e.level == 2]
+    assert len(level1) >= 2   # "Capítulo 1: Combate", "Capítulo 2: Magia"
+    assert len(level2) >= 1   # "Iniciativa", "Hechizos"
+
+
+def test_extract_toc_chapter2_on_page_2(pdf_with_toc: Path) -> None:
+    entries = _parser().extract_toc(pdf_with_toc)
+    cap2 = next((e for e in entries if e.title == "Capítulo 2: Magia"), None)
+    assert cap2 is not None
+    assert cap2.page == 2

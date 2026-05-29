@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pdfplumber
+from pdfminer.pdfdocument import PDFNoOutlines
+from pdfminer.pdftypes import PDFObjRef
 
 from rag_lib.errors import PdfParseError
 from rag_lib.parsing.base import PdfParser
@@ -43,6 +45,59 @@ class PdfplumberParser(PdfParser):
             pdf.close()
 
         return pages
+
+    def extract_toc(self, pdf_path: str | Path) -> list:
+        """Extract the PDF outline/bookmarks as a list of TocEntry, sorted by page.
+
+        Returns [] if the PDF has no digital outline or if parsing fails.
+        Uses pdfminer (already installed via pdfplumber) — no new dependencies.
+        """
+        from rag_lib.types import TocEntry
+
+        try:
+            pdf = pdfplumber.open(str(pdf_path))
+        except Exception:
+            return []
+
+        try:
+            doc = pdf.doc
+            pageid_map: dict[int, int] = {
+                p.page_obj.pageid: p.page_number for p in pdf.pages
+            }
+
+            try:
+                raw_outlines = list(doc.get_outlines())
+            except PDFNoOutlines:
+                return []
+            except Exception:
+                return []
+
+            entries: list[TocEntry] = []
+            for level, title, dest, _action, _se in raw_outlines:
+                page_num = self._resolve_dest_page(dest, pageid_map, doc)
+                if page_num is None:
+                    continue
+                entries.append(TocEntry(level=level, title=str(title), page=page_num))
+
+            return sorted(entries, key=lambda e: e.page)
+        finally:
+            pdf.close()
+
+    def _resolve_dest_page(
+        self, dest: object, pageid_map: dict[int, int], doc: object
+    ) -> int | None:
+        """Resolve a pdfminer destination object to a 1-based page number."""
+        try:
+            if isinstance(dest, list) and dest:
+                ref = dest[0]
+                if isinstance(ref, PDFObjRef):
+                    return pageid_map.get(ref.objid)
+            elif isinstance(dest, (bytes, str)):
+                resolved = doc.get_dest(dest)
+                return self._resolve_dest_page(resolved, pageid_map, doc)
+        except Exception:
+            pass
+        return None
 
     # ------------------------------------------------------------------
     # Private helpers
