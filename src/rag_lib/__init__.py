@@ -63,8 +63,9 @@ async def ingest_pdf(
 
         logger.info("rag_lib.ingest: parsing %s", pdf_path.name)
         pages = await asyncio.to_thread(_PARSER.parse, pdf_path)
+        toc   = await asyncio.to_thread(_PARSER.extract_toc, pdf_path)
         page_count = len(pages)
-        chunks = run_chunker(pages)
+        chunks = run_chunker(pages, toc=toc)
 
         manual_id = await db.manuals.insert(
             name=manual_name,
@@ -136,11 +137,23 @@ async def list_chunks(
     *,
     offset: int = 0,
     limit: int = 50,
+    chunk_type: str | None = None,
+    page_min: int | None = None,
+    page_max: int | None = None,
+    section: str | None = None,
 ) -> list[Chunk]:
     db = Database(db_path)
     await db.connect()
     try:
-        rows = await db.chunks.list_by_manual(manual_id, offset=offset, limit=limit)
+        rows = await db.chunks.list_by_manual(
+            manual_id,
+            offset=offset,
+            limit=limit,
+            chunk_type=chunk_type,
+            page_min=page_min,
+            page_max=page_max,
+            section=section,
+        )
         return [_row_to_chunk(r) for r in rows]
     finally:
         await db.close()
