@@ -69,6 +69,7 @@ def _toc_path_at(page: int, toc: list[TocEntry]) -> str | None:
 
     Scans the TOC in order. Entries with page > given page stop the scan.
     When a new entry appears at level N, all levels deeper than N are cleared.
+    Assumes toc is sorted by page ascending (guaranteed by extract_toc).
     """
     active: dict[int, str] = {}
     for entry in toc:

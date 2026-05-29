@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 
-from rag_lib.chunking import gfm_table, run_chunker, should_merge_across_pages
-from rag_lib.types import ParsedPage, ProseBlock, TableBlock
+from rag_lib.chunking import _toc_path_at, gfm_table, run_chunker, should_merge_across_pages
+from rag_lib.types import ParsedPage, ProseBlock, TableBlock, TocEntry
 
 
 # ---------------------------------------------------------------------------
@@ -178,20 +178,16 @@ def test_heading_block_propagates_to_subsequent_prose_chunks() -> None:
     assert "Combate" in body_chunks[0]["section_path"]
 
 
-from rag_lib.types import TocEntry
-
 
 # ---------------------------------------------------------------------------
 # _toc_path_at helper
 # ---------------------------------------------------------------------------
 
 def test_toc_path_at_returns_none_for_empty_toc() -> None:
-    from rag_lib.chunking import _toc_path_at
     assert _toc_path_at(1, []) is None
 
 
 def test_toc_path_at_returns_chapter_title() -> None:
-    from rag_lib.chunking import _toc_path_at
     toc = [TocEntry(1, "Capítulo 1", 1), TocEntry(1, "Capítulo 2", 5)]
     assert _toc_path_at(1, toc) == "Capítulo 1"
     assert _toc_path_at(4, toc) == "Capítulo 1"
@@ -199,7 +195,6 @@ def test_toc_path_at_returns_chapter_title() -> None:
 
 
 def test_toc_path_at_combines_hierarchy() -> None:
-    from rag_lib.chunking import _toc_path_at
     toc = [
         TocEntry(1, "Capítulo 1", 1),
         TocEntry(2, "Iniciativa", 1),
@@ -209,7 +204,6 @@ def test_toc_path_at_combines_hierarchy() -> None:
 
 
 def test_toc_path_at_clears_deeper_levels_on_new_parent() -> None:
-    from rag_lib.chunking import _toc_path_at
     toc = [
         TocEntry(1, "Cap 1", 1),
         TocEntry(2, "Sección A", 2),
@@ -219,7 +213,6 @@ def test_toc_path_at_clears_deeper_levels_on_new_parent() -> None:
 
 
 def test_toc_path_at_returns_none_before_first_entry() -> None:
-    from rag_lib.chunking import _toc_path_at
     toc = [TocEntry(1, "Capítulo 1", 3)]
     assert _toc_path_at(1, toc) is None
     assert _toc_path_at(2, toc) is None
@@ -245,7 +238,7 @@ def test_run_chunker_with_toc_stacks_fontsize_subheadings() -> None:
     toc = [TocEntry(1, "Combate", 1)]
     h2_block = ProseBlock(text="Iniciativa", page=1, fontsize_avg=14.0)
     body_blocks = [
-        ProseBlock(text=f"El turno empieza. " * 10, page=1, fontsize_avg=11.0)
+        ProseBlock(text="El turno empieza. " * 10, page=1, fontsize_avg=11.0)
         for _ in range(5)
     ]
     extra_body = [
