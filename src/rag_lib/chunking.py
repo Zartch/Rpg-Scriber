@@ -222,6 +222,9 @@ def run_chunker(
                 _emit("\n".join(parts), "table", block.page, None, sp)
 
             elif isinstance(block, ProseBlock):
+                if _is_toc_noise(block.text):
+                    continue
+
                 # Non-TOC: strictly greater than p90 to avoid flagging body text when all
                 # fontsizes are uniform (p90 == body fontsize).
                 # TOC mode: >= catches decorative blocks sitting exactly at the p90 boundary
@@ -268,6 +271,13 @@ def run_chunker(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _is_toc_noise(text: str) -> bool:
+    """True if block looks like a table-of-contents line (dot leaders + page numbers)."""
+    if len(text) < 20:
+        return False
+    return text.count(".") / len(text) > 0.30
+
 
 def _compute_p90(values: list[float]) -> float:
     if not values:

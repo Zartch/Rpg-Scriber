@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 
-from rag_lib.chunking import _toc_path_at, gfm_table, run_chunker, should_merge_across_pages
+from rag_lib.chunking import _is_toc_noise, _toc_path_at, gfm_table, run_chunker, should_merge_across_pages
 from rag_lib.types import ParsedPage, ProseBlock, TableBlock, TocEntry
 
 
@@ -266,3 +266,32 @@ def test_run_chunker_without_toc_unchanged_behavior() -> None:
     chunks_no_toc = run_chunker([page], toc=None)
     chunks_existing = run_chunker([page])
     assert [c["section_path"] for c in chunks_no_toc] == [c["section_path"] for c in chunks_existing]
+
+
+# ---------------------------------------------------------------------------
+# _is_toc_noise
+# ---------------------------------------------------------------------------
+
+_TOC_LINE = (
+    "Sala de trauma ...............................6 "
+    "Cómo montar la escena ......................126"
+)
+_BODY_LINE = "El netrunner atacó al guardia con su monofilamento y escapó por la ventana."
+
+
+def test_is_toc_noise_short_text_returns_false() -> None:
+    assert not _is_toc_noise(".....")
+
+
+def test_is_toc_noise_toc_line_returns_true() -> None:
+    assert _is_toc_noise(_TOC_LINE)
+
+
+def test_is_toc_noise_body_text_returns_false() -> None:
+    assert not _is_toc_noise(_BODY_LINE)
+
+
+def test_run_chunker_skips_toc_noise_blocks() -> None:
+    pages = [ParsedPage(page_num=7, blocks=[ProseBlock(text=_TOC_LINE, page=7, fontsize_avg=11.0)])]
+    chunks = run_chunker(pages)
+    assert chunks == []
