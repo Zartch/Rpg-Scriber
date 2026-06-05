@@ -39,28 +39,20 @@ def gfm_table(rows: list[list[str]]) -> str:
 
 
 def should_merge_across_pages(last_text: str, next_text: str) -> bool:
-    """Return True if the prose in next_text appears to continue last_text across a page boundary.
+    """Return True if next_text continues last_text across a page boundary.
 
-    Decision criteria (your domain knowledge matters here):
-    - If last_text is empty or next_text is empty → False (nothing to merge)
-    - If last_text ends with a sentence terminator → False (idea is complete)
-    - If next_text starts with an uppercase letter → False (new sentence/paragraph)
-    - Otherwise → True (paragraph likely continues)
+    False when:
+    - Either input is empty.
+    - last_text ends with a sentence terminator: . ! ? … : ) ] »
+    - next_text starts with an uppercase letter (new sentence or heading).
 
-    Sentence terminators to consider for RPG manuals (Spanish + English):
-      ., !, ?, …  and their Spanish variants ¡ ¿ do NOT terminate — they open sentences.
-      Consider also: ), ], », :, ; — are these terminators for your domain?
-
-    TODO: Implement this function (5-10 lines).
-    The implementation below is a placeholder that always returns False.
-    Replace it with your decision logic.
+    Note: Spanish opening punctuation (¡ ¿) does NOT terminate — it opens a sentence.
     """
     if not last_text or not next_text:
         return False
     last_char = last_text.rstrip()[-1]
     next_first = next_text.lstrip()[0]
-    # ':' included — RPG lists often start "Ataque: ..." with the list on the next page
-    TERMINATORS = {'.', '!', '?', '…', ':'}
+    TERMINATORS = {'.', '!', '?', '…', ':', ')', ']', '»'}
     return last_char not in TERMINATORS and not next_first.isupper()
 
 
@@ -222,6 +214,9 @@ def run_chunker(
                 _emit("\n".join(parts), "table", block.page, None, sp)
 
             elif isinstance(block, ProseBlock):
+                if _is_toc_noise(block.text):
+                    continue
+
                 # Non-TOC: strictly greater than p90 to avoid flagging body text when all
                 # fontsizes are uniform (p90 == body fontsize).
                 # TOC mode: >= catches decorative blocks sitting exactly at the p90 boundary
@@ -268,6 +263,13 @@ def run_chunker(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _is_toc_noise(text: str) -> bool:
+    """True if block looks like a table-of-contents line (dot leaders + page numbers)."""
+    if len(text) < 20:
+        return False
+    return text.count(".") / len(text) > 0.30
+
 
 def _compute_p90(values: list[float]) -> float:
     if not values:

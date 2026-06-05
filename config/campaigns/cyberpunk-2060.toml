@@ -5,64 +5,86 @@ game_system = "Cyberpunk RED"
 language = "es"
 description = "Night City, 2060. La contaminacion de la explosion de la torre Arasaka ha sido limpiada y la ciudad empieza a reconstruirse. Pero no es la vieja Night City la que resurge: Aeterna Biotics, una startup agresiva que promete inmortalidad, esta transformando la ciudad desde dentro. Su lema: \"La carne es un lastre; nosotros somos la evolucion\". Mientras las megas tradicionales luchan por no quedar obsoletas, los jugadores viven la metamorfosis de Night City hacia algo que podria ser el futuro de Cyberpunk 2077... o no."
 campaign_summary = """
-# CYBERPUNK 2060: NACIMIENTO DE LA PERFECCIÓN
-## Resumen Global de Campaña
+# Cyberpunk 2060: Nacimiento de la Perfección
+## Resumen Global de la Campaña
 
-### PRÓLOGO: LA PLAZA DE WATSON
+### El Despertar Digital
 
-En el año 2060, Night City emerge de las cenizas de la explosión de la torre Arasaka, transformándose bajo la influencia de Aeterna Biotics, una startup agresiva que promete inmortalidad con su lema: "La carne es un lastre; nosotros somos la evolución". Mientras las megacorporaciones tradicionales luchan por no quedar obsoletas, cuatro individuos se encuentran en una plaza de Watson que cambiará sus vidas para siempre.
+En el Night City de 2060, mientras la ciudad se reconstruye tras la explosión de la torre Arasaka, una nueva amenaza emerge desde las sombras corporativas. Aeterna Biotics, startup agresiva que promete inmortalidad con el lema "La carne es un lastre; nosotros somos la evolución", está transformando Night City desde dentro con sus clínicas de cristal blanco y antenas misteriosas que nadie puede hackear.
 
-Elara "Nix" Navarro, fixer experta en información; Vektor, netrunner parco de palabras con precisión mecánica; Canal, técnico vivaracho con carácter especial; y Tira, mercenaria europea de identidad oculta, convergen en el momento exacto en que Aeterna instala una antena blanca en la plaza. El intercambio de un disco de datos entre nómadas y un fixer se convierte en catástrofe cuando el nodo de silencio se activa.
+Todo comienza en una plaza de Watson donde un intercambio rutinario de información se convierte en una pesadilla posthumana. Elara "Nix" Navarro, fixer experta en información y miembro de node56, observa desde su mesa junto a Vektor, netrunner habilidoso y parco en palabras, y Canal, técnico capaz con carácter especial. Mientras tanto, Tira, mercenaria europea con identidad oculta, vigila desde las sombras a un fixer que espera recibir un disco de datos de dos nómadas.
 
-Durante once minutos y cincuenta y seis segundos de silencio absoluto, la plaza se transforma: el polímero blanco reemplaza el metal corroído, las personas se disuelven en charcos de cristal líquido, y solo sobreviven nueve individuos. Los protagonistas experimentan visiones de eventos pasados - accidentes manipulados, explosiones en Panamá, asesinatos corporativos - mientras barras de progreso aparecen sobre todos los presentes, llegando al 12% para los supervivientes.
+Cuando los drones blancos de Aeterna instalan una antena en la plaza, la realidad se fractura. Un silencio perturbador envuelve el área mientras todos los presentes desarrollan barras de progreso que suben del 0% al 1%, excepto un niño que acompaña al fixer, cuya barra alcanza el 89%. Figuras en trajes blancos aparecen con armas de radiofrecuencia, y el niño se desintegra en cristal líquido.
 
-### ACTO I: LÍNEAS VERDES EN LA TERCERA CAPA
+### Las Visiones del Pasado
 
-El despertar revela que algo los conecta: líneas verdes visibles solo en la tercera capa de la Red unen las mentes de los supervivientes. Vektor descubre que estos vínculos no fueron creados por Aeterna, sino por una entidad protectora desconocida. Cuando recreaciones digitales del niño de la plaza intentan infiltrarse, el grupo comprende que están siendo cazados sistemáticamente.
+Lo que sigue trasciende la experiencia física: once minutos y cincuenta y seis segundos de blanco absoluto donde los protagonistas experimentan visiones que no son suyas. Ven un accidente de coche en Viena donde muere Erik Falkenberg, una explosión en el canal de Panamá con contenedores de Eurasian Biotech, alguien trabajando en sistemas de control de tráfico en oficinas de Danger Gal antes de ser ejecutado, y una escena de Night City en 2023 donde un hombre entrega un dispositivo similar antes de ser asesinado.
 
-Sena, la nómada del disco, les revela la existencia de una red de resistencia liderada por Ekaterina, una mujer elegante que vive en una mansión en las montañas de Westbrook. En este refugio, rodeados de más de cincuenta personas afectadas por Aeterna, los protagonistas descubren verdades devastadoras sobre sus pasados: la madre de Vektor co-creó software de control de tráfico que Aeterna utilizó para asesinar mediante accidentes "naturales"; Canal perdió familia en un carguero atacado en 2054; y las historias de todos están entrelazadas por una conspiración que se extiende décadas atrás.
+Al despertar, la plaza ha sido transformada por completo: superficies blancas y pulcras reemplazan el metal corroído, y donde antes había once personas solo quedan charcos de cristal líquido. Solo sobreviven los cuatro protagonistas, la nómada con el disco (Sena), su guardaespaldas (Kael), y la misteriosa observadora (Tira).
 
-Sierra, el netrunner de Ekaterina, revela que un firewall sofisticado - posiblemente obra de Rache Bartmoss o una IA similar - los protegió del nodo de silencio. Las líneas verdes también conectan con agentes infiltrados: un ejecutivo corporativo y un fixer en Pacífica, sugiriendo una red más amplia de resistencia.
+### La Red de Conexiones
 
-### ACTO II: REVELACIONES FAMILIARES Y TRAICIONES
+En la tercera capa de la Red, líneas verdes conectan ahora las mentes de los supervivientes, sus barras de progreso han subido al 12%, y experimentan sensaciones de estar en los cuerpos de otros. Cuando uno de los mercenarios supervivientes colapsa con "Error 2030" en sus pupilas, MaxTac llega inmediatamente para llevárselo, sugiriendo que este fenómeno se extiende más allá de la plaza.
 
-La investigación lleva al grupo a los Yermos, donde los Aldecaldos revelan que Elías Thorn, un limpiador de Aeterna, se les adelantó preguntando por el disco de John Trash. Paralelamente, Elara es arrestada por la NCPD con cargos imposibles, enfrentándose a un falso abogado que ofrece intercambiar los discos por su libertad.
+El disco robado a los nómadas contiene fragmentos de información perteneciente a "John Trash" - mapas de Viena, logs de gestión de tráfico de 2023, procesos cifrados y coordenadas dispersas. Claramente se necesitan más componentes para acceder al contenido completo.
 
-Mientras tanto, las líneas familiares se complican dramáticamente. Canal revela a Sena que él también perdió familia en el mismo carguero de 2054, y en una confesión explosiva - literalmente, con bombas colocadas para forzar la atención - le dice que cree que es su hijo y que la persona que buscan es su madre. Kael, el hermano guardaespaldas de Sena, admite haber manipulado la información para seguir dos líneas de investigación paralelas.
+### La Resistencia en las Sombras
 
-La violencia familiar estalla: los hermanos se enfrentan brutalmente, con Kael utilizando sedantes para incapacitar a Sena cuando la verdad la abruma. El intento de reconciliación de Canal fracasa completamente, dejando al grupo dividido y a las relaciones personales fracturadas.
+Sena, inicialmente presentada como una nómada desorientada, revela su verdadera naturaleza: posee conocimientos profundos sobre Aeterna y una historia personal dolorosa con la corporación. A través de ella, el grupo conoce a Ekaterina, una mujer elegante de cuarenta años que lidera una red de resistencia desde su mansión en las montañas de Westbrook, donde toca piano de madera auténtica mientras protege a más de cincuenta personas afectadas por Aeterna.
 
-Vektor, procesando información con frialdad creciente, conecta los puntos finales: Tira es en realidad Alina Falkenberg, hija de Erik Falkenberg, el arquitecto involuntario de las antenas de Aeterna. Su desaparición de todos los registros a los 16 años, sus implantes europeos y su presencia en la plaza confirman que ella también es una pieza clave en la conspiración.
+Ekaterina revela que Vektor, Canal y probablemente Tira tienen conexiones históricas con la corporación. La madre de Vektor co-creó software de control de tráfico que Aeterna desvió para asesinar a los Falkenberg mediante accidentes aparentemente naturales. Cuando ella descubrió el uso indebido y lo denunció, fue eliminada.
 
-### ACTO III: EL LIMPIADOR Y LA CONVERGENCIA
+### Los Fantasmas Digitales
 
-Elías Thorn contacta directamente con Tira en su apartamento, revelándose como más que un simple empleado de Aeterna. Con un pendrive que contiene operaciones de limpieza sistemáticas, demuestra conocer los patrones de eliminación que afectaron a todas las familias del grupo. Las "Fases" documentan la eliminación de los Falkenberg, los padres de Tira, el carguero donde murieron las familias nómadas, y las limpiezas adicionales que incluyen a la madre de Vektor.
+Sierra, el netrunner encargado de investigar los eventos de la plaza, descubre que un firewall increíblemente sofisticado - posiblemente obra de Rache Bartmoss o un fantasma digital similar - protegió al grupo del nodo de silencio. Las líneas verdes conectan también con agentes infiltrados de Ekaterina: un ejecutivo corporativo y un fixer en Pacífica.
 
-El pendrive señala la ubicación del tercer disco en Pacífica, pero también revela nombres desconocidos como Marek Stroot y Lisa Macinon, sugiriendo más supervivientes conectados por las líneas verdes. Cuando el grupo sigue esta pista a una factoría abandonada de Militech, activan un generador que desencadena algo imprevisto.
+La situación se complica cuando recreaciones digitales de Aeterna - copias casi perfectas que sangran y sienten pero rara vez duran más de dos minutos - comienzan a infiltrarse. MaxTac actúa como servicio de limpieza, eliminando evidencias antes de que puedan ser analizadas.
 
-### ACTO IV: BUCLES TEMPORALES Y REALIDADES FRACTURADAS
+### Revelaciones Familiares
 
-La activación del generador los devuelve al evento original de la plaza de Watson, pero en una realidad alterada. Esta vez despiertan con barras de progreso al 88%, sin las líneas verdes protectoras. Vektor ejerce su libre albedrío atacando a los agentes de Aeterna, cambiando el curso de los eventos y demostrando que pueden resistir la manipulación.
+Las investigaciones revelan conexiones devastadoras entre las historias personales de los protagonistas. Canal descubre que Sena es su padre biológico y que ambos perdieron familia en el mismo carguero de Gracia Biotech atacado en 2054 en Centroamérica. Kael, el guardaespaldas, revela haber estado manipulando a Sena, permitiendo que siguiera creyendo que Mareagris fue responsable del ataque mientras él investigaba por separado.
 
-El refugio de los hermanos nómadas revela inconsistencias inquietantes: la distribución ha cambiado, documentos cruciales han desaparecido, y Sena y Kael muestran lagunas de memoria específicas sobre Ekaterina y Sierra. Sin embargo, sus recuerdos de la simulación permanecen intactos, creando una dissonancia entre experiencia vivida y realidad física.
+La confrontación explosiva - literal, con Canal colocando explosivos en las sillas - fractura la relación familiar antes de que pueda desarrollarse. Los hermanos nómadas se alejan, ella traumatizada por la manipulación, él determinado a esclarecer la verdad sobre los eventos de 2054.
 
-En esta realidad fracturada, el disco de John Trash se descifra completamente, revelando ocho archivos bajo "Jurassic Legacy 42-45" que documentan las conexiones entre los Falkenberg, Eurasia Biotechnics, rutas de Panamá, y las verdaderas redes de poder detrás de Aeterna.
+### La Verdadera Identidad
 
-### ACTO V: FISURAS Y CONFRONTACIONES
+Vektor descubre la verdad más impactante: Tira es en realidad Alina Falkenberg, hija de Erik Falkenberg, el arquitecto involuntario de las primeras antenas de Aeterna. Sus implantes europeos de origen "GC" datan de 2023 y emiten el mismo aura plateada que la tecnología de Aeterna. Su desaparición de todos los registros a los 16 años ahora tiene sentido dentro de la conspiración más amplia.
 
-La tensión acumulada explota en violencia cuando Vektor vuelve a mencionar los implantes de Tira. El enfrentamiento escala hasta que Canal interviene con su implante térmico, dejando a la mercenaria gravemente herida. Los hermanos nómadas, profundamente perturbados por la violencia en su hogar, abandonan el búnker tras reprochar los métodos del grupo.
+### El Juego de Elías Thorn
 
-Tira, recuperándose de sus heridas, se separa del grupo para continuar su investigación en solitario. Su encuentro posterior con Elías Thorne revela que él es el noveno superviviente de los nodos de silencio, ex-agente infiltrado de Eurasia Biotechnics que propone una alianza contra la fracción eliminadora de Aeterna.
+Elías Thorn, empleado de Aeterna catalogado como "riesgo 7, valor 8", emerge como un manipulador clave. Se presenta a Tira como el noveno superviviente de los nodos de silencio, ex-agente infiltrado de Eurasia Biotechnics que propone una alianza contra la facción eliminadora dentro de Aeterna. Revela que la familia de Tira creó la tecnología base que Aeterna pervirtió, y que sus padres fueron asesinados cuando descubrieron el uso indebido de su trabajo.
 
-Las revelaciones finales conectan todos los hilos: la familia de Tira desarrolló la tecnología base de las antenas, los padres fueron eliminados al descubrir el uso de su trabajo, y una red de vigilancia electromagnética basada en la frecuencia 71/56 envuelve toda Night City como un sistema de control constante.
+Thorn orquesta cuidadosamente la convergencia de los supervivientes, dejando un pendrive con registros completos de operaciones de limpieza que documenta la eliminación sistemática de familias conectadas: los Falkenberg, los padres de Tira, el carguero donde murieron las familias nómadas, la madre de Vektor, y otros nombres desconocidos como Marek Stroot y Lisa Macinon.
 
-### ESTADO ACTUAL: CONVERGENCIA PELIGROSA
+### La Simulación y la Realidad
 
-Mientras Canal descifra patrones ocultos en las anotaciones de Sena que revelan la red de vigilancia de Aeterna, los supervivientes se preparan para un encuentro crucial en Heywood. Las fisuras entre simulación y realidad se amplían, revelando que la manipulación de Aeterna trasciende lo digital para afectar la naturaleza misma del tiempo y la memoria.
+Los eventos toman un giro surrealista cuando el grupo experimenta un "bucle temporal" que los devuelve a la plaza de Watson. Esta vez despiertan en un mundo donde pueden cambiar los eventos - Vektor ataca a los hombres de trajes blancos, Tira no huye inmediatamente - pero descubren que sus recuerdos de días compartidos con Ekaterina y Sierra no coinciden con la realidad física.
 
-Node 56, reducido a tres miembros tras la partida de Tira, se enfrenta a verdades devastadoras: sus historias familiares están más entrelazadas de lo imaginado, Aeterna opera una red de control que permea toda la ciudad, y la distinción entre lo real y lo digital se difumina bajo el polímero blanco de la evolución prometida.
+En esta nueva realidad, el búnker de los hermanos nómadas es diferente, faltan documentos clave, y Sena y Kael muestran lagunas de memoria específicas sobre la red de resistencia. Solo el grupo conserva recuerdos completos de la "simulación" previa, mientras sus barras de progreso saltan al alarmante 88%.
 
-En las calles de Night City, donde las antenas blancas proyectan su silencio aséptico sobre el carbón y el acero, los supervivientes descubren que son tanto cazadores como presas en una conspiración que conecta el pasado digital prohibido con un futuro posthumano incierto. La pregunta fundamental permanece: ¿están haciendo exactamente lo que Aeterna quiere que hagan, o existe una genuina posibilidad de resistencia en este mundo donde la carne se convierte en lastre y la humanidad en algoritmo?
+### La Frecuencia del Control
+
+Canal descifra un patrón en las anotaciones de Sena: la frecuencia 71/56 revela una red de vigilancia electromagnética que permea toda Night City. Esta señal constante de Aeterna conecta los nodos de silencio en un sistema de control ciudad-amplio, confirmando que la transformación de Night City va mucho más allá de las clínicas de cristal blanco.
+
+### La Fractura del Node 56
+
+La violencia explota cuando las tensiones internas alcanzan el punto de ruptura. En el búnker nómada, una discusión sobre los implantes de Tira escala hasta un enfrentamiento armado que la deja gravemente herida. Los hermanos, profundamente perturbados por la violencia desplegada en su hogar, abandonan el grupo con reproches sobre sus métodos brutales.
+
+Tira, tras recuperarse, decide partir en solitario para continuar su investigación personal. Su despedida fría pero respetuosa deja al Node 56 reducido a tres miembros - Elara, Vektor y Canal - mientras cada uno carga con revelaciones devastadoras sobre sus conexiones familiares con la conspiración de Aeterna.
+
+### El Estado Actual
+
+En el presente, los supervivientes navegan una Night City en metamorfosis donde la pulcritud aséptica de Aeterna compite con el cyberpunk sucio tradicional. El Núcleo de Cristal del centro corporativo representa la visión posthumana de la corporación - aire frío que huele a antiséptico, geometría perfecta, publicidad que analiza y susurra - mientras los anillos de carbón de los barrios mantienen la estética clásica pero infectada por el "silencio corporativo".
+
+Los protagonistas poseen fragmentos cruciales de información: los archivos "Jurassic Legacy 42-45" con datos sobre Eurasia Biotechnics, Goscode, rutas de Panamá, y conexiones con NetWatch e IASTORN. Saben que existe un segundo disco bajo custodia de Ekaterina (si ella sigue existiendo fuera de la simulación) y que el tercero se localiza en una factoría de Pacífica.
+
+### Las Preguntas Sin Respuesta
+
+La campaña ha establecido múltiples misterios entrelazados: ¿Qué representa realmente el 88% en sus barras de progreso? ¿Las experiencias con Ekaterina fueron simulación o realidad alterada? ¿Cuál es el propósito final de Aeterna más allá de la promesa de inmortalidad? ¿Cómo se relacionan Cerberus, las IA anteriores al DataCrash, y los fantasmas digitales con la tecnología de la corporación?
+
+Los protagonistas se encuentran en el epicentro de una transformación que podría redefinir la naturaleza misma de la humanidad, donde la distinción entre lo real y lo digital, entre lo humano y lo artificial, se difumina bajo el polímero blanco de la evolución prometida. En las calles silenciosas de Night City, donde las antenas blancas proyectan su influencia aséptica sobre el carbón y el acero, el precio de la verdad sigue subiendo mientras Aeterna continúa su metamorfosis implacable de la ciudad hacia algo que podría ser el futuro de Cyberpunk 2077... o algo completamente diferente.
+
+La noche es silenciosa, aséptica, y Aeterna sigue pidiendo que entreguen lo único que les queda: su alma de carbono. Pero los supervivientes del node de silencio ya no están dispuestos a entregarse sin luchar, armados con fragmentos de verdad que podrían desvelar los orígenes más oscuros de la corporación que promete perfección a costa de la humanidad misma.
 """
 
 [[campaign.locations]]
@@ -74,12 +96,24 @@ name = "Austria"
 description = "País donde ocurrieron sucesos aparentemente inconexos relacionados con la información sobre los orígenes de Aeterna distribuida en los discos."
 
 [[campaign.locations]]
+name = "Bar en Heywood"
+description = "Establecimiento donde Canal llega equipado con receptor e inhibidor para encontrarse con la figura misteriosa"
+
+[[campaign.locations]]
 name = "Bar privado"
 description = "Establecimiento donde Canal preparó el encuentro con los hermanos nómadas, con sillas enfrentadas y atmósfera controlada"
 
 [[campaign.locations]]
 name = "Bar seguro"
 description = "Establecimiento donde el grupo se refugió tras los eventos de la plaza, con reservados privados"
+
+[[campaign.locations]]
+name = "Búnker de los hermanos nómadas"
+description = "Hogar de Sena y Kael donde el grupo analiza los archivos del disco antes de que la violencia los obligue a abandonarlo"
+
+[[campaign.locations]]
+name = "Cafetería 24 horas"
+description = "Lugar de encuentro entre Tira y Elías Thorne donde se revela la existencia del noveno superviviente"
 
 [[campaign.locations]]
 name = "Capa 3 de la Red"
@@ -142,6 +176,10 @@ name = "Santo Domingo"
 description = "Desmantelamiento. Las viejas industrias ruidosas estan siendo desmanteladas por gruas silenciosas que instalan paneles de biopolimero. Es el lugar donde mejor se ve el choque entre el acero viejo y el cristal nuevo."
 
 [[campaign.locations]]
+name = "The Glen"
+description = "Lugar donde Tira se refugia en un ataúd tras huir de los hermanos nómadas"
+
+[[campaign.locations]]
 name = "Viena"
 description = "Ciudad europea cuyos mapas aparecen en los archivos del disco de John Trash, con información en alemán relacionada con los orígenes de Aeterna."
 
@@ -152,22 +190,6 @@ description = "El Distrito Enrarecido. Entre fabricas oxidadas aparecen 'Nodos d
 [[campaign.locations]]
 name = "Yermos"
 description = "Zona donde Vector y Canal buscan respuestas, ubicación de las caravanas de los Aldecaldos"
-
-[[campaign.locations]]
-name = "The Glen"
-description = "Lugar donde Tira se refugia en un ataúd tras huir de los hermanos nómadas"
-
-[[campaign.locations]]
-name = "Búnker de los hermanos nómadas"
-description = "Hogar de Sena y Kael donde el grupo analiza los archivos del disco antes de que la violencia los obligue a abandonarlo"
-
-[[campaign.locations]]
-name = "Cafetería 24 horas"
-description = "Lugar de encuentro entre Tira y Elías Thorne donde se revela la existencia del noveno superviviente"
-
-[[campaign.locations]]
-name = "Bar en Heywood"
-description = "Establecimiento donde Canal llega equipado con receptor e inhibidor para encontrarse con la figura misteriosa"
 
 [campaign.dm]
 discord_id = "432635509899001877"
@@ -229,6 +251,10 @@ description = "Mujer elegante de cuarenta años que lidera la resistencia contra
 [[campaign.npcs]]
 name = "Elías Thorn"
 description = "Empleado de Aeterna catalogado como 'riesgo 7, valor 8', involucrado en operaciones de limpieza de información durante escándalos universitarios. Se adelantó al grupo preguntando por el disco de John Trash"
+
+[[campaign.npcs]]
+name = "Elías Thorne"
+description = "El noveno superviviente de los nodos de silencio, ex-agente infiltrado de Eurasia Biotechnics que se presenta a Tira en una cafetería con propuesta de alianza"
 
 [[campaign.npcs]]
 name = "Erik Falkenberg"
@@ -302,10 +328,6 @@ description = "Netrunner joven y escuálido encargado de investigar los eventos 
 name = "Trash"
 description = "Miembro de los Aldecaldos en Pacífica que recibe al grupo con información sobre Elías Thorn y el disco de John Trash"
 
-[[campaign.npcs]]
-name = "Elías Thorne"
-description = "El noveno superviviente de los nodos de silencio, ex-agente infiltrado de Eurasia Biotechnics que se presenta a Tira en una cafetería con propuesta de alianza"
-
 [[campaign.entities]]
 name = "Aeterna"
 entity_type = "corporacion"
@@ -327,6 +349,16 @@ entity_type = "organization"
 description = "Identidad falsa usada por Elara para realizar encuestas en el Centro Corporativo"
 
 [[campaign.entities]]
+name = "BART"
+entity_type = "other"
+description = "Destinatario del mensaje de audio de la madre de Minta contenido en los archivos del disco"
+
+[[campaign.entities]]
+name = "Burst_codec"
+entity_type = "technology"
+description = "Archivo que desaparece misteriosamente de todos los dispositivos mientras el terminal de Vektor funciona al máximo"
+
+[[campaign.entities]]
 name = "Carguero de Gracia Biotech"
 entity_type = "event"
 description = "Ataque al carguero en 2054 que marcó las vidas de Canal, Sena y Kael, donde perdieron familiares"
@@ -342,6 +374,10 @@ entity_type = "corporacion"
 description = "Corporación con oficinas donde se manipulaban sistemas de tráfico según las visiones del evento"
 
 [[campaign.entities]]
+name = "Eurasia Biotechnics"
+entity_type = "other"
+
+[[campaign.entities]]
 name = "Eurasian Biotech"
 entity_type = "corporacion"
 description = "Corporación involucrada en los eventos del canal de Panamá y relacionada con los orígenes de Aeterna"
@@ -352,14 +388,49 @@ entity_type = "faction"
 description = "Familia víctima del software desviado, Erik fue asesinado y su hija Alina desapareció"
 
 [[campaign.entities]]
+name = "Familia de Tira"
+entity_type = "faction"
+description = "Familia que según Thorne puso los cimientos tecnológicos de las antenas que Aeterna usa como nodos de silencio y fueron asesinados al descubrir el uso de su trabajo"
+
+[[campaign.entities]]
 name = "Familia nómada de Sena y Kael"
 entity_type = "faction"
 description = "Familia nómada que fue transportada en un carguero atacado en Centroamérica, conectando personalmente a Sena y Kael con los eventos."
 
 [[campaign.entities]]
+name = "Fracción eliminadora de Aeterna"
+entity_type = "faction"
+description = "Facción dentro de Aeterna que según Thorne busca eliminar a los supervivientes para limpiar su pasado corporativo"
+
+[[campaign.entities]]
+name = "Frecuencia 71/56"
+entity_type = "technology"
+description = "Patrón descubierto por Canal en la libreta de Sena donde el número 71 ha sido sustituido por 56, revelando una frecuencia de comunicación que permea Night City"
+
+[[campaign.entities]]
+name = "Goscode"
+entity_type = "technology"
+description = "Elemento mencionado en los archivos Jurassic Legacy del que se tiene poca información específica"
+
+[[campaign.entities]]
 name = "Gracia Biotech"
 entity_type = "organization"
 description = "Corporación propietaria del carguero atacado en 2054 donde perdieron la vida familiares de Canal, Sena y Kael"
+
+[[campaign.entities]]
+name = "IASTORN"
+entity_type = "organization"
+description = "Organización mencionada en los archivos Jurassic Legacy junto con NetWatch"
+
+[[campaign.entities]]
+name = "Jurassic Legacy 42-45"
+entity_type = "item"
+description = "Conjunto de ocho archivos contenidos en el disco recuperado con información sobre Falkenberg, Uchtdorf, Goscode, rutas de Panamá, Eurasia Biotechnics, mensaje de BART, Aldecaldos, IASTORN y NetWatch"
+
+[[campaign.entities]]
+name = "Madre de Minta"
+entity_type = "npc"
+description = "Persona que dejó un mensaje de audio dirigido a BART contenido en los archivos del disco"
 
 [[campaign.entities]]
 name = "Mareagris"
@@ -380,6 +451,11 @@ description = "Corporación tradicional relegada a zonas 'sucias', dueña de una
 name = "NCPD"
 entity_type = "organization"
 description = "Policía de Night City que arresta a Elara con cargos imposibles manipulados por Aeterna"
+
+[[campaign.entities]]
+name = "NetWatch"
+entity_type = "organization"
+description = "Organización de vigilancia de la red mencionada en los archivos del disco"
 
 [[campaign.entities]]
 name = "Netrunner desconocido"
@@ -417,6 +493,11 @@ entity_type = "organization"
 description = "Organización clandestina liderada por Ekaterina que protege a más de cincuenta personas afectadas por Aeterna y opera contra la corporación."
 
 [[campaign.entities]]
+name = "Red de vigilancia de Aeterna"
+entity_type = "technology"
+description = "Sistema de vigilancia electromagnética constante que envuelve Night City basado en la frecuencia descubierta por Canal"
+
+[[campaign.entities]]
 name = "Segundo disco de datos"
 entity_type = "item"
 description = "Segundo disco de información sobre Aeterna mantenido bajo custodia por Ekaterina en su red de resistencia."
@@ -431,65 +512,6 @@ name = "Tercer disco de datos"
 entity_type = "item"
 description = "Tercer disco de información sobre Aeterna que permanece perdido según Sena."
 
-[[campaign.entities]]
-name = "Jurassic Legacy 42-45"
-entity_type = "item"
-description = "Conjunto de ocho archivos contenidos en el disco recuperado con información sobre Falkenberg, Uchtdorf, Goscode, rutas de Panamá, Eurasia Biotechnics, mensaje de BART, Aldecaldos, IASTORN y NetWatch"
-
-[[campaign.entities]]
-name = "Goscode"
-entity_type = "technology"
-description = "Elemento mencionado en los archivos Jurassic Legacy del que se tiene poca información específica"
-
-[[campaign.entities]]
-name = "BART"
-entity_type = "other"
-description = "Destinatario del mensaje de audio de la madre de Minta contenido en los archivos del disco"
-
-[[campaign.entities]]
-name = "IASTORN"
-entity_type = "organization"
-description = "Organización mencionada en los archivos Jurassic Legacy junto con NetWatch"
-
-[[campaign.entities]]
-name = "NetWatch"
-entity_type = "organization"
-description = "Organización de vigilancia de la red mencionada en los archivos del disco"
-
-[[campaign.entities]]
-name = "Burst_codec"
-entity_type = "technology"
-description = "Archivo que desaparece misteriosamente de todos los dispositivos mientras el terminal de Vektor funciona al máximo"
-
-[[campaign.entities]]
-name = "Madre de Minta"
-entity_type = "npc"
-description = "Persona que dejó un mensaje de audio dirigido a BART contenido en los archivos del disco"
-
-[[campaign.entities]]
-name = "Familia de Tira"
-entity_type = "faction"
-description = "Familia que según Thorne puso los cimientos tecnológicos de las antenas que Aeterna usa como nodos de silencio y fueron asesinados al descubrir el uso de su trabajo"
-
-[[campaign.entities]]
-name = "Fracción eliminadora de Aeterna"
-entity_type = "faction"
-description = "Facción dentro de Aeterna que según Thorne busca eliminar a los supervivientes para limpiar su pasado corporativo"
-
-[[campaign.entities]]
-name = "Frecuencia 71/56"
-entity_type = "technology"
-description = "Patrón descubierto por Canal en la libreta de Sena donde el número 71 ha sido sustituido por 56, revelando una frecuencia de comunicación que permea Night City"
-
-[[campaign.entities]]
-name = "Red de vigilancia de Aeterna"
-entity_type = "technology"
-description = "Sistema de vigilancia electromagnética constante que envuelve Night City basado en la frecuencia descubierta por Canal"
-
-[[campaign.entities]]
-name = "Eurasia Biotechnics"
-entity_type = "other"
-
 [[campaign.relationship_types]]
 key = "operates_in"
 label = "opera en"
@@ -503,6 +525,11 @@ category = "general"
 [[campaign.relationship_types]]
 key = "opera en"
 label = "opera en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "caused"
+label = "causó"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -541,13 +568,18 @@ label = "alias de"
 category = "general"
 
 [[campaign.relationship_types]]
-key = "caused"
-label = "causó"
+key = "conflicts_with"
+label = "en conflicto con"
 category = "general"
 
 [[campaign.relationship_types]]
-key = "conflicts_with"
-label = "en conflicto con"
+key = "member_of"
+label = "miembro de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "belongs_to"
+label = "pertenece a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -566,6 +598,16 @@ label = "acompañado por"
 category = "social"
 
 [[campaign.relationship_types]]
+key = "ally_of"
+label = "aliado de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "associated_with"
+label = "asociado con"
+category = "general"
+
+[[campaign.relationship_types]]
 key = "busca informacion sobre"
 label = "busca información sobre"
 category = "general"
@@ -576,6 +618,11 @@ label = "capturado por"
 category = "general"
 
 [[campaign.relationship_types]]
+key = "hunts"
+label = "caza a"
+category = "general"
+
+[[campaign.relationship_types]]
 key = "colabora con"
 label = "colabora con"
 category = "politica"
@@ -583,6 +630,11 @@ category = "politica"
 [[campaign.relationship_types]]
 key = "connected_to_theme"
 label = "conectado al tema"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "knows"
+label = "conoce a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -621,18 +673,13 @@ label = "manda a"
 category = "general"
 
 [[campaign.relationship_types]]
-key = "member_of"
-label = "miembro de"
-category = "general"
-
-[[campaign.relationship_types]]
-key = "belongs_to"
-label = "pertenece a"
-category = "general"
-
-[[campaign.relationship_types]]
 key = "serves"
 label = "sirve a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "betrayed"
+label = "traicionó a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -643,11 +690,6 @@ category = "general"
 [[campaign.relationship_types]]
 key = "lives_in"
 label = "vive en"
-category = "general"
-
-[[campaign.relationship_types]]
-key = "ally_of"
-label = "aliado de"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -666,18 +708,8 @@ label = "amigo de"
 category = "general"
 
 [[campaign.relationship_types]]
-key = "associated_with"
-label = "asociado con"
-category = "general"
-
-[[campaign.relationship_types]]
 key = "searches_for"
 label = "busca"
-category = "general"
-
-[[campaign.relationship_types]]
-key = "hunts"
-label = "caza a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -688,11 +720,6 @@ category = "general"
 [[campaign.relationship_types]]
 key = "trusts"
 label = "confía en"
-category = "general"
-
-[[campaign.relationship_types]]
-key = "knows"
-label = "conoce a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -768,11 +795,6 @@ category = "general"
 [[campaign.relationship_types]]
 key = "has_access_to"
 label = "tiene acceso a"
-category = "general"
-
-[[campaign.relationship_types]]
-key = "betrayed"
-label = "traicionó a"
 category = "general"
 
 [[campaign.relationship_types]]
@@ -1161,6 +1183,76 @@ target_key = "npc:Niño del fixer"
 relation_type_key = "acompanado por"
 relation_type_label = "acompañado por"
 notes = "El niño acompañaba al fixer durante el evento en la plaza"
+
+[[campaign.relationships]]
+source_key = "npc:Elías Thorne"
+target_key = "ent:Eurasia Biotechnics"
+relation_type_key = "works_for"
+relation_type_label = "trabaja para"
+notes = "Ex-agente, pero aún recibe órdenes en simulaciones"
+
+[[campaign.relationships]]
+source_key = "npc:Elías Thorne"
+target_key = "player:301071912292057088"
+relation_type_key = "ally_of"
+relation_type_label = "aliado de"
+notes = "Propuesta de alianza contra Aeterna"
+
+[[campaign.relationships]]
+source_key = "ent:Familia de Tira"
+target_key = "ent:Aeterna"
+relation_type_key = "betrayed"
+relation_type_label = "traicionó a"
+notes = "Crearon la tecnología base que Aeterna pervirtió"
+
+[[campaign.relationships]]
+source_key = "ent:Familia de Tira"
+target_key = "ent:Aeterna"
+relation_type_key = "caused"
+relation_type_label = "causó"
+notes = "Tecnología original posteriormente utilizada por Aeterna"
+
+[[campaign.relationships]]
+source_key = "npc:Madre de Minta"
+target_key = "ent:BART"
+relation_type_key = "knows"
+relation_type_label = "conoce a"
+notes = "Relación establecida por mensaje personal"
+
+[[campaign.relationships]]
+source_key = "ent:Burst_codec"
+target_key = "player:321011002856701972"
+relation_type_key = "associated_with"
+relation_type_label = "asociado con"
+notes = "Desaparición coincidente con actividad máxima del terminal"
+
+[[campaign.relationships]]
+source_key = "ent:Fracción eliminadora de Aeterna"
+target_key = "ent:Node 56"
+relation_type_key = "hunts"
+relation_type_label = "caza a"
+notes = "Motivación de limpieza corporativa"
+
+[[campaign.relationships]]
+source_key = "ent:Fracción eliminadora de Aeterna"
+target_key = "ent:Aeterna"
+relation_type_key = "member_of"
+relation_type_label = "miembro de"
+notes = "Facción interna de la corporación"
+
+[[campaign.relationships]]
+source_key = "ent:Red de vigilancia de Aeterna"
+target_key = "loc:Night City"
+relation_type_key = "operates_in"
+relation_type_label = "opera en"
+notes = "Sistema de vigilancia electromagnética ciudad-amplio"
+
+[[campaign.relationships]]
+source_key = "ent:Frecuencia 71/56"
+target_key = "ent:Red de vigilancia de Aeterna"
+relation_type_key = "belongs_to"
+relation_type_label = "pertenece a"
+notes = "Componente técnico del sistema de vigilancia"
 
 [[campaign.relationships]]
 source_key = "npc:Kael"
