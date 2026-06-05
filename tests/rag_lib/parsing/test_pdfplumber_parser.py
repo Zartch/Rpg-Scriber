@@ -6,7 +6,14 @@ from pathlib import Path
 import pytest
 
 from rag_lib.errors import PdfParseError
-from rag_lib.parsing.pdfplumber_parser import PdfplumberParser
+from rag_lib.parsing.pdfplumber_parser import (
+    PdfplumberParser,
+    _dedup_and_drop,
+    _detect_gutter,
+    _lines_to_blocks,
+    _reading_order_blocks,
+    _segment_reading_order,
+)
 from rag_lib.types import ProseBlock, TableBlock, TocEntry
 
 
@@ -177,30 +184,188 @@ class _FakePage:
         self.height = 842.0
 
 
-def test_extract_prose_groups_deduplicates_same_position_chars() -> None:
-    """PDF decorativo renderiza texto dos veces en la misma (x0, top) — el output debe ser limpio."""
-    parser = _parser()
-    char_h      = {"text": "H", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"}
-    char_h_dup  = {"text": "H", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"}
-    char_i      = {"text": "i", "x0": 16.0, "top": 100.0, "size": 11.0, "object_type": "char"}
-
-    result = parser._extract_prose_groups(_FakePage([char_h, char_h_dup, char_i]), [])
-
-    assert len(result) == 1
-    text, _ = result[0]
-    assert text == "Hi"
+def test_table_still_extracted_after_page_dedup(pdf_with_table: Path) -> None:
+    """El dedup a nivel de página no debe romper la detección de tablas."""
+    pages = _parser().parse(pdf_with_table)
+    tables = [b for p in pages for b in p.blocks if isinstance(b, TableBlock)]
+    assert len(tables) >= 1
+    header = [cell.strip() for cell in tables[0].rows[0]]
+    assert "Arma" in header
 
 
-def test_extract_prose_groups_preserves_distinct_position_chars() -> None:
-    """Chars en posiciones distintas se conservan todos."""
-    parser = _parser()
+def test_dedup_and_drop_removes_same_position_duplicate() -> None:
+    """PDF decorativo renderiza el mismo glifo dos veces en (x0, top) idénticos."""
     chars = [
-        {"text": "A", "x0": 10.0, "top": 100.0, "size": 11.0, "object_type": "char"},
-        {"text": "B", "x0": 20.0, "top": 100.0, "size": 11.0, "object_type": "char"},
-        {"text": "C", "x0": 30.0, "top": 100.0, "size": 11.0, "object_type": "char"},
+        {"text": "H", "x0": 10.0, "x1": 16.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
+        {"text": "H", "x0": 10.0, "x1": 16.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
+        {"text": "i", "x0": 16.0, "x1": 20.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
     ]
-    result = parser._extract_prose_groups(_FakePage(chars), [])
+    kept = _dedup_and_drop(chars)
+    assert [c["text"] for c in kept] == ["H", "i"]
 
-    assert len(result) == 1
-    text, _ = result[0]
-    assert text == "ABC"
+
+def test_dedup_and_drop_preserves_distinct_positions() -> None:
+    chars = [
+        {"text": "A", "x0": 10.0, "x1": 16.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
+        {"text": "B", "x0": 20.0, "x1": 26.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
+        {"text": "C", "x0": 30.0, "x1": 36.0, "top": 100.0, "size": 11.0, "fontname": "FuturaPT-Book", "object_type": "char"},
+    ]
+    kept = _dedup_and_drop(chars)
+    assert [c["text"] for c in kept] == ["A", "B", "C"]
+
+
+def test_dedup_and_drop_removes_decorative_fonts() -> None:
+    """Los chars de fuentes small-caps decorativas (SC700) se descartan."""
+    chars = [
+        {"text": "R", "x0": 10.0, "x1": 16.0, "top": 100.0, "size": 11.0, "fontname": "XQLQXE+FuturaPT-Book", "object_type": "char"},
+        {"text": "X", "x0": 20.0, "x1": 26.0, "top": 100.0, "size": 30.0, "fontname": "APNBUI+IndustryInc-Base-SC700", "object_type": "char"},
+        {"text": "Y", "x0": 30.0, "x1": 36.0, "top": 100.0, "size": 30.0, "fontname": "WPVAJG+BisectModificadaRegular-SC700", "object_type": "char"},
+    ]
+    kept = _dedup_and_drop(chars)
+    assert [c["text"] for c in kept] == ["R"]
+
+
+def test_lines_to_blocks_preserves_input_order() -> None:
+    """Las líneas se concatenan en el orden dado, no re-ordenadas por top."""
+    line_low = [{"text": "abajo", "x0": 10.0, "x1": 40.0, "top": 200.0, "size": 11.0}]
+    line_high = [{"text": "arriba", "x0": 10.0, "x1": 40.0, "top": 100.0, "size": 11.0}]
+    # Entrada deliberadamente fuera de orden vertical:
+    blocks = _lines_to_blocks([line_low, line_high])
+    assert len(blocks) == 1
+    text, _fs = blocks[0]
+    assert text == "abajo arriba"
+
+
+def _row(text: str, x0: float, top: float, w: float = 6.0, size: float = 10.0) -> dict:
+    return {"text": text, "x0": x0, "x1": x0 + w, "top": top, "size": size, "object_type": "char"}
+
+
+def test_detect_gutter_finds_two_columns() -> None:
+    """Dos columnas (x 50-240 y 360-550) con hueco central → canalón ~300."""
+    chars = []
+    for top in (100.0, 112.0, 124.0):
+        for x in range(50, 241, 12):
+            chars.append(_row("L", float(x), top))
+        for x in range(360, 551, 12):
+            chars.append(_row("R", float(x), top))
+    gutter = _detect_gutter(chars, 595.0)
+    assert gutter is not None
+    assert 250.0 < gutter < 360.0
+
+
+def test_detect_gutter_single_column_returns_none() -> None:
+    """Cobertura uniforme de margen a margen → sin canalón."""
+    chars = [_row("x", float(x), 100.0) for x in range(50, 551, 12)]
+    assert _detect_gutter(chars, 595.0) is None
+
+
+def test_detect_gutter_ignores_full_width_title() -> None:
+    """Un título de ancho completo (font grande) no debe rellenar el canalón.
+
+    _detect_gutter recibe SOLO body chars; el caller filtra con _body_chars.
+    Aquí simulamos eso pasando únicamente los body chars de 2 columnas.
+    """
+    body = []
+    for top in (140.0, 152.0):
+        for x in range(50, 241, 12):
+            body.append(_row("L", float(x), top))
+        for x in range(360, 551, 12):
+            body.append(_row("R", float(x), top))
+    gutter = _detect_gutter(body, 595.0)
+    assert gutter is not None
+
+
+def test_detect_gutter_content_one_side_only_returns_none() -> None:
+    """Si un lado tiene <15% de los chars, no es un layout de 2 columnas."""
+    chars = [_row("L", float(x), 100.0) for x in range(50, 241, 12)]
+    chars.append(_row("R", 400.0, 100.0))  # 1 solo char a la derecha
+    assert _detect_gutter(chars, 595.0) is None
+
+
+def test_segment_reading_order_left_then_right() -> None:
+    """Dos sub-líneas columnar a la misma altura → izquierda antes que derecha."""
+    left = [{"text": "izq", "x0": 50.0, "x1": 90.0, "top": 100.0, "size": 10.0}]
+    right = [{"text": "der", "x0": 360.0, "x1": 400.0, "top": 100.0, "size": 10.0}]
+    # Una sola línea cruda mezcla ambas columnas (mismo top):
+    mixed = left + right
+    ordered = _segment_reading_order([mixed], gutter_x=300.0)
+    text = " ".join("".join(c["text"] for c in ln) for ln in ordered)
+    assert text == "izq der"
+
+
+def test_segment_reading_order_full_width_separates_bands() -> None:
+    """Una línea de ancho completo separa bandas: banda1(izq,der), título, banda2(izq,der)."""
+    band1 = [
+        {"text": "A", "x0": 50.0, "x1": 90.0, "top": 100.0, "size": 10.0},
+        {"text": "B", "x0": 360.0, "x1": 400.0, "top": 100.0, "size": 10.0},
+    ]
+    title = [
+        {"text": "T", "x0": 50.0, "x1": 290.0, "top": 130.0, "size": 10.0},
+        {"text": "T", "x0": 300.0, "x1": 540.0, "top": 130.0, "size": 10.0},
+    ]
+    band2 = [
+        {"text": "C", "x0": 50.0, "x1": 90.0, "top": 160.0, "size": 10.0},
+        {"text": "D", "x0": 360.0, "x1": 400.0, "top": 160.0, "size": 10.0},
+    ]
+    ordered = _segment_reading_order([band1, title, band2], gutter_x=300.0)
+    text = " ".join("".join(c["text"] for c in ln) for ln in ordered)
+    assert text == "A B TT C D"
+
+
+def test_segment_reading_order_groups_column_lines_within_band() -> None:
+    """Dentro de una banda, todas las líneas izquierdas van antes que las derechas."""
+    row1 = [
+        {"text": "1", "x0": 50.0, "x1": 90.0, "top": 100.0, "size": 10.0},
+        {"text": "a", "x0": 360.0, "x1": 400.0, "top": 100.0, "size": 10.0},
+    ]
+    row2 = [
+        {"text": "2", "x0": 50.0, "x1": 90.0, "top": 112.0, "size": 10.0},
+        {"text": "b", "x0": 360.0, "x1": 400.0, "top": 112.0, "size": 10.0},
+    ]
+    ordered = _segment_reading_order([row1, row2], gutter_x=300.0)
+    text = " ".join("".join(c["text"] for c in ln) for ln in ordered)
+    assert text == "1 2 a b"
+
+
+def test_extract_prose_groups_reconstructs_two_columns() -> None:
+    """Una página de 2 columnas se lee izquierda-completa, luego derecha (no interleaved)."""
+    parser = _parser()
+    chars: list[dict] = []
+    # Columna izquierda: "IZQUIERDA" en x 50.., dos líneas
+    left_words = [("IZQUIERDA", 100.0), ("primera", 112.0)]
+    for word, top in left_words:
+        x = 50.0
+        for ch in word:
+            chars.append({"text": ch, "x0": x, "x1": x + 6, "top": top, "size": 10.0, "object_type": "char"})
+            x += 6
+    # Columna derecha: "DERECHA" en x 360.., dos líneas
+    right_words = [("DERECHA", 100.0), ("segunda", 112.0)]
+    for word, top in right_words:
+        x = 360.0
+        for ch in word:
+            chars.append({"text": ch, "x0": x, "x1": x + 6, "top": top, "size": 10.0, "object_type": "char"})
+            x += 6
+
+    blocks = parser._extract_prose_groups(_FakePage(chars), [])
+    text = " ".join(t for t, _ in blocks)
+    # La izquierda completa precede a la derecha; sin chars intercalados.
+    assert text.index("IZQUIERDA") < text.index("DERECHA")
+    assert text.index("primera") < text.index("DERECHA")
+    assert "IZQUIERDA primera" in text
+    assert "DERECHA segunda" in text
+
+
+def test_caption_text_reconstructs_columns() -> None:
+    """Una región de caption que cruza 2 columnas se lee izq-luego-der."""
+    chars: list[dict] = []
+    x = 50.0
+    for ch in "TABLA":
+        chars.append({"text": ch, "x0": x, "x1": x + 6, "top": 80.0, "size": 9.0, "object_type": "char"})
+        x += 6
+    x = 360.0
+    for ch in "DERECHA":
+        chars.append({"text": ch, "x0": x, "x1": x + 6, "top": 80.0, "size": 9.0, "object_type": "char"})
+        x += 6
+    text = " ".join(t for t, _ in _reading_order_blocks(chars, 595.0))
+    assert "TABLA" in text and "DERECHA" in text
+    assert text.index("TABLA") < text.index("DERECHA")
