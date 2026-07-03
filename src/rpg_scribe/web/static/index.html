@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/css/features/relationships.css">
   <link rel="stylesheet" href="/css/features/feed.css">
   <link rel="stylesheet" href="/css/features/summary.css">
+  <link rel="stylesheet" href="/css/features/bot-panel.css">
 </head>
 <body>
   <header>
@@ -467,6 +468,22 @@
             </div>
             <div class="status-config"></div>
           </div>
+        </div>
+        <div id="bot-speech-panel" class="bot-speech-panel hidden">
+          <div class="bot-panel-top">
+            <span class="bot-panel-header"></span>
+            <button class="bot-panel-close" type="button" title="Cerrar">✕</button>
+          </div>
+          <div class="bot-panel-question"></div>
+          <div class="bot-panel-answer"></div>
+          <div class="bot-panel-controls">
+            <button class="bot-panel-prev" type="button" title="Frase anterior">⏮</button>
+            <button class="bot-panel-restart" type="button" title="Repetir desde el inicio">🔁</button>
+            <button class="bot-panel-playpause" type="button">⏸ Pausar</button>
+            <button class="bot-panel-next" type="button" title="Frase siguiente">⏭</button>
+            <button class="bot-panel-stop" type="button" title="Descartar">⏹</button>
+          </div>
+          <div class="bot-panel-status"></div>
         </div>
         <div id="status-db-path" class="status-db-path"></div>
         <div id="session-banner" class="session-banner hidden">

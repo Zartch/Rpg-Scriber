@@ -10,6 +10,7 @@ import { renderRelationships, initRelationshipListeners, setCampaignRefresher as
 import { createRelationshipGraph3D } from "./relationships/graph-3d.js";
 import { fetchSessionList, pollQuestions, setMode, initSessionListeners, setOnFetchCampaignInfo, setOnSelectBrowseCampaign, setOnBannerSession } from "./sessions.js";
 import { initTTS } from "./tts.js";
+import { initBotPanel, showBotPanel } from "./bot-panel.js";
 import { withLoading } from "./utils.js";
 
 // Register the 3D graph constructor so relationships/index.js can still find it via window
@@ -35,6 +36,10 @@ registerHandler("entities_updated", function () {
 
 registerHandler("generation_progress", function (data) {
   handleGenerationProgress(data);
+});
+
+registerHandler("bot_speech", function (data) {
+  showBotPanel(data);
 });
 
 // ── Status update handler ───────────────────────────────────────────────────
@@ -268,6 +273,7 @@ initEntityFormListeners();
 initRelationshipListeners();
 initSessionListeners();
 initTTS();
+initBotPanel();
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 

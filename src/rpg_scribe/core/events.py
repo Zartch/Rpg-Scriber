@@ -148,3 +148,23 @@ class BotTextResponseEvent:
     answer_md: str
     citations: tuple[Citation, ...] = ()
     voice_channel_id: int | None = None
+
+
+@dataclass(frozen=True)
+class BotSpeechEvent:
+    """Emitido por TriggerWatcher cuando la respuesta hablada de un bot se ha ENCOLADA para reproducción.
+
+    Lo consume WebSocketBridge para avisar al Web UI, que muestra un panel de
+    control de transporte. Se publica una vez la voz está conectada y
+    ``start_queue`` retornó sin lanzar; como ``start_queue`` es fire-and-forget,
+    los fallos de reproducción posteriores se registran en el log pero no
+    cancelan este evento.
+    """
+
+    session_id: str
+    bot_keyword: str
+    speaker_name: str
+    question: str
+    answer_md: str
+    total_chunks: int  # nº de frases/WAVs en la cola (= len(paths))
+    timestamp: float = field(default_factory=time.time)
