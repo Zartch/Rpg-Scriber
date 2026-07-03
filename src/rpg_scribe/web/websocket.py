@@ -12,6 +12,7 @@ from fastapi import WebSocket
 
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    BotSpeechEvent,
     EntitiesUpdatedEvent,
     GenerationProgressEvent,
     SummaryUpdateEvent,
@@ -78,6 +79,7 @@ class WebSocketBridge:
         self._event_bus.subscribe(SystemStatusEvent, self._on_status)
         self._event_bus.subscribe(EntitiesUpdatedEvent, self._on_entities_updated)
         self._event_bus.subscribe(GenerationProgressEvent, self._on_generation_progress)
+        self._event_bus.subscribe(BotSpeechEvent, self._on_bot_speech)
         logger.info("WebSocketBridge started")
 
     async def stop(self) -> None:
@@ -87,6 +89,7 @@ class WebSocketBridge:
         self._event_bus.unsubscribe(SystemStatusEvent, self._on_status)
         self._event_bus.unsubscribe(EntitiesUpdatedEvent, self._on_entities_updated)
         self._event_bus.unsubscribe(GenerationProgressEvent, self._on_generation_progress)
+        self._event_bus.unsubscribe(BotSpeechEvent, self._on_bot_speech)
         logger.info("WebSocketBridge stopped")
 
     async def _on_transcription(self, event: TranscriptionEvent) -> None:
@@ -110,6 +113,12 @@ class WebSocketBridge:
     async def _on_generation_progress(self, event: GenerationProgressEvent) -> None:
         await self._manager.broadcast({
             "type": "generation_progress",
+            "data": asdict(event),
+        })
+
+    async def _on_bot_speech(self, event: BotSpeechEvent) -> None:
+        await self._manager.broadcast({
+            "type": "bot_speech",
             "data": asdict(event),
         })
 

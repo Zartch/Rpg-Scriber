@@ -114,6 +114,17 @@ Es un canal **independiente** del de resúmenes (`DISCORD_SUMMARY_CHANNEL_ID`).
 | `DiscordBotResponsePublisher` | `discord_bot/bot_response_publisher.py` | Embed con la cita en el canal destino |
 | `rag_lib.list_chunks_by_page` | `rag_lib/__init__.py` | Trae los chunks que cubren una página (follow) |
 
+## Panel de control de voz (Web UI)
+
+Cuando el bot reproduce una respuesta hablada, aparece un panel dentro de
+**System Status** con controles de transporte sobre el audio en Discord:
+Pausar/Reanudar, frase anterior/siguiente, Repetir (desde el inicio) y
+Descartar. Es solo transporte (no re-consulta a Claude). Implementación:
+`BotSpeechEvent` (watcher) → WebSocket `bot_speech` → `bot-panel.js`, que usa
+los endpoints existentes `/api/tts/discord/*`. **Descartar (⏹)** corta el audio
+en Discord y oculta el panel; **Cerrar (✕)** solo oculta el panel sin cortar el
+audio.
+
 ## Degradación y casos límite
 
 - Sin manuales / sin resultados → "No encontré esa regla en los manuales."

@@ -15,8 +15,10 @@ observability, (b) calls ``bot.handle(command, …)`` inline, (c) if the
 bot returns a :class:`BotResponse` with a ``written`` field, publishes a
 :class:`BotTextResponseEvent` (with the current voice channel id
 attached), (d) synthesizes the spoken response via the shared TTS
-helper, and (e) enqueues the resulting WAV(s) on the
-:class:`DiscordTTSPlayer`.
+helper, (e) enqueues the resulting WAV(s) on the
+:class:`DiscordTTSPlayer`, and (f) publica :class:`BotSpeechEvent` (con
+``total_chunks``) tras encolar el audio, para que el Web UI muestre el
+panel de control.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from dataclasses import dataclass
 from rpg_scribe.bots.base import BaseBot, BotResponse
 from rpg_scribe.core.event_bus import EventBus
 from rpg_scribe.core.events import (
+    BotSpeechEvent,
     BotTextResponseEvent,
     TranscriptionEvent,
     TriggerActivatedEvent,
@@ -249,6 +252,18 @@ class TriggerWatcher:
                 cap.bot.keyword,
                 exc,
             )
+            return
+
+        await self._bus.publish(
+            BotSpeechEvent(
+                session_id=ev.session_id,
+                bot_keyword=cap.bot.keyword,
+                speaker_name=ev.speaker_name,
+                question=command,
+                answer_md=response.written or spoken,
+                total_chunks=len(paths),
+            )
+        )
 
     def _find_keyword(self, text: str) -> tuple[BaseBot, str] | None:
         """Return (bot, text_after_keyword) for the first matching keyword."""

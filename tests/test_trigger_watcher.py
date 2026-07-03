@@ -385,3 +385,58 @@ class TestBotTextResponseEventPublished:
         assert len(ev.citations) == 1
         assert ev.citations[0].manual == "M"
         assert ev.citations[0].page == 3
+
+
+class TestBotSpeechEventPublished:
+    @pytest.mark.asyncio
+    async def test_event_published_when_playback_starts(self, tmp_path: Path) -> None:
+        from rpg_scribe.core.events import BotSpeechEvent
+
+        bot = _BotForTesting()  # keyword "echo", reply "ok"
+        player = _mk_player()
+        watcher = _mk_watcher([bot], tmp_path=tmp_path, player=player)
+
+        collected: list[BotSpeechEvent] = []
+
+        async def _collect(ev: BotSpeechEvent) -> None:
+            collected.append(ev)
+
+        watcher._bus.subscribe(BotSpeechEvent, _collect)
+        await watcher.start()
+
+        await watcher._on_transcription(_mk_event("echo, hola mundo"))
+        await asyncio.sleep(0.2)
+
+        assert len(collected) == 1
+        ev = collected[0]
+        assert ev.bot_keyword == "echo"
+        assert ev.speaker_name == "Alice"
+        assert ev.question == "hola mundo"
+        assert ev.answer_md == "ok"
+        queued = player.start_queue.await_args.args[0]
+        assert ev.total_chunks == len(queued)
+        assert ev.total_chunks >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_event_when_voice_disconnected(self, tmp_path: Path) -> None:
+        from rpg_scribe.core.events import BotSpeechEvent
+
+        bot = _BotForTesting()
+        player = MagicMock()
+        player.get_voice_client.return_value = None  # not connected
+        player.start_queue = AsyncMock()
+        watcher = _mk_watcher([bot], tmp_path=tmp_path, player=player)
+
+        collected: list = []
+
+        async def _collect(ev) -> None:
+            collected.append(ev)
+
+        watcher._bus.subscribe(BotSpeechEvent, _collect)
+        await watcher.start()
+
+        await watcher._on_transcription(_mk_event("echo, hola"))
+        await asyncio.sleep(0.2)
+
+        assert collected == []
+        player.start_queue.assert_not_called()
