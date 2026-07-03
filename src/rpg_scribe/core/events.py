@@ -120,3 +120,31 @@ class TriggerActivatedEvent:
     started_at: float
     closed_at: float
     close_reason: str  # "timeout" | "close_word"
+
+
+@dataclass(frozen=True)
+class Citation:
+    """Una referencia a manual + página usada en una respuesta de bot."""
+
+    manual: str
+    page: int
+    section_path: str | None = None
+
+
+@dataclass(frozen=True)
+class BotTextResponseEvent:
+    """Emitido por TriggerWatcher cuando un bot devuelve una respuesta escrita.
+
+    Lo consume DiscordBotResponsePublisher para postear un embed. ``citations``
+    puede ir vacío. ``voice_channel_id`` es el canal de voz donde se invocó al
+    bot (resuelto por el watcher); el publisher lo usa como fallback cuando no
+    hay un canal de texto dedicado configurado.
+    """
+
+    session_id: str
+    bot_keyword: str
+    speaker_name: str
+    question: str
+    answer_md: str
+    citations: tuple[Citation, ...] = ()
+    voice_channel_id: int | None = None

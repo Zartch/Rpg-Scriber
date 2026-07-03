@@ -91,6 +91,17 @@ class CharacterRelationshipInfo:
 
 
 @dataclass
+class RagCampaignConfig:
+    """Ajustes RAG por campaña (sección [campaign.rag] del TOML)."""
+
+    manuals: list[str] = field(default_factory=list)
+    rules_channel_id: str = ""
+    keyword: str | None = None
+    top_k: int = 8
+    debug: bool = False
+
+
+@dataclass
 class CampaignContext:
     """Full campaign context used by the summarizer."""
 
@@ -113,6 +124,7 @@ class CampaignContext:
     dm_speaker_id: str = ""
 
     custom_instructions: str = ""
+    rag: "RagCampaignConfig | None" = None
 
     # True when running without a campaign TOML (generic summarization)
     is_generic: bool = False
@@ -163,7 +175,7 @@ class TranscriberConfig:
 
     # Post-transcription hallucination filter
     post_filter_enabled: bool = True
-    post_filter_max_words_per_second: float = 6.0  # Max plausible speech rate
+    post_filter_max_words_per_second: float = 8.0  # Max plausible speech rate
 
     # Debug: save discarded chunks as WAV files for analysis (dev)
     audio_debug_log_dir: str = ""  # "" = disabled; e.g. "logs/audio"
@@ -187,7 +199,7 @@ class SummarizerConfig:
     """Configuration for a summarizer."""
 
     # Claude API settings
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-sonnet-5"
     max_tokens: int = 4096
     api_timeout_s: float = 60.0
 

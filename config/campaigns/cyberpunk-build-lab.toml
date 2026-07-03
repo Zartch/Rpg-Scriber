@@ -56,6 +56,16 @@ La campaña permanece en fase de definición, esperando que Miquel tome una deci
 La construcción colaborativa continúa pendiente de resolver los problemas técnicos para permitir una discusión fluida sobre roles, builds y sinergias de grupo antes del inicio oficial de la aventura.
 """
 
+# Bot de reglas (RAG): responde por voz preguntas de reglas citando el manual.
+# Ver docs/rules-bot.md. Si `manuals` no resuelve ningún manual de rag.db,
+# el bot se auto-desactiva en setup().
+[campaign.rag]
+manuals = ["Ciberpunk RED"]              # nombre tal cual está ingerido en rag.db
+# rules_channel_id = "123456789012345678"  # opcional: canal de texto dedicado
+keyword = "bot reglas"                    # opcional; default de RulesBot
+top_k = 8                                 # opcional
+debug = true                             # logs de diagnóstico (campaña de test)
+
 [[campaign.locations]]
 name = "Afterlife"
 

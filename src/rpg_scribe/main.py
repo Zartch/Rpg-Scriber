@@ -68,6 +68,7 @@ class Application:
         self._bot_task: asyncio.Task[None] | None = None
         self._bot: object | None = None  # discord.py Bot
         self._discord_publisher: object | None = None
+        self._bot_response_publisher: object | None = None
         self._discord_tts_player: object | None = None
         self._trigger_watcher: object | None = None
         self._transcription_writer: TranscriptionFileWriter | None = None
@@ -290,6 +291,24 @@ class Application:
             logger.info("No bots registered — trigger watcher not started")
             return
 
+        # Inyección de dependencias en los bots (una vez, antes del watcher).
+        from rpg_scribe.bots.base import BotServices
+
+        campaign = self.config.campaign
+        services = BotServices(
+            rag_db_path=self.config.rag_db_path,
+            anthropic_api_key=self.config.anthropic_api_key,
+            summarizer_model=self.config.summarizer.model,
+            campaign=campaign,
+            event_bus=self.event_bus,
+            rag=campaign.rag if campaign else None,
+        )
+        for bot in bots:
+            try:
+                await bot.setup(services)
+            except Exception as exc:
+                logger.error("Bot %s setup failed: %s", bot.keyword, exc)
+
         if tts_config.provider == "openai":
             from rpg_scribe.tts.openai_provider import OpenAITTSProvider
 
@@ -324,6 +343,9 @@ class Application:
             return
 
         from rpg_scribe.discord_bot.bot import create_bot
+        from rpg_scribe.discord_bot.bot_response_publisher import (
+            DiscordBotResponsePublisher,
+        )
         from rpg_scribe.discord_bot.publisher import DiscordSummaryPublisher
         from rpg_scribe.discord_bot.tts_player import DiscordTTSPlayer
 
@@ -340,6 +362,22 @@ class Application:
 
         # TTS player for the Web UI "Narrate in Discord" button
         self._discord_tts_player = DiscordTTSPlayer(bot=bot, event_bus=self.event_bus)
+
+        # Bot de reglas: publica las respuestas escritas. Si [campaign.rag] existe
+        # se cablea el publisher aunque no haya rules_channel_id, porque entonces
+        # hace fallback al chat del canal de voz (lo resuelve el watcher en el
+        # evento). channel_id=None activa ese fallback.
+        campaign = self.config.campaign
+        rag_cfg = campaign.rag if campaign else None
+        if rag_cfg:
+            channel_id = (
+                int(rag_cfg.rules_channel_id) if rag_cfg.rules_channel_id else None
+            )
+            self._bot_response_publisher = DiscordBotResponsePublisher(
+                bot=bot,
+                event_bus=self.event_bus,
+                channel_id=channel_id,
+            )
 
         # Voice-trigger bots ("Alexa-style"): a TriggerWatcher subscribes to
         # TranscriptionEvent, detects keywords, captures the multi-chunk

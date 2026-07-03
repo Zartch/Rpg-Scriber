@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+import rag_lib
 from rag_lib.store import Database
 
 
@@ -167,3 +168,77 @@ async def test_delete_manual_cascades_to_chunks(db: Database, manual_id: int) ->
     await db.manuals.delete(manual_id)
     rows = await db.chunks.list_by_manual(manual_id)
     assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# list_by_page / list_chunks_by_page — chunks que cubren una página
+# ---------------------------------------------------------------------------
+
+
+async def _page_db(tmp_path):
+    """Manual con 4 chunks: pág 1, rango 2-4, pág 5, y un segundo manual en pág 3."""
+    db = Database(str(tmp_path / "pages.db"))
+    await db.connect()
+    m1 = await db.manuals.insert(
+        name="Manual A", source_path="a.pdf", source_hash="sha_pa",
+        page_count=5, file_size=10, parser="pdfplumber",
+    )
+    m2 = await db.manuals.insert(
+        name="Manual B", source_path="b.pdf", source_hash="sha_pb",
+        page_count=5, file_size=10, parser="pdfplumber",
+    )
+    await db.chunks.insert_many(m1, [
+        {"seq": 0, "chunk_type": "prose", "page": 1, "page_end": None,
+         "section_path": None, "text": "uno", "text_hash": "p1", "token_count": 1},
+        {"seq": 1, "chunk_type": "prose", "page": 2, "page_end": 4,
+         "section_path": None, "text": "dos-cuatro", "text_hash": "p2", "token_count": 1},
+        {"seq": 2, "chunk_type": "prose", "page": 5, "page_end": None,
+         "section_path": None, "text": "cinco", "text_hash": "p3", "token_count": 1},
+    ])
+    await db.chunks.insert_many(m2, [
+        {"seq": 0, "chunk_type": "prose", "page": 3, "page_end": None,
+         "section_path": None, "text": "otro manual", "text_hash": "p4", "token_count": 1},
+    ])
+    return db, m1, m2
+
+
+async def test_list_by_page_single_page_chunk(tmp_path):
+    db, m1, _ = await _page_db(tmp_path)
+    try:
+        rows = await db.chunks.list_by_page(m1, 1)
+        assert [r["text"] for r in rows] == ["uno"]
+    finally:
+        await db.close()
+
+
+async def test_list_by_page_within_range(tmp_path):
+    """Página 3 cae dentro del rango 2-4 → devuelve el chunk de rango."""
+    db, m1, _ = await _page_db(tmp_path)
+    try:
+        rows = await db.chunks.list_by_page(m1, 3)
+        assert [r["text"] for r in rows] == ["dos-cuatro"]
+    finally:
+        await db.close()
+
+
+async def test_list_by_page_scopes_to_manual(tmp_path):
+    """La página 3 del Manual B no contamina los resultados del Manual A."""
+    db, m1, m2 = await _page_db(tmp_path)
+    try:
+        rows_a = await db.chunks.list_by_page(m1, 3)
+        rows_b = await db.chunks.list_by_page(m2, 3)
+        assert [r["text"] for r in rows_a] == ["dos-cuatro"]
+        assert [r["text"] for r in rows_b] == ["otro manual"]
+    finally:
+        await db.close()
+
+
+async def test_public_list_chunks_by_page_returns_chunks(tmp_path):
+    db, m1, _ = await _page_db(tmp_path)
+    db_path = str(tmp_path / "pages.db")
+    await db.close()
+    chunks = await rag_lib.list_chunks_by_page(m1, 3, db_path)
+    assert len(chunks) == 1
+    assert chunks[0].text == "dos-cuatro"
+    assert chunks[0].page == 2
+    assert chunks[0].page_end == 4

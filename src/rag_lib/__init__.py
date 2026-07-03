@@ -147,6 +147,19 @@ async def list_chunks(
         await db.close()
 
 
+async def list_chunks_by_page(
+    manual_id: int, page: int, db_path: str | Path
+) -> list[Chunk]:
+    """Return all chunks of *manual_id* that cover *page* (incl. page ranges)."""
+    db = Database(db_path)
+    await db.connect()
+    try:
+        rows = await db.chunks.list_by_page(manual_id, page)
+        return [_row_to_chunk(r) for r in rows]
+    finally:
+        await db.close()
+
+
 async def search(
     query: str,
     db_path: str | Path,

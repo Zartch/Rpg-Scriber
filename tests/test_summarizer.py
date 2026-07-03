@@ -66,7 +66,7 @@ def _make_campaign(**overrides) -> CampaignContext:
 
 def _make_config(**overrides) -> SummarizerConfig:
     defaults = dict(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=4096,
         api_timeout_s=60.0,
         max_retries=3,
@@ -383,7 +383,7 @@ class TestClaudeSummarizer:
         )
         await summarizer._call_api("sys", "usr")
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-5"
         assert call_kwargs["max_tokens"] == 4096
 
     # --- process_transcription ---
@@ -1124,7 +1124,7 @@ class TestTranscriptionEntry:
 class TestSummarizerConfig:
     def test_defaults(self):
         cfg = SummarizerConfig()
-        assert cfg.model == "claude-sonnet-4-20250514"
+        assert cfg.model == "claude-sonnet-5"
         assert cfg.max_tokens == 4096
         assert cfg.max_retries == 3
         assert cfg.max_input_chars == 600_000
