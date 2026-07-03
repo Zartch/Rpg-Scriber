@@ -163,6 +163,23 @@ class ChunkRepo:
         row_map = {r["id"]: dict(r) for r in rows}
         return [row_map[i] for i in ids if i in row_map]
 
+    async def list_by_page(self, manual_id: int, page: int) -> list[dict[str, Any]]:
+        """Return chunks of *manual_id* that cover *page*, ordered by seq.
+
+        A chunk covers the page when ``page <= page <= COALESCE(page_end, page)``
+        (single-page chunks have page_end NULL → COALESCE collapses to page).
+        """
+        cur = await self._db.conn.execute(
+            """SELECT * FROM rag_chunks
+               WHERE manual_id = ?
+                 AND page <= ?
+                 AND COALESCE(page_end, page) >= ?
+               ORDER BY seq""",
+            (manual_id, page, page),
+        )
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     async def update(
         self,
         chunk_id: int,

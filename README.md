@@ -11,6 +11,7 @@ RPG Scribe distingue entre diálogo in-game (lo que dicen los personajes) y meta
 - **Historial de resúmenes de campaña** — Resumen de sesión (detallado) + resúmenes de campaña acumulativos que se preservan en historial; generación automática al cerrar sesión o bajo demanda
 - **Dashboard web** — Interfaz FastAPI con WebSocket para ver transcripciones y resúmenes en tiempo real; modo Browse para consultar sesiones y campañas históricas
 - **Integración Discord** — Comandos slash (`/scribe start/stop/status`) y publicación de resúmenes como embeds
+- **Bot de reglas por voz** — Pregunta "bot reglas, ¿…?" en el canal de voz: busca en los manuales (RAG), responde citando manual y página, lo habla por TTS y lo escribe como embed
 - **Multi-campaña** — Configuración TOML por campaña con jugadores, personajes, PNJs, localizaciones y sistema de juego
 - **Grafo de relaciones** — Visualización de relaciones entre personajes dentro de cada campaña
 - **Resiliencia** — Retry con backoff exponencial, circuit breaker y reconexión automática
@@ -39,6 +40,7 @@ Listener (Discord/File) → Transcriber (OpenAI/Whisper) → Summarizer (Claude)
 | **Web UI** | Dashboard FastAPI con WebSocket para visualización en tiempo real |
 | **Discord Bot** | Comandos slash y publicación de resúmenes en canales de texto |
 | **Database** | SQLite async para persistencia de campañas, sesiones y transcripciones |
+| **Bot de reglas** | Bot activado por voz que consulta manuales (RAG), responde citando la fuente y publica un embed |
 
 ## Requisitos
 
@@ -135,6 +137,13 @@ character_description = "Curandera castellana, 28 años."
 [[campaign.npcs]]
 name = "Don Alfonso"
 description = "Alcalde de Tordesillas. Nervioso y con secretos."
+
+# Opcional: bot de reglas por voz (consulta manuales ingeridos vía RAG)
+[campaign.rag]
+manuals = ["Cyberpunk RED — Core"]   # nombre del manual ya ingerido en rag.db
+rules_channel_id = "123456789012345678"  # opcional; si falta, escribe en el chat del canal de voz
+keyword = "bot reglas"               # opcional
+top_k = 8                            # opcional
 ```
 
 ## Uso

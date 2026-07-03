@@ -24,6 +24,7 @@ from rpg_scribe.core.models import (
     LocationInfo,
     NPCInfo,
     PlayerInfo,
+    RagCampaignConfig,
     RelationshipTypeInfo,
     SummarizerConfig,
     TranscriberConfig,
@@ -225,6 +226,19 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
     custom = campaign_data.get("custom_instructions", {})
     custom_text = custom.get("text", "") if isinstance(custom, dict) else str(custom)
 
+    # RAG (sección opcional [campaign.rag])
+    rag_data = campaign_data.get("rag")
+    rag_config: RagCampaignConfig | None = None
+    if isinstance(rag_data, dict):
+        keyword = rag_data.get("keyword")
+        rag_config = RagCampaignConfig(
+            manuals=[str(m) for m in rag_data.get("manuals", [])],
+            rules_channel_id=str(rag_data.get("rules_channel_id", "")),
+            keyword=str(keyword) if keyword else None,
+            top_k=int(rag_data.get("top_k", 8)),
+            debug=bool(rag_data.get("debug", False)),
+        )
+
     return CampaignContext(
         campaign_id=campaign_data.get("id", path.stem),
         name=campaign_data.get("name", ""),
@@ -241,6 +255,7 @@ def load_campaign_toml(path: str | Path) -> CampaignContext:
         speaker_map=speaker_map,
         dm_speaker_id=dm_speaker_id,
         custom_instructions=custom_text.strip(),
+        rag=rag_config,
     )
 
 

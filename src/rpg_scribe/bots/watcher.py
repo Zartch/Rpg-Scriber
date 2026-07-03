@@ -11,9 +11,12 @@ conditions closes it:
 * (Future) explicit cancel via session end — not implemented in v1.
 
 On close, the watcher: (a) publishes :class:`TriggerActivatedEvent` for
-observability, (b) calls ``bot.handle(command, …)`` inline, (c)
-synthesizes the response via the shared TTS helper, and (d) enqueues the
-resulting WAV(s) on the :class:`DiscordTTSPlayer`.
+observability, (b) calls ``bot.handle(command, …)`` inline, (c) if the
+bot returns a :class:`BotResponse` with a ``written`` field, publishes a
+:class:`BotTextResponseEvent` (with the current voice channel id
+attached), (d) synthesizes the spoken response via the shared TTS
+helper, and (e) enqueues the resulting WAV(s) on the
+:class:`DiscordTTSPlayer`.
 """
 
 from __future__ import annotations
@@ -24,13 +27,24 @@ import re
 import time
 from dataclasses import dataclass
 
-from rpg_scribe.bots.base import BaseBot
+from rpg_scribe.bots.base import BaseBot, BotResponse
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import TranscriptionEvent, TriggerActivatedEvent
+from rpg_scribe.core.events import (
+    BotTextResponseEvent,
+    TranscriptionEvent,
+    TriggerActivatedEvent,
+)
 from rpg_scribe.tts.cache import TTSCache
 from rpg_scribe.tts.synthesizer import synthesize_to_wav_paths
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_response(raw: "str | BotResponse") -> BotResponse:
+    """Acepta el retorno legado (str) o el nuevo BotResponse y normaliza a BotResponse."""
+    if isinstance(raw, BotResponse):
+        return raw
+    return BotResponse(spoken=raw)
 
 
 @dataclass
@@ -166,7 +180,7 @@ class TriggerWatcher:
         )
 
         try:
-            response = await asyncio.wait_for(
+            raw = await asyncio.wait_for(
                 cap.bot.handle(
                     command,
                     session_id=ev.session_id,
@@ -177,15 +191,37 @@ class TriggerWatcher:
             )
         except Exception as exc:
             logger.exception("Bot %s.handle failed: %s", cap.bot.keyword, exc)
-            response = "Lo siento, ha habido un problema."
+            raw = "Lo siento, ha habido un problema."
 
-        if not response or not response.strip():
+        response = _normalize_response(raw)
+
+        # Publish the written answer (if any). Adjuntamos el canal de voz actual
+        # para que el publisher pueda hacer fallback a su chat integrado.
+        if response.written:
+            vc = self._player.get_voice_client()
+            voice_channel_id = (
+                vc.channel.id if vc is not None and vc.channel is not None else None
+            )
+            await self._bus.publish(
+                BotTextResponseEvent(
+                    session_id=ev.session_id,
+                    bot_keyword=cap.bot.keyword,
+                    speaker_name=ev.speaker_name,
+                    question=command,
+                    answer_md=response.written,
+                    citations=tuple(response.citations or ()),
+                    voice_channel_id=voice_channel_id,
+                )
+            )
+
+        spoken = response.spoken
+        if not spoken or not spoken.strip():
             return
 
         voice = cap.bot.voice or self._default_voice
         try:
             paths = await synthesize_to_wav_paths(
-                response,
+                spoken,
                 voice,
                 provider=self._tts_provider,
                 cache=self._tts_cache,

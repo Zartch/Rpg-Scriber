@@ -397,3 +397,67 @@ class TestTranscriberTypeConfig:
         defaults_file.write_text('[transcriber]\nprompt_hint = "RPG fantasy espanol"\n', encoding="utf-8")
         config = load_app_config(defaults_path=defaults_file)
         assert config.transcriber.prompt_hint == "RPG fantasy espanol"
+
+
+def test_campaign_rag_section_parsed(tmp_path):
+    from rpg_scribe.config import load_campaign_toml
+
+    toml = tmp_path / "camp.toml"
+    toml.write_text(
+        """
+[campaign]
+id = "cp"
+name = "Cyberpunk"
+game_system = "Cyberpunk RED"
+language = "es"
+
+[campaign.rag]
+manuals = ["Cyberpunk RED — Core"]
+rules_channel_id = "123456789012345678"
+keyword = "bot reglas"
+top_k = 6
+debug = true
+""",
+        encoding="utf-8",
+    )
+    ctx = load_campaign_toml(toml)
+    assert ctx.rag is not None
+    assert ctx.rag.manuals == ["Cyberpunk RED — Core"]
+    assert ctx.rag.rules_channel_id == "123456789012345678"
+    assert ctx.rag.keyword == "bot reglas"
+    assert ctx.rag.top_k == 6
+    assert ctx.rag.debug is True
+
+
+def test_campaign_rag_debug_defaults_to_false(tmp_path):
+    from rpg_scribe.config import load_campaign_toml
+
+    toml = tmp_path / "camp_no_debug.toml"
+    toml.write_text(
+        """
+[campaign]
+id = "cp2"
+name = "Cyberpunk"
+game_system = "Cyberpunk RED"
+language = "es"
+
+[campaign.rag]
+manuals = ["Cyberpunk RED — Core"]
+""",
+        encoding="utf-8",
+    )
+    ctx = load_campaign_toml(toml)
+    assert ctx.rag is not None
+    assert ctx.rag.debug is False
+
+
+def test_campaign_without_rag_section_is_none(tmp_path):
+    from rpg_scribe.config import load_campaign_toml
+
+    toml = tmp_path / "camp2.toml"
+    toml.write_text(
+        '[campaign]\nid = "x"\nname = "X"\ngame_system = "Y"\nlanguage = "es"\n',
+        encoding="utf-8",
+    )
+    ctx = load_campaign_toml(toml)
+    assert ctx.rag is None

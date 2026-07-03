@@ -8,9 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from rpg_scribe.bots.base import BaseBot
+from rpg_scribe.bots.base import BaseBot, BotResponse
+from rpg_scribe.bots.watcher import _normalize_response
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import TranscriptionEvent
+from rpg_scribe.core.events import BotTextResponseEvent, Citation, TranscriptionEvent
 from rpg_scribe.tts.cache import TTSCache
 
 
@@ -295,3 +296,92 @@ class TestTriggerActivatedEvent:
         assert ev.command == "comprueba algo"
         assert ev.close_reason == "timeout"
         assert ev.speaker_id == "user-1"
+
+
+def test_keyword_match_is_case_insensitive(tmp_path: Path) -> None:
+    """Uppercase keyword text triggers a bot registered with a lowercase keyword."""
+
+    class RulesBotStub(BaseBot):
+        keyword = "bot reglas"
+        name = "Reglas"
+
+        async def handle(self, command, *, session_id, speaker_id, speaker_name):
+            return "ok"
+
+    bot = RulesBotStub()
+    watcher = _mk_watcher([bot], tmp_path=tmp_path)
+
+    result = watcher._find_keyword("BOT REGLAS, ¿cómo funciona el hackeo?")
+    assert result is not None
+    found_bot, remainder = result
+    assert found_bot is bot
+    assert "hackeo" in remainder
+
+
+def test_normalize_str_wraps_in_bot_response():
+    r = _normalize_response("hola")
+    assert isinstance(r, BotResponse)
+    assert r.spoken == "hola"
+    assert r.written is None
+
+
+def test_normalize_bot_response_passthrough():
+    original = BotResponse(spoken="s", written="w")
+    assert _normalize_response(original) is original
+
+
+class TestBotTextResponseEventPublished:
+    @pytest.mark.asyncio
+    async def test_bot_response_with_written_publishes_event(self, tmp_path: Path) -> None:
+        """A bot returning BotResponse(written=...) triggers BotTextResponseEvent."""
+
+        class OracleBot(BaseBot):
+            keyword = "oracle"
+            timeout_s = 0.08
+
+            async def handle(self, command, *, session_id, speaker_id, speaker_name):
+                return BotResponse(
+                    spoken="hablado",
+                    written="respuesta escrita",
+                    citations=[Citation(manual="M", page=3, section_path="S")],
+                )
+
+        bus = EventBus()
+        collected: list[BotTextResponseEvent] = []
+
+        async def _collect(ev: BotTextResponseEvent) -> None:
+            collected.append(ev)
+
+        bus.subscribe(BotTextResponseEvent, _collect)
+
+        # Player with a concrete voice channel id
+        player = _mk_player()
+        vc = MagicMock()
+        vc.channel = MagicMock()
+        vc.channel.id = 12345
+        player.get_voice_client.return_value = vc
+
+        from rpg_scribe.bots.watcher import TriggerWatcher
+
+        watcher = TriggerWatcher(
+            event_bus=bus,
+            bots=[OracleBot()],
+            tts_provider=_mk_provider(),
+            tts_cache=TTSCache(str(tmp_path)),
+            tts_model="tts-1",
+            default_voice="nova",
+            player=player,
+        )
+        await watcher.start()
+
+        await watcher._on_transcription(_mk_event("oracle, quién es el asesino"))
+        await asyncio.sleep(0.2)
+
+        assert len(collected) == 1
+        ev = collected[0]
+        assert ev.answer_md == "respuesta escrita"
+        assert ev.bot_keyword == "oracle"
+        assert ev.voice_channel_id == 12345
+        assert len(ev.citations) == 1
+        assert ev.citations[0].manual == "M"
+        assert ev.citations[0].page == 3

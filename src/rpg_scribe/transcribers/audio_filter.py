@@ -199,7 +199,7 @@ def is_hallucination(
     text: str,
     duration_ms: int,
     *,
-    max_words_per_second: float = 6.0,
+    max_words_per_second: float = 8.0,
     extra_patterns: list[str] | None = None,
 ) -> tuple[bool, str]:
     """Detect known Whisper hallucination patterns in transcribed text.

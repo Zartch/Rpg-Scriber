@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from rpg_scribe.bots.base import BotResponse, BotServices
+from rpg_scribe.bots.echo_bot import EchoBot
+
 
 class TestBaseBotContract:
     """BaseBot is an ABC with a required async handle() method."""
@@ -162,3 +165,23 @@ class TestEchoBot:
         assert EchoBot.keyword == "echo"
         assert EchoBot.close_word is not None
         assert EchoBot.include_in_feed is True
+
+
+def test_bot_response_defaults():
+    r = BotResponse(spoken="hola")
+    assert r.spoken == "hola"
+    assert r.written is None
+    assert r.citations is None
+
+
+async def test_echo_bot_setup_is_noop():
+    """El hook setup() por defecto no hace nada y no rompe bots existentes."""
+    services = BotServices(
+        rag_db_path="x.db",
+        anthropic_api_key="",
+        summarizer_model="m",
+        campaign=None,
+        event_bus=None,
+        rag=None,
+    )
+    assert await EchoBot().setup(services) is None
