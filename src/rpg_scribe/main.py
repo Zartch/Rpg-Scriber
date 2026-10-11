@@ -313,6 +313,10 @@ class Application:
             from rpg_scribe.tts.openai_provider import OpenAITTSProvider
 
             provider = OpenAITTSProvider(model=tts_config.model)
+        elif tts_config.provider == "elevenlabs":
+            from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+            provider = ElevenLabsTTSProvider(model=tts_config.model)
         else:
             logger.warning(
                 "Unknown TTS provider '%s' — trigger watcher not started",

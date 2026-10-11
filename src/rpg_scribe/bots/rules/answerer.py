@@ -100,7 +100,13 @@ class RuleAnswerer:
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
-            text = resp.content[0].text.strip()
+            # Join all text blocks; skip ThinkingBlocks (no .text) that newer
+            # models emit when extended thinking is active.
+            text = "".join(
+                block.text
+                for block in resp.content
+                if getattr(block, "type", None) == "text"
+            ).strip()
         except Exception as exc:
             logger.exception("RuleAnswerer LLM failed, using fallback: %s", exc)
             text = self._fallback_text(chunks)

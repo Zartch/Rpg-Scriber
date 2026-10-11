@@ -51,6 +51,10 @@ local = [
     "torch>=2.0",
     "ctranslate2>=4.0",
 ]
+tts = [
+    # ElevenLabs TTS provider (import perezoso en tts/elevenlabs_provider.py)
+    "elevenlabs>=1.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",

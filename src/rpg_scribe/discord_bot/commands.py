@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 
 import discord
@@ -12,11 +13,16 @@ from discord.ext import commands
 
 from rpg_scribe.core.database import Database
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import SessionEndRequestEvent, SessionStartRequestEvent
+from rpg_scribe.core.events import (
+    ListenerRecoverRequestEvent,
+    SessionEndRequestEvent,
+    SessionStartRequestEvent,
+)
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.listeners.discord_listener import DiscordListener
 
 logger = logging.getLogger(__name__)
+_LISTENER_RECOVERY_COOLDOWN_S = 90.0
 
 # Discord embed description limit
 _EMBED_DESC_LIMIT = 4096
@@ -64,6 +70,12 @@ class ScribeCog(commands.Cog):
         self.database = database
         self.listener: DiscordListener | None = None
         self.session_id: str | None = None
+        self._voice_channel: discord.VoiceChannel | None = None
+        self._listener_recovery_in_progress = False
+        self._last_listener_recovery_ts = 0.0
+        self.event_bus.subscribe(
+            ListenerRecoverRequestEvent, self._on_listener_recover_request
+        )
 
     scribe_group = app_commands.Group(
         name="scribe", description="RPG Scribe session commands"
@@ -88,6 +100,7 @@ class ScribeCog(commands.Cog):
 
         voice_channel = member.voice.channel
         self.session_id = uuid.uuid4().hex[:12]
+        self._voice_channel = voice_channel
         self.listener = DiscordListener(self.event_bus, self.config)
 
         # Log del inicio de sesión con contexto completo
@@ -126,6 +139,7 @@ class ScribeCog(commands.Cog):
         except Exception as exc:
             self.listener = None
             self.session_id = None
+            self._voice_channel = None
             logger.error(
                 "Error al iniciar grabación en '%s': [%s] %s",
                 voice_channel.name, type(exc).__name__, exc,
@@ -138,7 +152,7 @@ class ScribeCog(commands.Cog):
 
     @scribe_group.command(name="stop", description="Stop recording")
     async def scribe_stop(self, interaction: discord.Interaction) -> None:
-        if self.listener is None or not self.listener.is_connected():
+        if self.listener is None or self.session_id is None:
             await interaction.response.send_message(
                 "Not currently recording.", ephemeral=True
             )
@@ -146,11 +160,13 @@ class ScribeCog(commands.Cog):
 
         await interaction.response.defer()
         sid = self.session_id
+        listener = self.listener
         logger.info("⏹️  /scribe stop | sesión=%s | solicitado por '%s' (id=%s)",
                     sid, interaction.user.display_name, interaction.user.id)
-        await self.listener.disconnect()
         self.listener = None
         self.session_id = None
+        self._voice_channel = None
+        await listener.disconnect()
         # Notify Application via EventBus — finalization runs in background
         await self.event_bus.publish(
             SessionEndRequestEvent(session_id=sid, source="discord")
@@ -177,6 +193,13 @@ class ScribeCog(commands.Cog):
             return
         if before.channel is None or after.channel is not None:
             return
+        if self._listener_recovery_in_progress:
+            logger.info(
+                "Ignorando on_voice_state_update durante recovery gestionado "
+                "de la sesión %s",
+                self.session_id,
+            )
+            return
         if self.session_id is None or self.listener is None:
             return
 
@@ -190,6 +213,7 @@ class ScribeCog(commands.Cog):
         listener = self.listener
         self.listener = None
         self.session_id = None
+        self._voice_channel = None
 
         # Run the (potentially slow) buffer-flush + disconnect off the gateway
         # event handler so other Discord events don't queue up behind it.
@@ -219,6 +243,71 @@ class ScribeCog(commands.Cog):
             await interaction.response.send_message(
                 "Not recording.", ephemeral=True
             )
+
+    async def _on_listener_recover_request(
+        self, event: ListenerRecoverRequestEvent
+    ) -> None:
+        if event.session_id != self.session_id or self.listener is None:
+            return
+        if self._listener_recovery_in_progress:
+            return
+        now = time.monotonic()
+        if now - self._last_listener_recovery_ts < _LISTENER_RECOVERY_COOLDOWN_S:
+            return
+        self._last_listener_recovery_ts = now
+        asyncio.create_task(
+            self._recover_listener(event.session_id, reason=event.reason),
+            name=f"listener-recovery-{event.session_id}",
+        )
+
+    async def _recover_listener(self, session_id: str, *, reason: str) -> None:
+        if self.listener is None or self.session_id != session_id:
+            return
+        voice_channel = self._resolve_recovery_voice_channel(self.listener)
+        if voice_channel is None:
+            logger.warning(
+                "Recovery ignorado para sesión %s: canal de voz desconocido",
+                session_id,
+            )
+            return
+
+        old_listener = self.listener
+        self._listener_recovery_in_progress = True
+        logger.warning(
+            "♻️  Recuperando listener de la sesión %s sin rotar session_id "
+            "(reason=%s, channel='%s')",
+            session_id,
+            reason,
+            voice_channel.name,
+        )
+        try:
+            await old_listener.disconnect()
+            if self.session_id != session_id:
+                return
+            new_listener = DiscordListener(self.event_bus, self.config)
+            await new_listener.connect(session_id=session_id, voice_channel=voice_channel)
+            if self.session_id != session_id:
+                await new_listener.disconnect()
+                return
+            self.listener = new_listener
+            self._voice_channel = voice_channel
+            logger.info("Listener recuperado para la sesión %s", session_id)
+        except Exception:
+            logger.exception("Falló la recuperación del listener para sesión %s", session_id)
+            if self.session_id == session_id:
+                self.listener = old_listener
+                self._voice_channel = voice_channel
+        finally:
+            self._listener_recovery_in_progress = False
+
+    def _resolve_recovery_voice_channel(
+        self, listener: DiscordListener
+    ) -> discord.VoiceChannel | None:
+        vc = getattr(listener, "_voice_client", None)
+        channel = getattr(vc, "channel", None)
+        if channel is not None:
+            return channel
+        return self._voice_channel
 
     @scribe_group.command(
         name="summary", description="Show the current session summary"

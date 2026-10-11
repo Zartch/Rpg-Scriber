@@ -218,3 +218,13 @@ class TestDiscordListenerIntegration:
         await listener.disconnect()
 
         assert any(s.status == "idle" for s in statuses)
+
+
+def test_udp_keepalive_interval_is_seconds_not_milliseconds() -> None:
+    """voice_recv's UDPKeepAlive does time.sleep(delay) with delay=5000 (ms
+    intent) → one keepalive every ~83 min. Discord stops sending voice after
+    ~300s without client UDP traffic, so receive died every ~305s."""
+    import rpg_scribe.listeners.discord_listener  # noqa: F401  (applies patches)
+    from discord.ext.voice_recv.reader import UDPKeepAlive
+
+    assert 0 < UDPKeepAlive.delay <= 10

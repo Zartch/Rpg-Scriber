@@ -130,6 +130,81 @@ class TestOpenAITTSProvider:
         )
 
 
+class TestElevenLabsTTSProvider:
+    """Test ElevenLabsTTSProvider implementation."""
+
+    def test_provider_name(self) -> None:
+        """Provider name must be 'elevenlabs'."""
+        from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+        provider = ElevenLabsTTSProvider()
+        assert provider.name == "elevenlabs"
+
+    def test_supported_voices(self) -> None:
+        """Must return a non-empty list including the default voice_id."""
+        from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+        provider = ElevenLabsTTSProvider()
+        voices = provider.supported_voices()
+        assert len(voices) >= 1
+        assert "t9LRTh3y1ioN00e9wsNh" in voices
+
+    @pytest.mark.asyncio
+    async def test_synthesize_pcm_uses_pcm_24000(self) -> None:
+        """response_format='pcm' must call the SDK with output_format='pcm_24000'.
+
+        This is the Discord-critical path: the returned bytes must be the raw
+        24 kHz mono int16 LE stream, concatenated from the SDK's async iterator.
+        """
+        async def fake_audio_stream():
+            yield b"\x00\x01"
+            yield b"\x02\x03"
+
+        # In elevenlabs 2.x, convert() is an async generator function: it is
+        # called WITHOUT await and returns an async iterator directly. A plain
+        # MagicMock (not AsyncMock) models that faithfully.
+        mock_tts = MagicMock()
+        mock_tts.convert = MagicMock(return_value=fake_audio_stream())
+        mock_client = MagicMock()
+        mock_client.text_to_speech = mock_tts
+
+        from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+        provider = ElevenLabsTTSProvider(model="eleven_multilingual_v2")
+        provider._client = mock_client
+
+        result = await provider.synthesize(
+            "Hola mundo", "t9LRTh3y1ioN00e9wsNh", response_format="pcm"
+        )
+        assert result == b"\x00\x01\x02\x03"
+        mock_tts.convert.assert_called_once_with(
+            text="Hola mundo",
+            voice_id="t9LRTh3y1ioN00e9wsNh",
+            model_id="eleven_multilingual_v2",
+            output_format="pcm_24000",
+        )
+
+    @pytest.mark.asyncio
+    async def test_synthesize_mp3_uses_mp3_format(self) -> None:
+        """response_format='mp3' must map to output_format='mp3_44100_128'."""
+        async def fake_audio_stream():
+            yield b"\xff\xfb"
+
+        mock_tts = MagicMock()
+        mock_tts.convert = MagicMock(return_value=fake_audio_stream())
+        mock_client = MagicMock()
+        mock_client.text_to_speech = mock_tts
+
+        from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+        provider = ElevenLabsTTSProvider()
+        provider._client = mock_client
+
+        result = await provider.synthesize("Hola", "t9LRTh3y1ioN00e9wsNh", response_format="mp3")
+        assert result == b"\xff\xfb"
+        assert mock_tts.convert.call_args.kwargs["output_format"] == "mp3_44100_128"
+
+
 def _make_test_app(tts_provider=None, tts_cache=None, tts_config=None):
     """Create a minimal FastAPI app with TTS routes for testing."""
     from fastapi import FastAPI

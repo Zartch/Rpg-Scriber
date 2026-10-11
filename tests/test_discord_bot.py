@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import SessionEndRequestEvent, SessionStartRequestEvent
+from rpg_scribe.core.events import (
+    ListenerRecoverRequestEvent,
+    SessionEndRequestEvent,
+    SessionStartRequestEvent,
+)
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.discord_bot.commands import (
     AnswerQuestionModal,
@@ -46,6 +51,11 @@ def _make_cog(
     cog = ScribeCog(bot, bus, config, database=database)
     cog.session_id = session_id
     return cog
+
+
+async def _drain_loop() -> None:
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
 
 
 # ---------------------------------------------------------------------------
@@ -323,5 +333,122 @@ class TestScribeStartStopEvents:
         assert published[0].session_id == "test-session-123"
         assert published[0].source == "discord"
         # Cog should have cleared session state
+        assert cog.session_id is None
+        assert cog.listener is None
+
+    @pytest.mark.asyncio
+    async def test_recovery_request_reconnects_listener_without_rotating_session(self) -> None:
+        bus = EventBus()
+        config = ListenerConfig()
+        bot = MagicMock()
+        bot.user = MagicMock()
+        bot.user.id = 999
+        cog = ScribeCog(bot, bus, config)
+        cog.session_id = "test-session-123"
+
+        voice_channel = MagicMock(spec=discord.VoiceChannel)
+        voice_channel.name = "General"
+
+        old_listener = AsyncMock()
+        old_listener.is_connected = MagicMock(return_value=True)
+        old_listener.disconnect = AsyncMock()
+        old_listener._voice_client = MagicMock()
+        old_listener._voice_client.channel = voice_channel
+        cog.listener = old_listener
+        cog._voice_channel = voice_channel
+
+        new_listener = AsyncMock()
+        new_listener.connect = AsyncMock()
+        new_listener.is_connected = MagicMock(return_value=True)
+
+        published: list[SessionEndRequestEvent] = []
+
+        async def _capture(event: SessionEndRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(SessionEndRequestEvent, _capture)
+
+        with patch(
+            "rpg_scribe.discord_bot.commands.DiscordListener",
+            return_value=new_listener,
+        ):
+            await bus.publish(
+                ListenerRecoverRequestEvent(
+                    session_id="test-session-123",
+                    reason="transcriber_stall",
+                )
+            )
+            await _drain_loop()
+
+        old_listener.disconnect.assert_awaited_once()
+        new_listener.connect.assert_awaited_once_with(
+            session_id="test-session-123",
+            voice_channel=voice_channel,
+        )
+        assert cog.listener is new_listener
+        assert cog.session_id == "test-session-123"
+        assert published == []
+
+    @pytest.mark.asyncio
+    async def test_voice_state_cleanup_is_suppressed_during_managed_recovery(self) -> None:
+        bus = EventBus()
+        config = ListenerConfig()
+        bot = MagicMock()
+        bot.user = MagicMock()
+        bot.user.id = 999
+        cog = ScribeCog(bot, bus, config)
+        cog.session_id = "test-session-123"
+        cog.listener = AsyncMock()
+        cog._listener_recovery_in_progress = True
+
+        published: list[SessionEndRequestEvent] = []
+
+        async def _capture(event: SessionEndRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(SessionEndRequestEvent, _capture)
+
+        member = MagicMock(spec=discord.Member)
+        member.id = 999
+        before = MagicMock(spec=discord.VoiceState)
+        before.channel = MagicMock(spec=discord.VoiceChannel)
+        after = MagicMock(spec=discord.VoiceState)
+        after.channel = None
+
+        await cog.on_voice_state_update(member, before, after)
+
+        assert published == []
+        assert cog.session_id == "test-session-123"
+        assert cog.listener is not None
+
+    @pytest.mark.asyncio
+    async def test_scribe_stop_allows_degraded_listener_if_session_is_active(self) -> None:
+        bus = EventBus()
+        config = ListenerConfig()
+        cog = ScribeCog(MagicMock(), bus, config)
+        cog.session_id = "test-session-123"
+        cog._voice_channel = MagicMock(spec=discord.VoiceChannel)
+
+        mock_listener = AsyncMock()
+        mock_listener.is_connected = MagicMock(return_value=False)
+        mock_listener.disconnect = AsyncMock()
+        cog.listener = mock_listener
+
+        published: list[SessionEndRequestEvent] = []
+
+        async def _capture(event: SessionEndRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(SessionEndRequestEvent, _capture)
+
+        interaction = _make_interaction()
+        interaction.user.display_name = "TestUser"
+        interaction.user.id = 12345
+
+        await cog.scribe_stop.callback(cog, interaction)
+
+        mock_listener.disconnect.assert_awaited_once()
+        assert len(published) == 1
+        assert published[0].session_id == "test-session-123"
         assert cog.session_id is None
         assert cog.listener is None

@@ -106,6 +106,8 @@ export DISCORD_SUMMARY_CHANNEL_ID=""    # Canal para publicar resúmenes
 
 - **`ANTHROPIC_API_KEY`** — Crear una cuenta en [console.anthropic.com](https://console.anthropic.com), ir a **API Keys** y generar una nueva key. Se necesita un método de pago configurado (los resúmenes usan Claude Sonnet).
 
+- **`ELEVENLABS_API_KEY`** _(opcional)_ — Solo si configuras `provider = "elevenlabs"` en la sección `[tts]`. Crear una cuenta en [elevenlabs.io](https://elevenlabs.io), ir a **Profile → API Keys** y generar una key. Requiere instalar el extra: `pip install -e ".[tts]"`. Sin esta variable, RPG Scribe usa OpenAI TTS por defecto.
+
 ### 5. Configurar una campaña
 
 Copiar y editar el archivo de ejemplo:

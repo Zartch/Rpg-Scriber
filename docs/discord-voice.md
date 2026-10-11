@@ -68,18 +68,42 @@ El próximo `/scribe start` ya no choca con el guard de "Already recording". El 
 
 **Limitación conocida**: si el gateway tampoco dispara nunca el evento de salida, la sesión vieja queda huérfana — no se publica `SessionEndRequestEvent`, el summarizer no finaliza. Aceptable porque en ese caso el bot está esencialmente offline y hace falta un restart de todos modos.
 
-## Stream de audio degradado vs. transcriber colgado
+## Por qué dejan de salir transcripciones (diagnóstico diferencial)
 
-Síntoma confuso: deja de haber transcripciones pero los chunks siguen llegando como `near_silence` o `low_energy` aunque la gente esté hablando. **No es el filtro siendo agresivo** — es que `voice_recv` está entregando audio basura (DAVE roto, jitter buffer corrupto, ...).
+"Se me cuelga la transcripción" tiene **tres causas distintas** con fixes opuestos. No las confundas: mira primero los marcadores de log para saber cuál es.
 
-Marcadores en el log que confirman este patrón:
+### Causa A — Stream de audio degradado (`voice_recv` entrega basura)
+
+Los chunks siguen llegando como `near_silence` o `low_energy` aunque la gente esté hablando. **No es el filtro siendo agresivo** — `voice_recv` entrega audio corrupto (DAVE roto, jitter buffer, ...). Es el [bug abierto de arriba](#-bug-abierto-degradación-silenciosa-del-audio-en-sesiones-largas).
+
+Marcadores en el log:
 
 1. **Última alucinación** justo antes del silencio en logs INFO — es el "último audio real" antes de degradarse.
-2. **`⚠️ Transcriber stall: N chunks received but no successful transcription in Xs`** — auto-emitido por `BaseTranscriber._log_stats` cuando hay chunks entrando pero ninguno produce texto en >120s.
+2. **`⚠️ Transcriber stall: N chunks received but no successful transcription in Xs`** — auto-emitido por `BaseTranscriber._log_stats` cuando hay chunks entrando pero ninguno produce texto en >`_STALL_WARNING_S` (30s).
 3. **RMS bajo en la última alucinación** — el log de alucinaciones incluye `RMS=N speech=M%` para ver si el audio ya iba degradándose en ese chunk.
 4. **Carpeta `logs/audio/discarded/<session_id>/`** con WAVs `_AUDIO_near_silence_` o `_AUDIO_low_energy_` — confirma que los chunks llegaban pero sin contenido real.
 
-Si confirmas este patrón, el fix no está en el filtro ni en el transcriber: hay que reiniciar el listener.
+Fix: no está en el filtro ni en el transcriber — hay que reiniciar el listener (o dejar que actúe la recuperación automática).
+
+### Causa B — Event loop bloqueado por un handler downstream (bot/TTS) — **arreglado**
+
+`EventBus.publish` hace `await asyncio.gather(todos los handlers)`, así que **quien publica espera a todos sus suscriptores**. La cadena entera va en serie: `_periodic_flush` (ingesta de audio, bucle único) → `publish(AudioChunkEvent)` → `transcribe()` → `publish(TranscriptionEvent)` → `[summarizer, TriggerWatcher]`. Si un handler bloquea, la ingesta de audio se para **para todos los hablantes**.
+
+El culpable era el `TriggerWatcher`: en la rama **close-word** ejecutaba `await self._finalize(...)` **inline dentro del handler del evento**, corriendo todo el pipeline del bot (RAG + Claude ≤30s + TTS + playback Discord) dentro del dispatch. **Fix (`bots/watcher.py`)**: la rama close-word ahora lanza `_finalize` con `asyncio.create_task`, igual que la rama timeout, para que ningún trabajo pesado del bot viva dentro del dispatch. Ver [`review-transcription-stall-close-word-fix.md`](review-transcription-stall-close-word-fix.md).
+
+A diferencia de la Causa A, aquí **no** hay chunks descartados por RMS bajo: el audio es bueno pero nunca se procesa. Marcadores en el log (instrumentación añadida para estudiar esto):
+
+1. **`⏱️ Flush loop bloqueado Xs`** (`discord_listener._periodic_flush`, umbral `_FLUSH_WARN_S` = 2s) — síntoma directo: la ingesta estuvo parada X segundos.
+2. **`⏱️ publish(TranscriptionEvent) de '…' tardó Xs`** (`transcribers/base.py`, umbral `_PUBLISH_WARN_S` = 3s) — localiza el bloqueo como "downstream de la transcripción".
+3. **`🎯 Trigger detectado` / `▶️ Finalize bot … inicio pipeline` / `✅ Finalize … pipeline total Xs`** (`bots/watcher.py`) con tiempos por etapa (`handle`, `TTS`, `playback`) — identifica al bot como causa y cuánto cuesta cada fase.
+
+Si ves `⏱️ Flush loop bloqueado` **junto a** un `▶️ Finalize bot` con tiempos altos → es esta causa. Con el fix aplicado no debería reaparecer; si lo hace, hay otro handler pesado corriendo inline en el dispatch.
+
+### Causa C — Freeze o muerte del proceso
+
+El log se **corta en seco** estando sano (`last_success` bajo, contadores subiendo) y no vuelve a aparecer ninguna línea — ni siquiera los stats periódicos (cada `_STATS_INTERVAL_S` = 5s) ni `📊 Final transcriber stats`. Como `_periodic_stats` loguea incondicionalmente, la ausencia total de líneas nuevas = el proceso servidor se congeló o murió. Un detector server-side no puede avisar de esto (está muerto); solo el navegador lo nota (su WebSocket cae). Ver el diseño de la alarma en `docs/superpowers/specs/2026-07-11-transcription-stall-alarm-design.md`.
+
+Fix: reiniciar el proceso. La alarma de navegador (en desarrollo) es la mitigación para enterarse a tiempo.
 
 ## faster-whisper y el event loop
 
