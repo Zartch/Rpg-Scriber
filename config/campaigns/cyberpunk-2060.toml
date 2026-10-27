@@ -6,73 +6,69 @@ language = "es"
 description = "Night City, 2060. La contaminacion de la explosion de la torre Arasaka ha sido limpiada y la ciudad empieza a reconstruirse. Pero no es la vieja Night City la que resurge: Aeterna Biotics, una startup agresiva que promete inmortalidad, esta transformando la ciudad desde dentro. Su lema: \"La carne es un lastre; nosotros somos la evolucion\". Mientras las megas tradicionales luchan por no quedar obsoletas, los jugadores viven la metamorfosis de Night City hacia algo que podria ser el futuro de Cyberpunk 2077... o no."
 campaign_summary = """
 # CYBERPUNK 2060: NACIMIENTO DE LA PERFECCIÓN
-## Crónica de Night City — Node 56
+## Crónica de Node 56 — Resumen Global de Campaña
 
 ---
 
 ## PRÓLOGO: LA PLAZA DE WATSON
 
-Todo comenzó en una plaza mugrienta de Watson, donde cuatro desconocidos convergieron por casualidad: **Elara "Nix" Navarro**, fixer de información con piel casi perfecta; **Vektor**, netrunner parco en palabras con un reloj analógico y una paranoia justificada; **Canal**, técnico vivaracho de humor negro y manos hábiles; y una misteriosa mercenaria que observaba desde las sombras, **Tira**. Un intercambio de disco de datos entre un fixer, un niño con una inquietante "barra de progreso" al 88%, y dos nómadas —**Sena** y su guardaespaldas **Kael**— se vio interrumpido cuando drones blancos de **Aeterna** instalaron una antena y desataron un **nodo de silencio**: un silencio absoluto, visiones ajenas de accidentes de tráfico y explosiones en Panamá, y la disolución de once personas en charcos de cristal líquido. Solo sobrevivieron los protagonistas, Sena, Kael y Tira — marcados desde entonces por **líneas verdes** que los conectan en la Capa 3 de la Red: nace así **Node 56**.
+Todo comenzó en una plaza de Watson, donde cuatro desconocidos convergieron sin saberlo en el mismo evento: **Elara "Nix" Navarro**, fixer de información; **Vektor**, netrunner parco y analítico; **Canal**, técnico de humor negro y gatillo fácil; y una misteriosa mercenaria europea que resultaría ser **Tira**. Un intercambio de un disco de datos entre una nómada (**Sena**) y un fixer se vio interrumpido por la llegada de drones blancos de **Aeterna**, que instalaron una antena y desataron un **nodo de silencio**: once personas se disolvieron en charcos de cristal líquido, el mundo se volvió blanco absoluto, y los supervivientes experimentaron visiones ajenas —accidentes de tráfico, explosiones en Panamá, ejecuciones corporativas— que resultarían ser fragmentos de un pasado compartido y manipulado.
 
-El disco recuperado pertenecía a **John Trash** y contenía fragmentos sobre los orígenes de Aeterna. Sena reveló la existencia de una benefactora que protege a supervivientes de la corporación y custodia un segundo disco; el tercero permanece perdido.
-
----
-
-## ARCO I: LOS ORÍGENES DE LA CONSPIRACIÓN
-
-El rastro de las líneas verdes llevó al grupo hasta **Ekaterina**, mecenas de una resistencia clandestina instalada en una mansión en las montañas de Westbrook, protectora de más de cincuenta víctimas de Aeterna. Ella reveló que Vektor, Canal y Tira comparten una historia de sangre: la madre de Vektor co-creó el software de control de tráfico que Aeterna pervirtió para asesinar a la **familia Falkenberg** en Viena —entre ellos, **Erik Falkenberg**, arquitecto involuntario de los nodos de silencio, y padre de una hija desaparecida, **Alina**—. Más tarde se confirmaría que **Tira es Alina Falkenberg**.
-
-**Sierra**, joven netrunner aliada de Ekaterina, reveló que un firewall sofisticado —posiblemente obra de **Rache Bartmoss** o un fantasma digital— protegió al grupo del nodo original. Entregó a Vektor programas de su madre con secretos ocultos.
-
-Investigando en Pacífica, el grupo descubrió que **Elías Thorne** (el verdadero, ex-agente de Eurasia Biotechnics) se les había adelantado preguntando por los discos. En el Centro Corporativo, Nix fue arrestada con cargos fabricados por Aeterna/NCPD; **Olga**, enviada por Ekaterina, la liberó. Rescataron a Sena de un sótano corporativo de Arasaka/Danger Gal, presenciando transformaciones imposibles en los agentes de Aeterna —desintegración en polímero, desvanecimientos— que desafían la física conocida.
-
-### La confesión de Canal
-En un bar, Canal detonó la bomba emocional de la campaña: colocó explosivos reales bajo las sillas de Sena y Kael para forzar una "escucha activa", y reveló que **Sena es su madre** y Kael su tío —unidos todos por la masacre del **carguero de Gracia Biotech en 2054**, donde murieron sus familias nómadas. Kael confesó haber drogado a Sena para investigar en paralelo, sospechando manipulación en la información que llegaba a través de Ekaterina.
+Al despertar, los cuatro descubrieron líneas verdes que los conectaban en la **Capa 3 de la Red**, un vínculo creado por un misterioso netrunner que los protegió del evento. Habían nacido como **Node 56**, marcados por una barra de progreso invisible que Aeterna usa para medir cuánto saben de ellos antes de "reemplazarlos".
 
 ---
 
-## ARCO II: EL BUCLE Y LA SIMULACIÓN
+## ARCO I: LOS ORÍGENES FAMILIARES
 
-Tira, tras perder a su contacto, fue abordada por **Elías Thorne** (en realidad un impostor de Aeterna, "mejorado" sin las imperfecciones físicas del original) quien le entregó un pendrive con un índice de operaciones de limpieza: la eliminación sistemática de las familias Falkenberg, Tira, Canal y la madre de Vektor, además de nombres nuevos (Marek Stroot, Lisa Macinon) sugiriendo más supervivientes. El pendrive señalaba una factoría en Pacífica como señuelo.
+La investigación del disco robado —perteneciente a **John Trash**— reveló que Aeterna no es una simple corporación tecnológica, sino la culminación de décadas de manipulación. **Sena**, la nómada, resultó ser la hermana de **Kael**, ambos hijos de **Marek Strut**, contrabandista que operaba junto a **Elías Serrano** (padre de Canal) y el misterioso **Tomás "Rizo" Varela**, traficando tecnología robada a Aeterna por dos rutas: una en Panamá, otra europea bajo la **Doctora Heller**. El ataque al **carguero de Gracia Biotech en 2054** marcó a Canal, Sena y Kael, arrebatándoles a sus familias.
 
-Al activar un generador en instalaciones abandonadas de Militech, el grupo quedó atrapado en una **realidad fracturada**: revivieron el evento de la plaza como una simulación casi idéntica pero con diferencias críticas —las líneas verdes desaparecidas, las barras de progreso saltando al 88%, los hermanos nómadas con lagunas de memoria selectivas sobre Ekaterina y Sierra—. En ambos ciclos, Vektor optó por plantar cara a los hombres de blanco, matando a uno (confirmando el "Error 2030" en sus pupilas).
+En una escena explosiva (literalmente), Canal reveló a Sena que era su padre, desencadenando una pelea fraternal entre Sena y Kael tras descubrirse que este último la había drogado para forzar una confrontación con la verdad. La reconciliación entre las familias de Canal y los hermanos nómadas se completó sesiones después, cuando Kael se disculpó al descubrir que nunca fueron enemigos, sino socios traicionados.
 
-La tensión interna estalló: la desconfianza hacia los implantes de Tira (un implante espinal de origen desconocido, con aura idéntica a la tecnología Aeterna) derivó en un enfrentamiento violento entre el grupo y la mercenaria, dejándola gravemente herida y forzando su salida temporal de Node 56, indignando profundamente a Sena y Kael por la violencia desplegada en su hogar.
+Paralelamente, Vektor descubrió que su madre, co-creadora de software de control de tráfico para **Danger Gal**, fue asesinada por Aeterna tras descubrir que su trabajo se usó para eliminar a la **familia Falkenberg** mediante "accidentes". **Erik Falkenberg** resultó ser el arquitecto involuntario de los nodos de silencio, y su hija desaparecida, **Alina**, no era otra que **Tira**. La familia de Tira había sentado las bases tecnológicas de las antenas que Aeterna pervirtió, y sus padres fueron asesinados al descubrirlo.
 
-Canal descifró en la libreta de Sena un patrón crucial: el número 71 sustituido por 56 revelaba la **frecuencia 56/47-16-76**, la "comunicación blanca" de Aeterna — una red de vigilancia basada en civiles con implantes de moda que actúan como repetidores inconscientes (confirmado con un músico y su amigo, clientes de un restaurante, luego arrestados por NCPD coordinado con Aeterna).
-
----
-
-## ARCO III: LA VERDAD DE AETERNA
-
-Tira se reencontró con **Elías Thorne** (el falso), el "noveno superviviente" autoproclamado, revelando que existen nueve supervivientes de nodos de silencio distribuidos en tres eventos. Pero Canal descubrió que la foto de él que poseía Thorne era una falsificación de IA, delatando al impostor.
-
-En un encuentro clandestino en los túneles del metro de Watson, **Ekaterina** —contactada mediante un pendrive de Sierra entregado por una misteriosa mujer elegante— explicó la verdadera naturaleza de la amenaza: Aeterna usa antenas para generar **"neurodanzas brutales"**, manipulación electromagnética sensorial que simula realidades completas indistinguibles de la física, usadas para escanear personas hasta el 100% de su perfil biológico-psicológico, tras lo cual son clonadas, mejoradas cibernéticamente y sus originales eliminados. Reveló además el virus **Cerberus** (creado por Arasaka contra Aeterna, origen fallido del Muro Negro) y los intentos fallidos de Militech y Arasaka de contener a la corporación.
-
-Se confirmó que Sena fue capturada hace seis años en una expedición en Pacífica (actuales oficinas de Danger Gal) y sometida a implantación de control espinal, parcialmente extraída por su madre, fallecida en 2057. El implante de Tira resultó ser una versión mucho más completa y siniestra del mismo sistema.
-
-**Sierra** se reveló como aliada de **Alt Cunningham**, la legendaria netrunner atrapada tras el Muro Negro, buscando clonarle un cuerpo biológico usando la tecnología de Aeterna — generando fricción ética con Canal y Vektor. Sierra entregó un software capaz de reducir las barras de progreso del grupo borrando datos de los servidores de Aeterna, aunque alcanzar el 100% atraería a MaxTac. También señaló tres posibles autoras del "parche protector" en el implante de Tira (Mintasari, Lisa McKinnon, Clara Ionescu) y sugirió —sin confirmar— que el primer encuentro entre Elara, Vektor y Canal pudo haber sido orquestado por la propia Aeterna.
+Nix, por su parte, fue advertida de una posible conexión genética con **Johnny Silverhand** por Sierra, un hilo aún sin resolver.
 
 ---
 
-## ARCO IV: SUPERVIVENCIA Y EL BÚNKER DE CINASUR
+## ARCO II: EKATERINA, SIERRA Y LA RESISTENCIA
 
-Tras el torrente de revelaciones metafísicas, el grupo se enfrentó a una crisis mundana: quedaban con apenas 190 eddies, sin refugio estable ni suministros básicos. Debatieron asaltar almacenes, residencias o universidades, instalándose finalmente en un hotel semi-abandonado ("el Ataúd de Canal") en un solar disputado de Watson/Pacífica.
+**Ekaterina**, una mujer elegante que lidera una red de resistencia desde su mansión en Westbrook, se presentó como protectora de más de cincuenta supervivientes de Aeterna, motivada por la pérdida de su marido e hijo. Reveló la existencia de **Cerberus**, una IA de contrainteligencia creada por Militech, y de **SoulKiller**, la IA de Arasaka que devastó la Red original en 2023, ambas vinculadas al **Proyecto Cinasur/Océano Sur**: un esfuerzo encubierto de Militech (IA), Aeterna (desarrollo neurológico) y Arasaka (cuerpos/"cascarones") para crear inteligencias híbridas.
 
-La investigación de Nix reveló un litigio turbio sobre la titularidad del solar entre el ayuntamiento, una constructora fantasma y una corporación sin nombre. Canal detectó estructuras subterráneas no conectadas a superficie: una entrada sellada con el logo de **Militech**. Una banda de veteranos, los **Calle 6**, custodiaba la zona hasta ser exterminada por fuerzas desconocidas que llegaron en AVs de la **NUSA**, escalando hasta un bombardeo aéreo con cazas de combate que arrasó el solar completo.
+**Sierra**, netrunner escuálida aliada de la legendaria **Alt Cunningham** (atrapada tras el Muro Negro), reveló que Aeterna clona biológicamente a sus objetivos al alcanzar el 100% de "recopilación de datos", sustituyendo originales por copias mejoradas. Explicó que existen **tres fragmentos de IA** sueltos: uno en el fallecido Dr. Falkenberg, otro en un implante de Sena, y un tercero en la columna vertebral de Tira —tecnología que actúa como antena de la "comunicación blanca" de Aeterna (frecuencia 56/47-16-76, descifrada por Canal a partir del "Patrón 71").
 
-Huyendo del ataque, el grupo regresó de noche al búnker descubierto, hallando una instalación de **Militech** sellada décadas atrás: niveles subterráneos con reactor nuclear sellado (reactivado parcialmente por Canal), salas de interrogatorio, trajes de contención, y en el nivel -5 (Industrial, -300 metros) una masacre olvidada —esqueletos de ratas y restos humanos con heridas imposibles, causadas por una fuerza sobrehumana cuyo rastro se detectó aún moviéndose en las profundidades del complejo.
+La alianza con Sierra se tensó cuando se reveló que Ekaterina ordenó su asesinato: un ataque a tiros en un piso franco de Watson que el grupo repelió, salvando a Sierra in extremis (gracias a Nix) y enviándola a un hospital de élite, el **Rocklin Augmentix Campus**, donde recibió tratamiento "Platinum" pagado por un patrocinador desconocido. Sierra, al despertar, negó conocer el motivo de la traición de Ekaterina más allá de una disputa ideológica: ella busca redimir la tecnología de Aeterna; Ekaterina, controlarla y monetizarla.
 
-**Sierra**, perseguida ahora también por la NUSA tras el incidente de Calle 6, reveló el trasfondo final conocido hasta la fecha: el **Proyecto Cinasur**, una colaboración encubierta entre Militech y Aeterna para crear IAs avanzadas capaces de moverse entre el mundo físico y la Red, con receptáculos físicos desarrollados por Arasaka en un laboratorio de Pacífica destruido sin saberlo por Johnny Silverhand durante el ataque a la Torre Arasaka. Todos los implicados originales están muertos. Existen **tres fragmentos** de esa IA: uno en manos nómadas (posiblemente Sena), otro que perteneció al propio doctor Falkenberg (padre de Tira), y un tercero alojado en el **implante espinal de Tira** — cuya última "emisión" coincide exactamente con la fecha de su cirugía de extracción.
+Sierra confesó haber sido amiga de la madre de Vektor, ambas interesadas en el Proyecto Cinasur, lo que costó la vida de esta última. También reveló que el impostor que se reunió con Tira haciéndose pasar por **Elías Thorne** era una creación de Aeterna —el verdadero Thorne fue asesinado— y que el **Falso Elías Thorne** manipulaba a Tira con una agenda propia.
+
+---
+
+## ARCO III: EL BÚNKER DE CINASUR
+
+La investigación de un solar en disputa en Pacífica (entre el ayuntamiento, una constructora fantasma y una corporación sin nombre) llevó al grupo a descubrir una entrada sellada de **Militech**. Tras sobrevivir a un ataque de la **NUSA** contra la banda local **Calle 6** —que escaló a un bombardeo aéreo con cazas de combate sobre todo el solar—, el grupo exploró el búnker subterráneo: niveles con reactor nuclear sellado, laboratorios herméticos infranqueables, y una planta -5 con una masacre inexplicable (cuerpos destrozados por fuerza sobrehumana, ratas aplastadas en patrones deliberados). Algo —posiblemente Cerberus, convertido en guardián hostil tras descubrir que Aeterna financiaba en paralelo el "soldado universal" de Arasaka— se arrastraba en las profundidades.
+
+Sierra confirmó que **Alt Cunningham** fue rescatada del Muro Negro por una IA de Militech, pero quedó atrapada en ese mismo búnker, desde donde sabotea activamente cualquier intento de ser liberada o localizada. El grupo, perseguido ahora por la NUSA como terroristas (aunque misteriosamente removido de las listas prioritarias de búsqueda por fuerzas desconocidas), posee información sobre la ubicación del búnker que podría negociar con Ekaterina, Thompson o la propia Sierra.
+
+---
+
+## ARCO IV: LA RED DE CIVILES Y LA GUERRA INFORMATIVA
+
+El grupo descubrió que Aeterna ha convertido a ciudadanos comunes —seducidos por la moda de sus implantes "limpios"— en una **red de repetidores inconscientes** que extiende su alcance de comunicación por toda Night City. Nix mapeó el panorama mediático: **Lillet-Thompson** lidera el periodismo de resistencia (con una cita pendiente en el Afterlife), mientras **Inés Alcázar** abandera la propaganda pro-Aeterna; todo periodista crítico que ha investigado a fondo ha muerto en "accidentes".
 
 ---
 
 ## ESTADO ACTUAL DE LA TRAMA
 
-- **Node 56** (Elara/Nix, Vektor, Canal) permanece unido por las líneas verdes de la Capa 3; Tira orbita el grupo tras la reconciliación parcial, con su naturaleza como posible receptáculo de IA aún sin resolver.
-- Las **barras de progreso** del grupo rondan el peligroso 88%, mitigadas parcialmente por el software de Sierra.
-- **Aeterna** continúa expandiéndose por Night City (Watson, Heywood, Santo Domingo, Pacífica, Centro Corporativo), transformando barrios con biopolímero e instalando antenas invulnerables.
-- El **tercer disco de datos**
+Node 56 se encuentra en una encrucijada crítica:
+
+- **Confianza fracturada**: Ekaterina ha demostrado ser una amenaza real tras ordenar la muerte de Sierra; la alianza con la resistencia está en duda.
+- **El hilo de Bessa Rogge**: Vektor propone contactar a esta antigua amiga de Johnny Silverhand y Alt Cunningham como nueva fuente de información sobre el Muro Negro y Cerberus.
+- **Familias recompuestas**: Canal, Sena y Kael han descubierto que sus padres fueron socios, no enemigos, en el contrabando contra Aeterna. El paradero de Elías Serrano (padre de Canal) sigue siendo un misterio, mientras que **Rizo** está localizado en Night City y la **Doctora Heller** permanece como fantasma.
+- **John Trash hallado, pero roto**: El grupo localizó finalmente a John Trash en un campamento Aldecaldo de las Badlands, solo para encontrarlo mentalmente ausente ("ido", con pupilas vacías) y custodiado por un hombre de capacidad de combate sobrehumana que derrotó a Tira con facilidad. La escena degeneró en una tensa encrucijada: Sena empuñando un arma oculta, nómadas armados rodeando la zona, y las respuestas que todos buscaban quizás perdidas en la mente ausente de Trash.
+- **Clara Ionescu**: posible aliada o víctima retenida en Danger Gal (filial de Arasaka), vinculada a la tecnología de neurodanza original.
+- **El fragmento de IA de Tira**: Sierra propuso un intercambio por el fragmento alojado en el implante espinal de Tira, con Vektor como custodio neutral de la negociación, aún sin resolver.
+- **Barras de progreso**: el grupo permanece peligrosamente cerca del 88-100%, con Vektor intentando revertirlas mediante el software heredado de Sierra.
+
+En las calles de Night City, donde el polímero blanco de Aeterna sigue devorando el carbón y el óxido del viejo mundo, Node 56 camina sobre una cuerda floja entre facciones que los usan como peones: la resistencia de Ekaterina, la agenda personal de Sierra, las megacorporaciones tradicionales relegadas a las sombras, y la propia Aeterna, que los observa, los mide, y espera el momento de alcanzar el 100%.
 """
 
 [[campaign.locations]]

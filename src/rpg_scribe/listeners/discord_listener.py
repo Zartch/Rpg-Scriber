@@ -11,7 +11,11 @@ from typing import Any, Optional
 import discord
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import AudioChunkEvent, SystemStatusEvent
+from rpg_scribe.core.events import (
+    AudioChunkEvent,
+    ListenerRecoverRequestEvent,
+    SystemStatusEvent,
+)
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.listeners.base import BaseListener
 
@@ -468,10 +472,19 @@ class DiscordListener(BaseListener):
                 ):
                     logger.warning(
                         "⚠️  VoiceClient desconectado silenciosamente — "
-                        "deteniendo sesión %s (usa /scribe start para reconectar)",
+                        "sesión %s sin audio, solicitando reconexión automática",
                         self._session_id,
                     )
                     self._connected = False
+                    # A dead listener produces no chunks, so the transcriber's
+                    # stall detector cannot be relied on to notice: ask directly.
+                    if self._session_id is not None:
+                        await self.event_bus.publish(
+                            ListenerRecoverRequestEvent(
+                                session_id=self._session_id,
+                                reason="voice_silent_drop",
+                            )
+                        )
                     break
                 now = time.time()
                 # Time the flush pass. _emit_chunk awaits event_bus.publish,

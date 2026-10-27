@@ -63,10 +63,31 @@ Cuando la WebSocket de voz muere pero el gateway no notifica (renegociación DAV
 
 - Setea `self._connected = False` y rompe el loop
 - Emite `WARNING` `"VoiceClient desconectado silenciosamente"`
+- Publica `ListenerRecoverRequestEvent(reason="voice_silent_drop")` — un listener muerto no emite chunks, así que el stall detector del transcriber no lo notaría nunca.
 
-El próximo `/scribe start` ya no choca con el guard de "Already recording". El path `on_voice_state_update` cubre el cleanup completo si el gateway finalmente lo reporta.
+### C. Reconexión automática con reintentos (`ScribeCog._recover_listener`)
 
-**Limitación conocida**: si el gateway tampoco dispara nunca el evento de salida, la sesión vieja queda huérfana — no se publica `SessionEndRequestEvent`, el summarizer no finaliza. Aceptable porque en ese caso el bot está esencialmente offline y hace falta un restart de todos modos.
+Disparadores: stall del transcriber, caída silenciosa (B) y `on_resumed`/`on_ready` del gateway si hay sesión activa con el listener desconectado.
+
+- Mantiene el mismo `session_id`. Hasta `_LISTENER_RECOVERY_MAX_ATTEMPTS` (20) intentos con backoff `5, 10, 20, 30, 60, 60…` s (~16 min).
+- Antes de cada intento espera hasta 60 s a que el **gateway** esté vivo (`bot.ws.open`). `bot.is_ready()` no sirve: sigue `True` mientras discord.py reintenta el gateway. Reconectar la voz con el gateway caído falla con `ClientConnectionResetError('Cannot write to closing transport')` (incidente del 2026-10-23, Cloudflare 520/503 en `gateway-us-east1-d`).
+- Limpia un `guild.voice_client` residual antes de reconectar (si no, "Already connected to a voice channel").
+- Cooldown: 90 s si el listener sigue vivo (stall), 15 s si está muerto (solo anti-bucle).
+- Agotados los intentos: `ERROR "🛑 Recovery agotado"` y se cierra la sesión limpiamente (`SessionEndRequestEvent`), así el resumen se finaliza.
+- `/scribe stop` durante el recovery lo aborta en el siguiente punto de control.
+
+### D. Expulsión manual vs. caída (`_handle_bot_voice_leave`)
+
+Una expulsión manual (moderador → "Desconectar") **no** reconecta: cierra la sesión. Para distinguirla, al recibir `on_voice_state_update` de salida del bot se consulta el audit log (`member_disconnect`, hasta 3 s porque la entrada llega con retraso):
+
+- La entrada no dice *a quién* se desconectó, solo `count`, y Discord agrupa desconexiones repetidas del mismo moderador incrementando `count`. Por eso se compara contra un baseline `{entry_id: count}` tomado en `/scribe start` y refrescado cada vez que un jugador sale del canal.
+- Entrada nueva o `count` mayor → `👢 expulsado manualmente` → se cancela cualquier recovery en curso y se cierra la sesión.
+- Sin cambios → caída → recovery (`reason=voice_state_leave`).
+- Sin permiso **View Audit Log** → se trata como expulsión manual (comportamiento conservador) y se avisa en el log. **Dar ese permiso al rol del bot** para que las caídas reales se recuperen.
+- Caída silenciosa (`voice_silent_drop`): el primer intento espera `_SILENT_DROP_GRACE_S` (5 s) para que una expulsión manual se detecte antes de que el bot vuelva a entrar.
+- Limitación: si un moderador desconecta a otro jugador en los mismos ~3 s en que el bot cae, se interpreta como expulsión del bot (falla hacia "no reconectar").
+
+Logs para seguir un incidente: `🔌 Gateway de Discord desconectado/resumed/ready`, `♻️ Recuperando…`, `⏳ Gateway de Discord caído…`, `❌ Intento N/M…`, `♻️ Reintento N/M… en Xs`, `✅ Listener recuperado…`, `🛑 Recovery agotado…`.
 
 ## Por qué dejan de salir transcripciones (diagnóstico diferencial)
 
