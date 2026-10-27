@@ -13,16 +13,27 @@ from datetime import datetime
 from pathlib import Path
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import AudioChunkEvent, TranscriptionEvent, SystemStatusEvent
+from rpg_scribe.core.events import (
+    AudioChunkEvent,
+    ListenerRecoverRequestEvent,
+    SystemStatusEvent,
+    TranscriptionEvent,
+)
 from rpg_scribe.core.models import TranscriberConfig
 
 logger = logging.getLogger(__name__)
 
-# Emit a stats line every N seconds while the transcriber is running.
-_STATS_INTERVAL_S = 30.0
+# Check transcriber health every N seconds while the transcriber is running.
+_STATS_INTERVAL_S = 5.0
 # Warn if no successful transcription has been emitted for this long while
 # chunks are still being received — strong signal of a degraded audio stream.
-_STALL_WARNING_S = 120.0
+_STALL_WARNING_S = 30.0
+_STALL_RECOVERY_COOLDOWN_S = 180.0
+# Warn if publishing a TranscriptionEvent takes longer than this. Because
+# EventBus.publish awaits all handlers, a slow subscriber (summarizer, bot
+# watcher) blocks this call and back-pressures the whole audio ingest loop.
+# A high value here localizes a stall to "downstream of transcription".
+_PUBLISH_WARN_S = 3.0
 
 
 def _pcm_to_wav_bytes(
@@ -60,8 +71,10 @@ class BaseTranscriber(ABC):
         self._chunks_errored = 0
         self._first_chunk_ts: float | None = None
         self._last_success_ts: float | None = None
+        self._last_session_id: str | None = None
         self._last_stats_snapshot: tuple[int, ...] = (0, 0, 0, 0, 0, 0)
         self._stall_warned = False
+        self._last_recovery_request_ts: float | None = None
         self._stats_task: asyncio.Task[None] | None = None
 
     @abstractmethod
@@ -116,6 +129,7 @@ class BaseTranscriber(ABC):
     def _log_stats(self, *, final: bool = False) -> None:
         """Log cumulative counters + stall warning if audio is being received
         but nothing has transcribed successfully for a while."""
+        now = time.time()
         snapshot = (
             self._chunks_received,
             self._chunks_pre_filtered,
@@ -124,27 +138,14 @@ class BaseTranscriber(ABC):
             self._chunks_empty,
             self._chunks_errored,
         )
-        # Skip noisy "all zeros" lines unless this is the final summary.
-        if not final and snapshot == self._last_stats_snapshot:
-            return
-        self._last_stats_snapshot = snapshot
-
         if self._last_success_ts is None:
             last_success_str = "never"
             stalled_for: float | None = None
             if self._first_chunk_ts is not None:
-                stalled_for = time.time() - self._first_chunk_ts
+                stalled_for = now - self._first_chunk_ts
         else:
-            stalled_for = time.time() - self._last_success_ts
+            stalled_for = now - self._last_success_ts
             last_success_str = f"{stalled_for:.0f}s ago"
-
-        prefix = "📊 Final transcriber stats" if final else "📊 Transcriber stats"
-        logger.info(
-            "%s: received=%d pre_filtered=%d transcribed=%d hallu=%d empty=%d errored=%d | last_success=%s",
-            prefix,
-            *snapshot,
-            last_success_str,
-        )
 
         # Stall detection: audio arriving but nothing transcribes
         if (
@@ -164,6 +165,34 @@ class BaseTranscriber(ABC):
                 self._chunks_hallucination,
             )
             self._stall_warned = True
+        if (
+            not final
+            and self._chunks_received > 0
+            and stalled_for is not None
+            and stalled_for > _STALL_WARNING_S
+            and self._last_session_id
+            and (
+                self._last_recovery_request_ts is None
+                or now - self._last_recovery_request_ts >= _STALL_RECOVERY_COOLDOWN_S
+            )
+        ):
+            self._last_recovery_request_ts = now
+            logger.warning(
+                "♻️  Solicitando recovery del listener para sesión %s "
+                "(reason=transcriber_stall, stalled_for=%.0fs, cooldown=%ds)",
+                self._last_session_id,
+                stalled_for,
+                int(_STALL_RECOVERY_COOLDOWN_S),
+            )
+            asyncio.create_task(
+                self.event_bus.publish(
+                    ListenerRecoverRequestEvent(
+                        session_id=self._last_session_id,
+                        reason="transcriber_stall",
+                    )
+                ),
+                name=f"listener-recover-{self._last_session_id}",
+            )
         elif (
             stalled_for is not None
             and stalled_for < _STALL_WARNING_S
@@ -171,6 +200,19 @@ class BaseTranscriber(ABC):
         ):
             # Recovered — allow re-warning on next stall
             self._stall_warned = False
+
+        # Skip noisy repeated stats lines unless this is the final summary.
+        if not final and snapshot == self._last_stats_snapshot:
+            return
+        self._last_stats_snapshot = snapshot
+
+        prefix = "📊 Final transcriber stats" if final else "📊 Transcriber stats"
+        logger.info(
+            "%s: received=%d pre_filtered=%d transcribed=%d hallu=%d empty=%d errored=%d | last_success=%s",
+            prefix,
+            *snapshot,
+            last_success_str,
+        )
 
     def _save_audio_chunk(self, event: AudioChunkEvent) -> None:
         """Save an audio chunk as WAV in data/audio/{session_id}/ for playback."""
@@ -216,6 +258,7 @@ class BaseTranscriber(ABC):
         self._chunks_received += 1
         if self._first_chunk_ts is None:
             self._first_chunk_ts = time.time()
+        self._last_session_id = event.session_id
 
         analysis = analyze_audio(
             event.audio_data,
@@ -317,13 +360,24 @@ class BaseTranscriber(ABC):
 
             self._chunks_transcribed += 1
             self._last_success_ts = time.time()
+            self._last_recovery_request_ts = None
             preview = result.text[:100] + ("…" if len(result.text) > 100 else "")
             chunk_log(
                 "✅ Transcripción de '%s': \"%s\" → publicando al EventBus",
                 result.speaker_name,
                 preview,
             )
+            _publish_t0 = time.monotonic()
             await self.event_bus.publish(result)
+            _publish_dt = time.monotonic() - _publish_t0
+            if _publish_dt > _PUBLISH_WARN_S:
+                logger.warning(
+                    "⏱️  publish(TranscriptionEvent) de '%s' tardó %.1fs — un "
+                    "handler downstream (summarizer/bot watcher) está bloqueando "
+                    "el EventBus y, con él, la ingesta de audio.",
+                    result.speaker_name,
+                    _publish_dt,
+                )
         except Exception as exc:
             self._chunks_errored += 1
             logger.exception(

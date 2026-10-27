@@ -97,4 +97,14 @@ Sección `[tts]` con campos: `enabled`, `provider`, `voice`, `model`, `cache_dir
 
 ## Añadir un provider nuevo
 
-Extender `BaseTTSProvider` (la firma incluye `response_format`) e instanciar en `web/app.py` según `tts_config.provider`. El provider debe ser capaz de devolver al menos `"pcm"` para que funcione el modo Discord.
+1. Extender `BaseTTSProvider` (la firma incluye `response_format`). El provider debe ser capaz de devolver al menos `"pcm"` (raw 24 kHz mono int16 LE) para que funcione el modo Discord — ese buffer se pasa tal cual a `pcm_24k_mono_to_48k_stereo()`.
+2. Instanciarlo en los **dos** sitios que crean el provider según `tts_config.provider`:
+   - `src/rpg_scribe/main.py` (rama del `TriggerWatcher` / modo Discord)
+   - `src/rpg_scribe/web/app.py` (`router.tts_provider`, modo navegador)
+
+Si el SDK usa un `output_format`/formato propio, mapea el `response_format` genérico (`"pcm"`/`"mp3"`) dentro del provider.
+
+### Providers existentes
+
+- **OpenAI** (`tts/openai_provider.py`) — default. `model="tts-1"`, voces `nova`, `alloy`, … Pasa `response_format` tal cual al SDK.
+- **ElevenLabs** (`tts/elevenlabs_provider.py`) — `provider = "elevenlabs"` en `[tts]`. `model="eleven_multilingual_v2"` (multilingüe, apto para partidas en español), `voice` es un **voice_id** (default `t9LRTh3y1ioN00e9wsNh`). Mapea `"pcm"→pcm_24000` y `"mp3"→mp3_44100_128`. El cliente async lee `ELEVENLABS_API_KEY` del entorno; import perezoso (`pip install -e ".[tts]"`). El SDK devuelve un iterador async de bytes que el provider concatena.

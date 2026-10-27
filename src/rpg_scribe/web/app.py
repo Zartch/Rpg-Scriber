@@ -151,6 +151,11 @@ def create_app(
 
             router.tts_provider = OpenAITTSProvider(model=tts_config.model)  # type: ignore[attr-defined]
             logger.info("TTS enabled: provider=%s voice=%s", tts_config.provider, tts_config.voice)
+        elif tts_config.provider == "elevenlabs":
+            from rpg_scribe.tts.elevenlabs_provider import ElevenLabsTTSProvider
+
+            router.tts_provider = ElevenLabsTTSProvider(model=tts_config.model)  # type: ignore[attr-defined]
+            logger.info("TTS enabled: provider=%s voice=%s", tts_config.provider, tts_config.voice)
         else:
             logger.warning("Unknown TTS provider: %s — TTS disabled", tts_config.provider)
 

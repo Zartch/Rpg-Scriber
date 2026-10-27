@@ -11,7 +11,11 @@ from typing import Any, Optional
 import discord
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import AudioChunkEvent, SystemStatusEvent
+from rpg_scribe.core.events import (
+    AudioChunkEvent,
+    ListenerRecoverRequestEvent,
+    SystemStatusEvent,
+)
 from rpg_scribe.core.models import ListenerConfig
 from rpg_scribe.listeners.base import BaseListener
 
@@ -22,6 +26,10 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# Warn if a single flush pass (which awaits event_bus.publish → all downstream
+# handlers) blocks longer than this. The loop ticks every 0.25s, so anything
+# multiple seconds long means audio ingest stalled for every speaker.
+_FLUSH_WARN_S = 2.0
 
 
 
@@ -170,9 +178,30 @@ def _patch_audio_reader() -> None:
     logger.info("Parcheado AudioReader.callback para silenciar struct.error")
 
 
+# ── Monkey-patch: voice_recv UDPKeepAlive interval ─────────────────
+# voice_recv (0.5.3a180) define UDPKeepAlive.delay = 5000 (pensado como ms)
+# pero hace time.sleep(self.delay) → un keepalive cada ~83 min.  El bot
+# solo escucha, así que no envía ningún otro paquete UDP; Discord deja de
+# mandarnos voz a los ~300s sin tráfico del cliente y la recepción muere
+# (stall a los ~305s de cada conexión en todos los logs).
+_UDP_KEEPALIVE_S = 5
+
+
+def _patch_udp_keepalive() -> None:
+    try:
+        from discord.ext.voice_recv.reader import UDPKeepAlive
+    except ImportError:
+        return
+
+    if UDPKeepAlive.delay > _UDP_KEEPALIVE_S:
+        UDPKeepAlive.delay = _UDP_KEEPALIVE_S
+        logger.info("Parcheado UDPKeepAlive.delay a %ds", _UDP_KEEPALIVE_S)
+
+
 _patch_packet_router()
 _patch_dave_decryption()
 _patch_audio_reader()
+_patch_udp_keepalive()
 
 # Discord sends 48 kHz 16-bit stereo; we convert to mono.
 DISCORD_SAMPLE_RATE = 48000
@@ -443,16 +472,41 @@ class DiscordListener(BaseListener):
                 ):
                     logger.warning(
                         "⚠️  VoiceClient desconectado silenciosamente — "
-                        "deteniendo sesión %s (usa /scribe start para reconectar)",
+                        "sesión %s sin audio, solicitando reconexión automática",
                         self._session_id,
                     )
                     self._connected = False
+                    # A dead listener produces no chunks, so the transcriber's
+                    # stall detector cannot be relied on to notice: ask directly.
+                    if self._session_id is not None:
+                        await self.event_bus.publish(
+                            ListenerRecoverRequestEvent(
+                                session_id=self._session_id,
+                                reason="voice_silent_drop",
+                            )
+                        )
                     break
                 now = time.time()
+                # Time the flush pass. _emit_chunk awaits event_bus.publish,
+                # which awaits ALL downstream handlers (transcriber → summarizer
+                # / bot watcher). If any of them blocks, this single loop stops
+                # flushing audio for EVERY speaker → transcription "se cuelga".
+                # A pass much longer than the 0.25s tick is the direct symptom.
+                _flush_t0 = time.monotonic()
                 for uid in list(self._user_buffers):
                     buf = self._user_buffers[uid]
                     if buf.should_emit(now):
                         await self._emit_chunk(uid)
+                _flush_dt = time.monotonic() - _flush_t0
+                if _flush_dt > _FLUSH_WARN_S:
+                    logger.warning(
+                        "⏱️  Flush loop bloqueado %.1fs (>%.1fs) — la ingesta de "
+                        "audio estuvo parada para TODOS los hablantes durante ese "
+                        "tiempo. Causa habitual: un handler downstream (bot/TTS) "
+                        "bloqueando el EventBus.",
+                        _flush_dt,
+                        _FLUSH_WARN_S,
+                    )
         except asyncio.CancelledError:
             pass
 

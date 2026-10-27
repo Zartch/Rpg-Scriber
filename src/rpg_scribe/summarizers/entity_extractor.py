@@ -85,7 +85,13 @@ class EntityExtractor:
                     system=system,
                     messages=[{"role": "user", "content": user_message}],
                 )
-                return response.content[0].text
+                # Join all text blocks; skip ThinkingBlocks (no .text) that
+                # newer models emit when extended thinking is active.
+                return "".join(
+                    block.text
+                    for block in response.content
+                    if getattr(block, "type", None) == "text"
+                )
             except Exception as exc:
                 last_exc = exc
                 if attempt < max_retries - 1:

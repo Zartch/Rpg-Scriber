@@ -13,7 +13,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from rpg_scribe.core.event_bus import EventBus
-from rpg_scribe.core.events import AudioChunkEvent, TranscriptionEvent, SystemStatusEvent
+from rpg_scribe.core.events import (
+    AudioChunkEvent,
+    ListenerRecoverRequestEvent,
+    SystemStatusEvent,
+    TranscriptionEvent,
+)
 from rpg_scribe.core.models import TranscriberConfig
 from rpg_scribe.transcribers.base import BaseTranscriber
 from rpg_scribe.transcribers.openai_transcriber import OpenAITranscriber, _pcm_to_wav_bytes
@@ -254,6 +259,88 @@ class TestBaseTranscriber:
         assert len(transcriber.transcribe_calls) == 5
 
         await transcriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_stall_publishes_listener_recovery_request(
+        self, bus: EventBus, config: TranscriberConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        transcriber = MockTranscriber(bus, config)
+        transcriber._chunks_received = 3
+        transcriber._first_chunk_ts = 1.0
+        transcriber._last_session_id = "test-session"
+
+        published: list[ListenerRecoverRequestEvent] = []
+
+        async def handler(event: ListenerRecoverRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(ListenerRecoverRequestEvent, handler)
+        monkeypatch.setattr("rpg_scribe.transcribers.base.time.time", lambda: 122.0)
+
+        transcriber._log_stats()
+        await asyncio.sleep(0)
+
+        assert len(published) == 1
+        assert published[0].session_id == "test-session"
+        assert published[0].reason == "transcriber_stall"
+
+    @pytest.mark.asyncio
+    async def test_stall_recovery_request_repeats_after_cooldown(
+        self, bus: EventBus, config: TranscriberConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        transcriber = MockTranscriber(bus, config)
+        transcriber._chunks_received = 4
+        transcriber._first_chunk_ts = 1.0
+        transcriber._last_session_id = "test-session"
+
+        published: list[ListenerRecoverRequestEvent] = []
+
+        async def handler(event: ListenerRecoverRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(ListenerRecoverRequestEvent, handler)
+
+        monkeypatch.setattr("rpg_scribe.transcribers.base.time.time", lambda: 122.0)
+        transcriber._log_stats()
+        await asyncio.sleep(0)
+
+        monkeypatch.setattr("rpg_scribe.transcribers.base.time.time", lambda: 320.0)
+        transcriber._log_stats()
+        await asyncio.sleep(0)
+
+        assert len(published) == 2
+        assert all(ev.session_id == "test-session" for ev in published)
+
+    @pytest.mark.asyncio
+    async def test_stall_recovery_request_still_publishes_when_snapshot_is_unchanged(
+        self, bus: EventBus, config: TranscriberConfig, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        transcriber = MockTranscriber(bus, config)
+        transcriber._chunks_received = 2
+        transcriber._first_chunk_ts = 1.0
+        transcriber._last_session_id = "test-session"
+        transcriber._last_stats_snapshot = (
+            transcriber._chunks_received,
+            transcriber._chunks_pre_filtered,
+            transcriber._chunks_transcribed,
+            transcriber._chunks_hallucination,
+            transcriber._chunks_empty,
+            transcriber._chunks_errored,
+        )
+
+        published: list[ListenerRecoverRequestEvent] = []
+
+        async def handler(event: ListenerRecoverRequestEvent) -> None:
+            published.append(event)
+
+        bus.subscribe(ListenerRecoverRequestEvent, handler)
+        monkeypatch.setattr("rpg_scribe.transcribers.base.time.time", lambda: 40.0)
+
+        transcriber._log_stats()
+        await asyncio.sleep(0)
+
+        assert len(published) == 1
+        assert published[0].session_id == "test-session"
 
 
 # ---------------------------------------------------------------------------

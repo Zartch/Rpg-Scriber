@@ -63,23 +63,68 @@ Cuando la WebSocket de voz muere pero el gateway no notifica (renegociación DAV
 
 - Setea `self._connected = False` y rompe el loop
 - Emite `WARNING` `"VoiceClient desconectado silenciosamente"`
+- Publica `ListenerRecoverRequestEvent(reason="voice_silent_drop")` — un listener muerto no emite chunks, así que el stall detector del transcriber no lo notaría nunca.
 
-El próximo `/scribe start` ya no choca con el guard de "Already recording". El path `on_voice_state_update` cubre el cleanup completo si el gateway finalmente lo reporta.
+### C. Reconexión automática con reintentos (`ScribeCog._recover_listener`)
 
-**Limitación conocida**: si el gateway tampoco dispara nunca el evento de salida, la sesión vieja queda huérfana — no se publica `SessionEndRequestEvent`, el summarizer no finaliza. Aceptable porque en ese caso el bot está esencialmente offline y hace falta un restart de todos modos.
+Disparadores: stall del transcriber, caída silenciosa (B) y `on_resumed`/`on_ready` del gateway si hay sesión activa con el listener desconectado.
 
-## Stream de audio degradado vs. transcriber colgado
+- Mantiene el mismo `session_id`. Hasta `_LISTENER_RECOVERY_MAX_ATTEMPTS` (20) intentos con backoff `5, 10, 20, 30, 60, 60…` s (~16 min).
+- Antes de cada intento espera hasta 60 s a que el **gateway** esté vivo (`bot.ws.open`). `bot.is_ready()` no sirve: sigue `True` mientras discord.py reintenta el gateway. Reconectar la voz con el gateway caído falla con `ClientConnectionResetError('Cannot write to closing transport')` (incidente del 2026-10-23, Cloudflare 520/503 en `gateway-us-east1-d`).
+- Limpia un `guild.voice_client` residual antes de reconectar (si no, "Already connected to a voice channel").
+- Cooldown: 90 s si el listener sigue vivo (stall), 15 s si está muerto (solo anti-bucle).
+- Agotados los intentos: `ERROR "🛑 Recovery agotado"` y se cierra la sesión limpiamente (`SessionEndRequestEvent`), así el resumen se finaliza.
+- `/scribe stop` durante el recovery lo aborta en el siguiente punto de control.
 
-Síntoma confuso: deja de haber transcripciones pero los chunks siguen llegando como `near_silence` o `low_energy` aunque la gente esté hablando. **No es el filtro siendo agresivo** — es que `voice_recv` está entregando audio basura (DAVE roto, jitter buffer corrupto, ...).
+### D. Expulsión manual vs. caída (`_handle_bot_voice_leave`)
 
-Marcadores en el log que confirman este patrón:
+Una expulsión manual (moderador → "Desconectar") **no** reconecta: cierra la sesión. Para distinguirla, al recibir `on_voice_state_update` de salida del bot se consulta el audit log (`member_disconnect`, hasta 3 s porque la entrada llega con retraso):
+
+- La entrada no dice *a quién* se desconectó, solo `count`, y Discord agrupa desconexiones repetidas del mismo moderador incrementando `count`. Por eso se compara contra un baseline `{entry_id: count}` tomado en `/scribe start` y refrescado cada vez que un jugador sale del canal.
+- Entrada nueva o `count` mayor → `👢 expulsado manualmente` → se cancela cualquier recovery en curso y se cierra la sesión.
+- Sin cambios → caída → recovery (`reason=voice_state_leave`).
+- Sin permiso **View Audit Log** → se trata como expulsión manual (comportamiento conservador) y se avisa en el log. **Dar ese permiso al rol del bot** para que las caídas reales se recuperen.
+- Caída silenciosa (`voice_silent_drop`): el primer intento espera `_SILENT_DROP_GRACE_S` (5 s) para que una expulsión manual se detecte antes de que el bot vuelva a entrar.
+- Limitación: si un moderador desconecta a otro jugador en los mismos ~3 s en que el bot cae, se interpreta como expulsión del bot (falla hacia "no reconectar").
+
+Logs para seguir un incidente: `🔌 Gateway de Discord desconectado/resumed/ready`, `♻️ Recuperando…`, `⏳ Gateway de Discord caído…`, `❌ Intento N/M…`, `♻️ Reintento N/M… en Xs`, `✅ Listener recuperado…`, `🛑 Recovery agotado…`.
+
+## Por qué dejan de salir transcripciones (diagnóstico diferencial)
+
+"Se me cuelga la transcripción" tiene **tres causas distintas** con fixes opuestos. No las confundas: mira primero los marcadores de log para saber cuál es.
+
+### Causa A — Stream de audio degradado (`voice_recv` entrega basura)
+
+Los chunks siguen llegando como `near_silence` o `low_energy` aunque la gente esté hablando. **No es el filtro siendo agresivo** — `voice_recv` entrega audio corrupto (DAVE roto, jitter buffer, ...). Es el [bug abierto de arriba](#-bug-abierto-degradación-silenciosa-del-audio-en-sesiones-largas).
+
+Marcadores en el log:
 
 1. **Última alucinación** justo antes del silencio en logs INFO — es el "último audio real" antes de degradarse.
-2. **`⚠️ Transcriber stall: N chunks received but no successful transcription in Xs`** — auto-emitido por `BaseTranscriber._log_stats` cuando hay chunks entrando pero ninguno produce texto en >120s.
+2. **`⚠️ Transcriber stall: N chunks received but no successful transcription in Xs`** — auto-emitido por `BaseTranscriber._log_stats` cuando hay chunks entrando pero ninguno produce texto en >`_STALL_WARNING_S` (30s).
 3. **RMS bajo en la última alucinación** — el log de alucinaciones incluye `RMS=N speech=M%` para ver si el audio ya iba degradándose en ese chunk.
 4. **Carpeta `logs/audio/discarded/<session_id>/`** con WAVs `_AUDIO_near_silence_` o `_AUDIO_low_energy_` — confirma que los chunks llegaban pero sin contenido real.
 
-Si confirmas este patrón, el fix no está en el filtro ni en el transcriber: hay que reiniciar el listener.
+Fix: no está en el filtro ni en el transcriber — hay que reiniciar el listener (o dejar que actúe la recuperación automática).
+
+### Causa B — Event loop bloqueado por un handler downstream (bot/TTS) — **arreglado**
+
+`EventBus.publish` hace `await asyncio.gather(todos los handlers)`, así que **quien publica espera a todos sus suscriptores**. La cadena entera va en serie: `_periodic_flush` (ingesta de audio, bucle único) → `publish(AudioChunkEvent)` → `transcribe()` → `publish(TranscriptionEvent)` → `[summarizer, TriggerWatcher]`. Si un handler bloquea, la ingesta de audio se para **para todos los hablantes**.
+
+El culpable era el `TriggerWatcher`: en la rama **close-word** ejecutaba `await self._finalize(...)` **inline dentro del handler del evento**, corriendo todo el pipeline del bot (RAG + Claude ≤30s + TTS + playback Discord) dentro del dispatch. **Fix (`bots/watcher.py`)**: la rama close-word ahora lanza `_finalize` con `asyncio.create_task`, igual que la rama timeout, para que ningún trabajo pesado del bot viva dentro del dispatch. Ver [`review-transcription-stall-close-word-fix.md`](review-transcription-stall-close-word-fix.md).
+
+A diferencia de la Causa A, aquí **no** hay chunks descartados por RMS bajo: el audio es bueno pero nunca se procesa. Marcadores en el log (instrumentación añadida para estudiar esto):
+
+1. **`⏱️ Flush loop bloqueado Xs`** (`discord_listener._periodic_flush`, umbral `_FLUSH_WARN_S` = 2s) — síntoma directo: la ingesta estuvo parada X segundos.
+2. **`⏱️ publish(TranscriptionEvent) de '…' tardó Xs`** (`transcribers/base.py`, umbral `_PUBLISH_WARN_S` = 3s) — localiza el bloqueo como "downstream de la transcripción".
+3. **`🎯 Trigger detectado` / `▶️ Finalize bot … inicio pipeline` / `✅ Finalize … pipeline total Xs`** (`bots/watcher.py`) con tiempos por etapa (`handle`, `TTS`, `playback`) — identifica al bot como causa y cuánto cuesta cada fase.
+
+Si ves `⏱️ Flush loop bloqueado` **junto a** un `▶️ Finalize bot` con tiempos altos → es esta causa. Con el fix aplicado no debería reaparecer; si lo hace, hay otro handler pesado corriendo inline en el dispatch.
+
+### Causa C — Freeze o muerte del proceso
+
+El log se **corta en seco** estando sano (`last_success` bajo, contadores subiendo) y no vuelve a aparecer ninguna línea — ni siquiera los stats periódicos (cada `_STATS_INTERVAL_S` = 5s) ni `📊 Final transcriber stats`. Como `_periodic_stats` loguea incondicionalmente, la ausencia total de líneas nuevas = el proceso servidor se congeló o murió. Un detector server-side no puede avisar de esto (está muerto); solo el navegador lo nota (su WebSocket cae). Ver el diseño de la alarma en `docs/superpowers/specs/2026-07-11-transcription-stall-alarm-design.md`.
+
+Fix: reiniciar el proceso. La alarma de navegador (en desarrollo) es la mitigación para enterarse a tiempo.
 
 ## faster-whisper y el event loop
 

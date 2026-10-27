@@ -75,6 +75,7 @@ Ver detalles completos: [`docs/architecture.md`](docs/architecture.md)
 | `DISCORD_BOT_TOKEN` | Token del bot de Discord | Sí |
 | `OPENAI_API_KEY` | API key de OpenAI (transcripción) | Sí |
 | `ANTHROPIC_API_KEY` | API key de Anthropic (resumen) | Sí |
+| `ELEVENLABS_API_KEY` | API key de ElevenLabs (TTS, solo si `provider = "elevenlabs"`) | No |
 | `RPG_SCRIBE_HOST` | Host del Web UI (default: 127.0.0.1) | No |
 | `RPG_SCRIBE_PORT` | Puerto del Web UI (default: 8000) | No |
 | `RPG_SCRIBE_DB` | Ruta de la base de datos (default: rpg_scribe.db) | No |

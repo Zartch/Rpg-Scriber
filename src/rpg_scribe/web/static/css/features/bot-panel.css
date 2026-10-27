@@ -1,0 +1,65 @@
+/* Panel de control de voz del bot (dentro de System Status) */
+.bot-speech-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.bot-panel-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bot-panel-header { font-weight: 600; }
+
+.bot-panel-close {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.bot-panel-question {
+  margin: 6px 0;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.bot-panel-answer {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.bot-panel-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.bot-panel-controls button {
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: inherit;
+}
+
+.bot-panel-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bot-panel-status {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}

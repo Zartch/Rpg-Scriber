@@ -332,8 +332,16 @@ class ClaudeSummarizer(BaseSummarizer):
                     system=system,
                     messages=[{"role": "user", "content": user_message}],
                 )
-                # Extract text from the response
-                return response.content[0].text
+                # Extract text from the response. With extended thinking
+                # enabled the first block is a ThinkingBlock (no .text); the
+                # actual answer lives in one or more TextBlocks. Join all text
+                # blocks and ignore thinking/other block types.
+                text_parts = [
+                    block.text
+                    for block in response.content
+                    if getattr(block, "type", None) == "text"
+                ]
+                return "".join(text_parts)
             except Exception as exc:
                 last_exc = exc
                 if attempt < self.config.max_retries - 1:

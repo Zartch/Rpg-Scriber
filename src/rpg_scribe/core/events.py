@@ -62,6 +62,15 @@ class SessionEndRequestEvent:
 
 
 @dataclass(frozen=True)
+class ListenerRecoverRequestEvent:
+    """Published when the active audio listener should be reconnected in place."""
+
+    session_id: str
+    reason: str
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
 class SummaryRefreshRequestEvent:
     """Published when an on-demand summary refresh is requested."""
 

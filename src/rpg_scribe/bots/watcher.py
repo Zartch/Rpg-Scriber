@@ -112,6 +112,12 @@ class TriggerWatcher:
                 last_chunk_at=time.time(),
             )
             self._captures[key] = cap
+            logger.info(
+                "🎯 Trigger '%s' detectado (hablante=%s, sesión=%s) → captura abierta",
+                bot.keyword,
+                ev.speaker_name,
+                ev.session_id,
+            )
         else:
             cap.text = (cap.text + " " + text).strip()
             cap.last_chunk_at = time.time()
@@ -130,7 +136,17 @@ class TriggerWatcher:
                 # it would no-op because the capture is popped.
                 if cap.timer is not None:
                     cap.timer.cancel()
-                await self._finalize(key, ev, reason="close_word")
+                # Run finalize in the background (like the timeout path). If we
+                # awaited it inline here, the whole bot pipeline (RAG + Claude +
+                # TTS + Discord playback, up to 30s) would run inside the
+                # EventBus dispatch of this TranscriptionEvent, blocking the
+                # publish chain all the way up to the audio flush loop and
+                # stalling transcription. _finalize pops the capture first, so
+                # backgrounding it cannot double-fire.
+                asyncio.create_task(
+                    self._finalize(key, ev, reason="close_word"),
+                    name=f"trigger-finalize-{cap.bot.keyword}",
+                )
                 return
 
         # (Re)arm the silence timer.
@@ -169,6 +185,14 @@ class TriggerWatcher:
         if not command:
             return
 
+        _fin_t0 = time.monotonic()
+        logger.info(
+            "▶️  Finalize bot '%s' (motivo=%s) comando=%r — inicio pipeline",
+            cap.bot.keyword,
+            reason,
+            command[:120],
+        )
+
         await self._bus.publish(
             TriggerActivatedEvent(
                 session_id=ev.session_id,
@@ -182,6 +206,7 @@ class TriggerWatcher:
             )
         )
 
+        _handle_t0 = time.monotonic()
         try:
             raw = await asyncio.wait_for(
                 cap.bot.handle(
@@ -195,6 +220,11 @@ class TriggerWatcher:
         except Exception as exc:
             logger.exception("Bot %s.handle failed: %s", cap.bot.keyword, exc)
             raw = "Lo siento, ha habido un problema."
+        logger.info(
+            "   bot '%s'.handle tardó %.1fs",
+            cap.bot.keyword,
+            time.monotonic() - _handle_t0,
+        )
 
         response = _normalize_response(raw)
 
@@ -222,6 +252,7 @@ class TriggerWatcher:
             return
 
         voice = cap.bot.voice or self._default_voice
+        _tts_t0 = time.monotonic()
         try:
             paths = await synthesize_to_wav_paths(
                 spoken,
@@ -236,6 +267,12 @@ class TriggerWatcher:
                 "TTS synthesis for bot %s failed: %s", cap.bot.keyword, exc
             )
             return
+        logger.info(
+            "   TTS bot '%s' tardó %.1fs (%d chunk(s))",
+            cap.bot.keyword,
+            time.monotonic() - _tts_t0,
+            len(paths),
+        )
 
         if self._player.get_voice_client() is None:
             logger.warning(
@@ -244,6 +281,7 @@ class TriggerWatcher:
             )
             return
 
+        _play_t0 = time.monotonic()
         try:
             await self._player.start_queue([str(p) for p in paths])
         except Exception as exc:
@@ -263,6 +301,15 @@ class TriggerWatcher:
                 answer_md=response.written or spoken,
                 total_chunks=len(paths),
             )
+        )
+        logger.info(
+            "✅ Finalize bot '%s' completado: playback %.1fs | pipeline total %.1fs "
+            "(motivo=%s). Nota: si este total es alto y el finalize corriera inline "
+            "en el dispatch del evento, bloquearía la ingesta de audio.",
+            cap.bot.keyword,
+            time.monotonic() - _play_t0,
+            time.monotonic() - _fin_t0,
+            reason,
         )
 
     def _find_keyword(self, text: str) -> tuple[BaseBot, str] | None:

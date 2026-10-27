@@ -218,3 +218,42 @@ class TestDiscordListenerIntegration:
         await listener.disconnect()
 
         assert any(s.status == "idle" for s in statuses)
+
+
+def test_udp_keepalive_interval_is_seconds_not_milliseconds() -> None:
+    """voice_recv's UDPKeepAlive does time.sleep(delay) with delay=5000 (ms
+    intent) → one keepalive every ~83 min. Discord stops sending voice after
+    ~300s without client UDP traffic, so receive died every ~305s."""
+    import rpg_scribe.listeners.discord_listener  # noqa: F401  (applies patches)
+    from discord.ext.voice_recv.reader import UDPKeepAlive
+
+    assert 0 < UDPKeepAlive.delay <= 10
+
+
+class TestSilentVoiceDrop:
+    async def test_silent_drop_requests_listener_recovery(self) -> None:
+        import asyncio
+        from unittest.mock import MagicMock
+
+        from rpg_scribe.core.events import ListenerRecoverRequestEvent
+
+        bus = EventBus()
+        listener = DiscordListener(bus, ListenerConfig())
+        listener._session_id = "sess-1"
+        listener._connected = True
+        listener._voice_client = MagicMock()
+        listener._voice_client.is_connected = MagicMock(return_value=False)
+
+        requests: list[ListenerRecoverRequestEvent] = []
+
+        async def _capture(event: ListenerRecoverRequestEvent) -> None:
+            requests.append(event)
+
+        bus.subscribe(ListenerRecoverRequestEvent, _capture)
+
+        await asyncio.wait_for(listener._periodic_flush(), timeout=2.0)
+
+        assert listener.is_connected() is False
+        assert [(r.session_id, r.reason) for r in requests] == [
+            ("sess-1", "voice_silent_drop")
+        ]

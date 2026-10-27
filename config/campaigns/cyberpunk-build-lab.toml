@@ -9,71 +9,101 @@ para la proxima partida de Cyberpunk. El tono es de colegas: bromas, propuestas
 de builds y comparaciones de roles.
 """
 campaign_summary = """
-# CRÓNICA DE CAMPAÑA: CYBERPUNK BUILD LAB
+# Crónica de Cyberpunk Build Lab: La Búsqueda del Personaje de Miquel
 
-## Estado General de la Campaña
+## Naturaleza de la campaña
 
-La campaña **Cyberpunk Build Lab** se encuentra en su fase inicial de pre-juego, desarrollándose como una serie de sesiones de construcción colaborativa de personajes antes del inicio oficial de la aventura. El grupo se ha reunido específicamente para ayudar a Miquel en la decisión de su concepto de personaje para la próxima partida de Cyberpunk RED.
+Esta no es una aventura activa, sino una serie de sesiones de pre-juego entre colegas cuyo objetivo declarado es ayudar a Miquel a definir concepto y rol para su próximo personaje en una partida de Cyberpunk RED. El tono es distendido, con bromas constantes, propuestas descartadas sobre la marcha y digresiones típicas de mesa de amigos. Escalopo ejerce de Director de Juego aportando contexto de mundo (la ciudad de **Santiago**, con cuatro facciones definidas y zonas grises entre ellas); Zartch actúa como una especie de fixer narrativo del grupo, lanzando ideas y conectando conceptos; Bateman pone a prueba los límites con propuestas agresivas o extrañas.
 
-## Contexto del Mundo de Juego
+## Arco 1: El caos técnico (Sesiones 1 y 2)
 
-El Afinador táctico (Escalopo) ha establecido **Santiago** como la ciudad principal de la campaña, caracterizada por conflictos sociales evidentes entre elementos tradicionales y modernos. La estructura política se define por **cuatro facciones claramente diferenciadas**, aunque los personajes pueden operar en zonas grises entre ellas según sus preferencias narrativas.
+Las dos primeras sesiones quedaron prácticamente inutilizadas por fallos graves de conexión y transcripción. La Sesión 1 fue un desastre casi total: el sistema registró ruido incoherente y ninguna conversación sustancial sobre builds llegó a producirse, más allá de la frustración compartida (especialmente de Miquel) y el humor negro de Zartch sobre las alucinaciones del transcriptor.
 
-La ciudad presenta un entorno corporativo complejo, con **Zigurat** como corporación establecida prominente, junto a empresas más pequeñas y startups emergentes que aprovechan contactos corporativos para desarrollarse.
+La Sesión 2, aunque más fructífera, siguió lastrada por problemas de comunicación de Miquel. Aun así, dejó las primeras semillas del proceso: Miquel presentó **tres conceptos iniciales**:
 
-## Los Tres Conceptos de Personaje de Miquel
+1. **Ejecutivo Corporativo** — tiburón empresarial cínico, estilo "American Psycho" sin la psicopatía, que quiere "ser el más listo de la clase".
+2. **Netrunner Antisistema** — anarquista digital, opuesto a cualquier forma de poder opresivo, movido por un espíritu punk genuino.
+3. **Ronin Corporativo** — ex-samurai corporativo sin señor, traumatizado por atrocidades presenciadas en labores de seguridad, alejado del mundo digital, en busca de justicia difusa contra las corporaciones.
 
-### El Ejecutivo Corporativo
-Un tiburón empresarial cínico situado entre ejecutivo y fixer de altos vuelos. Su filosofía central es "ser el más listo de la clase", inspirado en referencias de American Psycho (sin elementos psicopáticos extremos). Se presenta como un guerrero vestido de traje, muy leal a sus aliados pero aprovechado con quienes no forman parte de su círculo íntimo. Su ascenso profesional se basa en conseguir nuevos contratos y oportunidades corporativas.
+Se discutió extensamente el concepto ejecutivo, con digresiones sobre tecno-feudalismo, la "PayPal Mafia" y élites segregacionistas (aportación de Zartch), y se usó como referencia recurrente a una **ejecutiva poliooperada de 160 años que aparenta 20**. Escalopo insistió en anclar cualquier concepto a una posición concreta dentro de Nine City (corporación grande tipo Zigurat vs. empresa pequeña) y advirtió que los contactos de otros jugadores (Pater, Dennis) podrían encajar con concesiones. Quedó abierta la duda de si Miquel quería o no un trasfondo militar tipo "cabronazo".
 
-### El Netrunner Antisistema  
-El polo opuesto ideológico, representa el espíritu punk auténtico con una filosofía completamente anárquica. Se opone activamente a cualquier forma de poder opresivo, comprendiendo que el exceso de poder inevitablemente lleva a la opresión. Opera en zonas grises legales, reconociendo que muchas cosas "legales" son fundamentalmente injustas.
+## Arco 2: Definición del concepto (Sesión 3) — el núcleo productivo
 
-### El Ronin Corporativo
-Un ex-samurai corporativo sin señor, antiguamente al servicio de una megacorporación. Poseía alta humanidad que le permitía implantes considerables hasta que presenció atrocidades durante operaciones de seguridad corporativa. Este trauma lo volvió introvertido y sensible, manteniéndose alejado del mundo digital. Busca justicia contra corporaciones corruptas sin un objetivo específico de venganza.
+Esta fue la sesión más resolutiva. Miquel pivotó lejos del ejecutivo duro hacia la idea de montar **"su negociete"**: una startup entre cuatro colegas, sin grandes aspiraciones corporativas clásicas.
 
-## Desarrollo y Sinergias del Grupo
+**Exploración de roles:**
+- Zartch identificó que esto encajaba más con **Fixer** que con Ejecutivo.
+- Miquel tanteó **Media** ("pixel"), pero lo rechazó categóricamente poco después (no quiere hacer de influencer).
+- Se valoró el rubro del negocio: **software** (infraestructura, seguridad, incluso software para rifles inteligentes).
+- Surgió la idea de trabajar como **subcontratistas**, y la posible relación con la corporación **Aterna**, descartada por Escalopo debido a sus condiciones extremas (renuncia a la humanidad, transhumanismo total, "el humano está caduco").
+- Se probaron y descartaron conceptos como "Reservoir Dogs" (escuadrón de limpieza especializado), **Rockero/influencer**, **Periodista** y **Nómada** (aunque Escalopo señaló que el Nómada "es muy de startup" como chico para todo).
 
-El Fixer de la mesa (Zartch) propuso fusionar conceptos, sugiriendo girar el netrunner hacia algo más corporativo que combine aspiraciones ejecutivas con habilidades técnicas. Se exploró una composición alternativa de grupo: netrunner (Miquel), técnico (otro jugador), soldado, o un project manager actuando como coordinador-arreglador.
+**Jerarquía de preferencias de Miquel:**
+1. Técnico (el más atractivo)
+2. Nómada
+3. Periodista (el que menos)
 
-El Afinador confirmó que Pater ya tiene preparados tres conceptos de personaje, incluyendo un Ejecutivo, asegurando que cualquier elección similar de Miquel sería compatible sin crear solapamientos problemáticos.
+**Motivación central revelada:** Miquel quiere un personaje que "trepe en los eslabones sociales", que busque controlar el cotarro y depredar en la cadena alimenticia — un rol ambicioso y agresivo.
 
-## Figuras y Referencias Conocidas
+**Idea de complementariedad (yin-yang):** Miquel propuso que su personaje ambicioso y "hambriento" se equilibre con un netrunner más relajado y social (posiblemente el propio Zartch), generando una dinámica de contraste dentro del grupo.
 
-- **Ejecutiva poliooperada**: Una figura corporativa de 160 años que aparenta 20, mencionada como ejemplo de concepto extremo más adecuado para startups que aprovechan contactos corporativos.
-- **Ripperdoc de confianza**: Referencia recurrente para imaginar implantes, costes y consecuencias narrativas de las modificaciones corporales.
+**Solución de compromiso — Ejecutivo con startup paralela:** Zartch propuso la idea que finalmente cuajó: Miquel sería un **ejecutivo de una gran corporación (ej. Arasaka)** que en paralelo desarrolla en secreto su propia startup de software/realidad aumentada, con la esperanza de independizarse algún día. Esto le permite mantener las skills mecánicas del rol Ejecutivo (que requieren estructura corporativa real para funcionar, según explicó Escalopo) sin renunciar a la narrativa emprendedora.
 
-## Desafíos Técnicos y Estado Actual
+**Detalles mecánicos aclarados por Escalopo:**
+- Ser ejecutivo y tener empresa propia **sí son compatibles**.
+- La empresa propia empezaría con **Recursos nivel 1**, mejorable con inversión de puntos, pero nunca al nivel de una corporación media.
+- Estructura inicial modesta: secretaria, comerciales a comisión, personal de apoyo (mención cómica a un empleado octogenario que no puede jubilarse).
+- Diferenció Arreglador (freelancer con contactos) de Ejecutivo (poder real dentro de estructura corporativa).
 
-Las sesiones han estado marcadas por severos problemas técnicos que han fragmentado significativamente la comunicación. Los sistemas de transcripción y reconocimiento de voz han fallado críticamente, registrando intervenciones como palabras inconexas e irrelevantes. Miquel ha experimentado múltiples fallos simultáneos de interface y conectividad, complicando la evaluación de sus preferencias reales sobre los conceptos desarrollados.
+**Concepto final consolidado de la sesión:** Una startup tecnológica familiar con toque vintage (se menciona una máquina Olivetti de los años 40 combinada con tecnología moderna), donde Miquel ejerce de operativo de campo/comercial mientras un **CEO-becario** (posiblemente su cuñado, aún estudiando la carrera) gestiona la administración a cambio de sueldo bajo y promesa de acciones futuras.
 
-A pesar de estos inconvenientes tecnológicos, el grupo mantiene su dinámica característica de apoyo mutuo y paciencia, con Zartch demostrando familiaridad técnica con los sistemas defectuosos y el resto del grupo adaptándose a las limitaciones comunicativas.
+**Advertencia narrativa de Escalopo:** las startups exitosas atraen la atención de corporaciones mayores, con riesgo de ser absorbidas "por las buenas o por las malas". Recomienda mantener perfil bajo y tapaderas múltiples. Zartch sugirió sectores discretos como una empresa de limpieza/recogida de basuras como posible tapadera o giro de negocio.
 
-## Decisiones Pendientes
+*(Nota: Bateman se desconectó antes de que terminara de cerrarse esta sesión).*
 
-La campaña permanece en fase de definición, esperando que Miquel tome una decisión final entre sus tres conceptos principales. Se ha establecido que un ejecutivo de nivel medio operaría dentro de una estructura corporativa mayor (posiblemente una sección o división), mientras que conceptos más independientes requerirían justificación específica para encajar en el marco faccional de Santiago.
+## Arco 3: Salto inesperado a la partida real (Sesión 4)
 
-La construcción colaborativa continúa pendiente de resolver los problemas técnicos para permitir una discusión fluida sobre roles, builds y sinergias de grupo antes del inicio oficial de la aventura.
+Contra lo esperado, esta sesión no continuó el proceso de build de Miquel. En su lugar, la conversación derivó hacia la logística y ambientación de una partida real ya en marcha:
+
+- Aparece **Davidus**, jugador no registrado previamente, con asistencia incierta por vacaciones; tanto él como Bateman avisan que probablemente faltarán la semana siguiente.
+- Escalopo comparte **mapas** de la próxima sesión, que ilusionan a Zartch (quien fantasea con verlos en Roll20 actualizándose dinámicamente).
+- Se mencionan unos **planos** de un lugar vinculado a **Denis**, sobre quien se comenta con humor negro que ha hecho "reformas" cuestionables, lo que obligará presumiblemente a contratar gente para arreglar los destrozos.
+- Escalopo desliza un apunte narrativo sin desarrollar: resulta extraño que un patrón/jefe avise en persona de que "tarda" en algo — posible gancho de trama futuro.
+- Dato geográfico clave: la próxima sesión arranca en un **hotel situado en Coastview, dentro de Pacifica** (el distrito más cercano a Night City para quienes conocen el videojuego de referencia).
+
+No hubo ninguna referencia a builds, roles, la ejecutiva poliooperada ni al ripperdoc de confianza. La sesión se cortó abruptamente dejando sin resolver tanto la agenda del grupo como los ganchos narrativos plantados.
+
+## Estado actual de la trama
+
+**Decisión de personaje de Miquel:** No cerrada del todo, pero con fuerte consenso de trabajo:
+- **Rol:** Ejecutivo (posiblemente de una gran corporación tipo Arasaka), compatibilizado mecánicamente con la propiedad de una startup tecnológica paralela.
+- **Concepto:** Startup familiar de software/hardware con estética vintage-moderna, estructura mínima (CEO-becario + comerciales a comisión), Miquel como operativo comercial de campo.
+- **Motivación:** ambición de ascenso social y control, equilibrada narrativamente por un compañero netrunner más relajado (posible sinergia con Zartch).
+- **Pendiente:** decidir si mantiene vínculo con Aterna (probablemente descartado), definir el sector final de la empresa (software, seguridad, o tapadera tipo limpieza/basuras) y pulir detalles de recursos y contactos.
+
+**Trama emergente (aún sin desarrollar):** el misterio del patrón que "tarda", las reformas de Denis en un lugar por identificar, y el hotel de Coastview (Pacifica) como punto de partida geográfico de la próxima sesión jugada. Queda abierta la duda de si la charla de build para Miquel se retomará antes de que arranque la partida real o si quedó definitivamente sustituida por el inicio de la aventura.
 """
-
-# Bot de reglas (RAG): responde por voz preguntas de reglas citando el manual.
-# Ver docs/rules-bot.md. Si `manuals` no resuelve ningún manual de rag.db,
-# el bot se auto-desactiva en setup().
-[campaign.rag]
-manuals = ["Ciberpunk RED"]              # nombre tal cual está ingerido en rag.db
-# rules_channel_id = "123456789012345678"  # opcional: canal de texto dedicado
-keyword = "bot reglas"                    # opcional; default de RulesBot
-top_k = 8                                 # opcional
-debug = true                             # logs de diagnóstico (campaña de test)
 
 [[campaign.locations]]
 name = "Afterlife"
 
 [[campaign.locations]]
+name = "Mesa de teoria de builds"
+
+[[campaign.locations]]
 name = "Taller de Ripperdoc"
 
 [[campaign.locations]]
-name = "Mesa de teoria de builds"
+name = "Coastview"
+description = "Distrito donde se ubica el hotel de la próxima sesión de la partida de Cyberpunk RED."
+
+[[campaign.locations]]
+name = "Pacifica"
+description = "Distrito que contiene Coastview, descrito como el más cercano a Night City en el videojuego de referencia."
+
+[[campaign.locations]]
+name = "Night City"
+description = "Ciudad de referencia del universo Cyberpunk, mencionada como punto geográfico cercano a Pacifica."
 
 [campaign.dm]
 discord_id = "432635509899001877"
@@ -82,13 +112,13 @@ discord_id = "432635509899001877"
 discord_id = "301071912292057088"
 discord_name = "@Zartch"
 character_name = "Zartch"
-character_description = "Posible Fixer, acanando la ficha"
+character_description = "esta buscando su personaje"
 
 [[campaign.players]]
 discord_id = "341205872615096321"
 discord_name = "Bateman"
 character_name = "Bateman"
-character_description = "Posible personaje de combate, esta en ello."
+character_description = "Lanza propuestas agresivas o raras para testear limites del personaje."
 
 [[campaign.players]]
 discord_id = "432635509899001877"
@@ -100,13 +130,7 @@ character_description = "Es el master, Aporta equilibrio de grupo, sinergias y c
 discord_id = "321011002856701972"
 discord_name = "Miquel"
 character_name = "Miquel"
-character_description = "Posible técnico, haciendo la ficha."
-
-[[campaign.players]]
-discord_id = "438410726298746891"
-discord_name = "Davidus"
-character_name = "David"
-character_description = "Posible netruner haciendose la ficha"
+character_description = "Jugador en foco: esta eligiendo concepto y rol para la siguiente partida."
 
 [[campaign.npcs]]
 name = "Ejecutiva poliooperada"
@@ -115,6 +139,10 @@ description = "Ejecutiva corporativa de 160 años que aparenta 20, mencionada co
 [[campaign.npcs]]
 name = "Ripperdoc de confianza"
 description = "Figura recurrente para imaginar implantes, costes y consecuencias narrativas."
+
+[[campaign.npcs]]
+name = "Denis"
+description = "Personaje o PNJ mencionado en relación con unos planos y unas 'reformas' hechas en un lugar aún sin identificar del todo, comentado con humor negro por Zartch."
 
 [[campaign.relationship_types]]
 key = "companero trabajo"
@@ -126,17 +154,252 @@ key = "primos"
 label = "primos"
 category = "general"
 
-[[campaign.relationships]]
-source_key = "player:432635509899001877"
-target_key = "player:301071912292057088"
-relation_type_key = "primos"
-relation_type_label = "primos"
+[[campaign.relationship_types]]
+key = "ally_of"
+label = "aliado de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "alias_of"
+label = "alias de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "aligned_with"
+label = "alineado con"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "threatens"
+label = "amenaza a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "friend_of"
+label = "amigo de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "associated_with"
+label = "asociado con"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "searches_for"
+label = "busca"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "caused"
+label = "causó"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "hunts"
+label = "caza a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "blackmailed"
+label = "chantajeó a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "connected_to_theme"
+label = "conectado al tema"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "trusts"
+label = "confía en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "knows"
+label = "conoce a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "hired"
+label = "contrató a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "controls"
+label = "controla a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "desconfia de"
+label = "desconfía de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "distrusts"
+label = "desconfía de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "disguised_as"
+label = "disfrazado como"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "conflicts_with"
+label = "en conflicto con"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "is_target_of"
+label = "es objetivo de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "witnessed"
+label = "fue testigo de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "rumors_about"
+label = "hay rumores sobre"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "investigates"
+label = "investiga"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "commands"
+label = "manda a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "mentors"
+label = "mentoriza a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "member_of"
+label = "miembro de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "operates_in"
+label = "opera en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "paid"
+label = "pagó a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "participated_in"
+label = "participó en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "pursues"
+label = "persigue a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "belongs_to"
+label = "pertenece a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "owns"
+label = "posee"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "protects"
+label = "protege a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "wants"
+label = "quiere"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "reports_to"
+label = "reporta a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "knows_about"
+label = "sabe sobre"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "hides_in"
+label = "se esconde en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "serves"
+label = "sirve a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "suspects"
+label = "sospecha de"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "fears"
+label = "teme a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "has_access_to"
+label = "tiene acceso a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "works_for"
+label = "trabaja para"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "betrayed"
+label = "traicionó a"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "located_in"
+label = "ubicado en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "uses"
+label = "usa"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "last_seen_in"
+label = "visto por última vez en"
+category = "general"
+
+[[campaign.relationship_types]]
+key = "lives_in"
+label = "vive en"
+category = "general"
 
 [[campaign.relationships]]
 source_key = "player:301071912292057088"
 target_key = "player:321011002856701972"
 relation_type_key = "companero trabajo"
 relation_type_label = "compañero trabajo"
+
+[[campaign.relationships]]
+source_key = "player:432635509899001877"
+target_key = "player:301071912292057088"
+relation_type_key = "primos"
+relation_type_label = "primos"
 
 [campaign.custom_instructions]
 text = """
